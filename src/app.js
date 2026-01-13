@@ -1,6 +1,7 @@
 import express from 'express';
 const app = express();
 import userRouter from "./routes/userRoutes.js"
+import addressRouter from "./routes/addressRoutes.js"
 import cookieParser from 'cookie-parser';
 import cors from "cors"
 import passport from "passport"
@@ -40,6 +41,7 @@ function(request, accessToken, refreshToken, profile, done) {
 
 
 app.use("/api/user", userRouter);
+app.use("/api/address", addressRouter)
 
 
 

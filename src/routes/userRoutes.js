@@ -25,6 +25,7 @@ router.post("/login", loginUser);
 router.get("/profile", authMiddleware, getUserProfile)
 router.put("/edit-profile", authMiddleware, uploadProfileImage.single("profileImage"), updateUserProfile);
 
+
 router.post("/forgot-password", forgotPassword);
 //router.post("/verify-otp", verifyOtp)
 router.post(
@@ -43,6 +44,13 @@ router.post("/connect",authMiddleware,quickConnect);
 
 router.post("/send-mobile-otp", sendLoginOtp);
 router.post("/verify-mobile-otp", verifyLoginOtp);
+
+
+
+
+
+
+
 
 router.get("/google", passport.authenticate('google', { scope: ['email', 'profile'] }));
 router.get("/google/callback",
