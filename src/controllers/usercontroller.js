@@ -216,6 +216,8 @@ export async function getUserProfile(req, res) {
 export async function updateUserProfile(req, res) {
   try {
     const user = req.user;
+    
+    console.log(req.body)
     const { name, email, phone, dob } = req.body || {};
 
     if (!name && !email && !phone && !dob && !req.file) {

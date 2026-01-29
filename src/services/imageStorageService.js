@@ -18,7 +18,7 @@ export const uploadFile = async (file) => {
     const result = await imagekit.upload({
       file: file.buffer, // buffer works directly (no need .toString("base64"))
       fileName: Date.now() + "-" + file.originalname,
-      folder: "Bunndle_profiles", // optional: organize files in ImageKit
+      folder: "Agent_alliance/Bunndle_profiles", // optional: organize files in ImageKit
     });
 
     return {
