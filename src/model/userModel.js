@@ -5,21 +5,20 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      trim: true, // ✅ duplicate allowed
+      trim: true,
     },
 
     phone: {
       type: String,
-      
-      unique: true, // ✅ must be unique
-      index: true,
+      unique: true,
+      sparse: true, // ⭐ allows multiple nulls
       trim: true,
     },
 
     email: {
       type: String,
       required: true,
-      unique: true, // ✅ must be unique
+      unique: true,
       lowercase: true,
       trim: true,
       index: true,
@@ -27,34 +26,120 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-  
-      select: false, // 🔒 never return password by default
-    },
-    dob: {
-      type: Date, // ✅ DOB field
-    },
-    profileImage: {
-      type: String,
-    },
-    profileImageId: {
-      type: String, // ImageKit fileId (for delete/replace later)
+      select: false,
+      required: function () {
+        return this.authProvider === "local";
+      },
     },
 
-    // 🔐 Forgot / Reset password support
+    /* ===== AUTH ===== */
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+    },
+
+    googleId: {
+      type: String,
+      index: true,
+    },
+
+    /* ===== PROFILE ===== */
+    dob: Date,
+
+    profileImage: String,
+    profileImageId: String,
+
+    /* ===== RESET PASSWORD ===== */
     resetOtpHash: {
       type: String,
-      select: false, // 🔒 hide from queries
+      select: false,
     },
 
-    resetOtpExpiry: {
-      type: Date,
-    },
+    resetOtpExpiry: Date,
   },
   { timestamps: true }
 );
 
-const User = mongoose.model("User", userSchema);
-export default User;
+export default mongoose.model("User", userSchema);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import mongoose from "mongoose";
+
+// const userSchema = new mongoose.Schema(
+//   {
+//     name: {
+//       type: String,
+//       required: true,
+//       trim: true, // ✅ duplicate allowed
+//     },
+
+//     phone: {
+//     type: String,
+//     unique: true,
+//     sparse: true   // ⭐ REQUIRED
+//    },
+
+
+//     email: {
+//       type: String,
+//       required: true,
+//       unique: true, // ✅ must be unique
+//       lowercase: true,
+//       trim: true,
+//       index: true,
+//     },
+
+//     password: {
+//       type: String,
+  
+//       select: false, // 🔒 never return password by default
+//     },
+//     dob: {
+//       type: Date, // ✅ DOB field
+//     },
+//     profileImage: {
+//       type: String,
+//     },
+//     profileImageId: {
+//       type: String, // ImageKit fileId (for delete/replace later)
+//     },
+
+//     // 🔐 Forgot / Reset password support
+//     resetOtpHash: {
+//       type: String,
+//       select: false, // 🔒 hide from queries
+//     },
+
+//     resetOtpExpiry: {
+//       type: Date,
+//     },
+//   },
+//   { timestamps: true }
+// );
+
+// const User = mongoose.model("User", userSchema);
+// export default User;
 
 
 
