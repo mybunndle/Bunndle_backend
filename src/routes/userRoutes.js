@@ -48,15 +48,35 @@ router.post("/verify-mobile-otp", verifyLoginOtp);
 
 
 
+// google routes
+
+
+// router.get("/google", passport.authenticate('google', { scope: ['email', 'profile'] }));
+
+// router.get("/google/callback",
+//     passport.authenticate('google', { session: false,  }),
+//     googleAuthCallback
+// )
+// router.post("/google/android", googleAuthCallback);
 
 
 
 
-router.get("/google", passport.authenticate('google', { scope: ['email', 'profile'] }));
-router.get("/google/callback",
-    passport.authenticate('google', { session: false,  }),
-    googleAuthCallback
-)
+
+
+router.get(
+  "/google",
+  passport.authenticate("google", { scope: ["email", "profile"] })
+);
+
+router.get(
+  "/google/callback",
+  passport.authenticate("google", { session: false }),
+  googleAuthCallback
+);
+
+// ANDROID
+router.post("/google/android", googleAuthCallback);
 
 
 export default router;

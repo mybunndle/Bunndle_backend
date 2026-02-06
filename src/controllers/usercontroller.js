@@ -14,6 +14,10 @@ import userThankYouTemplate from "../utils/userThankYou.js";
 import { uploadFile, deleteFile } from "../services/imageStorageService.js";
 import { DEFAULT_OTP, hashOtp } from "../utils/otp_temp.js";
 
+
+import { verifyGoogleIdToken } from "../utils/googleClient.js";
+
+
 const formatDob = (dob) => {
   if (!dob) return null;
   return new Date(dob).toISOString().replace("T", " ").replace(".000Z", "");
@@ -129,70 +133,148 @@ export async function loginUser(req, res) {
   }
 }
 
+// export async function googleAuthCallback(req, res) {
+//   try {
+//     const googleUser = req.user;
+
+//     const email = googleUser.emails[0].value;
+//     const googleId = googleUser.id;
+//     const name = `${googleUser.name.givenName} ${googleUser.name.familyName}`;
+
+//     // 1️⃣ Find existing user
+//     let user = await userModel.findOne({
+//       $or: [{ email }, { googleId }],
+//     });
+
+//     // 2️⃣ LOGIN (existing user)
+//     if (user) {
+//       // 🔗 Link Google if user was created via normal signup
+//       if (!user.googleId) {
+//         user.googleId = googleId;
+//         user.authProvider = "google";
+//         await user.save();
+//       }
+//     }
+//     // 3️⃣ SIGNUP (new Google user)
+//     else {
+//       user = await userModel.create({
+//         name,
+//         email,
+//         googleId,
+//         authProvider: "google",
+//       });
+//     }
+
+//     // 4️⃣ Generate JWT
+//     const token = jwt.sign(
+//       {
+//         id: user._id,
+//         role: user.role,
+//         email: user.email,
+//       },
+//       config.jwtSecret,
+//       { expiresIn: "2d" }
+//     );
+
+//     // 5️⃣ Set cookie
+//     res.cookie("token", token, {
+//       httpOnly: true,
+//       secure: false, // true in production
+//       sameSite: "lax",
+//     });
+
+//     // 6️⃣ Redirect by role
+    
+//     return res.status(200).json({
+//       success: true,
+//       message: "Login successful",
+//       token,
+//       user,
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Google login failed",
+//     });
+//   }
+// }
+
+
+
+
+
+
+
 export async function googleAuthCallback(req, res) {
   try {
-    const googleUser = req.user;
+    let googleId, email, name, picture;
 
-    const email = googleUser.emails[0].value;
-    const googleId = googleUser.id;
-    const name = `${googleUser.name.givenName} ${googleUser.name.familyName}`;
+    /* ===== WEB (Passport) ===== */
+    if (req.user) {
+      googleId = req.user.id;
+      email = req.user.emails?.[0]?.value;
+      name = `${req.user.name?.givenName || ""} ${req.user.name?.familyName || ""}`.trim();
+      picture = req.user.photos?.[0]?.value;
+    }
 
-    // 1️⃣ Find existing user
+    /* ===== ANDROID (ID TOKEN) ===== */
+    else if (req.body?.idToken) {
+      const payload = await verifyGoogleIdToken(req.body.idToken);
+      googleId = payload.sub;
+      email = payload.email;
+      name = payload.name;
+      picture = payload.picture;
+    }
+
+    else {
+      return res.status(400).json({ success: false, message: "Invalid request" });
+    }
+
     let user = await userModel.findOne({
       $or: [{ email }, { googleId }],
     });
 
-    // 2️⃣ LOGIN (existing user)
     if (user) {
-      // 🔗 Link Google if user was created via normal signup
       if (!user.googleId) {
         user.googleId = googleId;
         user.authProvider = "google";
         await user.save();
       }
-    }
-    // 3️⃣ SIGNUP (new Google user)
-    else {
+    } else {
       user = await userModel.create({
         name,
         email,
         googleId,
         authProvider: "google",
+        avatar: picture,
       });
     }
 
-    // 4️⃣ Generate JWT
     const token = jwt.sign(
-      {
-        id: user._id,
-        role: user.role,
-        email: user.email,
-      },
+      { id: user._id, role: user.role, email: user.email },
       config.jwtSecret,
       { expiresIn: "2d" }
     );
 
-    // 5️⃣ Set cookie
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: false, // true in production
-      sameSite: "lax",
-    });
+    if (req.user) {
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: config.env === "production",
+        sameSite: "lax",
+      });
+    }
 
-    // 6️⃣ Redirect by role
-    
     return res.status(200).json({
       success: true,
-      message: "Login successful",
+      message: "Google login successful",
       token,
       user,
     });
+
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
-      success: false,
-      message: "Google login failed",
-    });
+    res.status(500).json({ success: false, message: "Google auth failed" });
   }
 }
 

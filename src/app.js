@@ -2,8 +2,10 @@ import express from 'express';
 const app = express();
 import userRouter from "./routes/userRoutes.js"
 import addressRouter from "./routes/addressRoutes.js"
+import "./config/passport.js";
 import cookieParser from 'cookie-parser';
 import cors from "cors"
+
 import passport from "passport"
 import { Strategy as GoogleStrategy } from 'passport-google-oauth2';
 import config from "./config/config.js"
