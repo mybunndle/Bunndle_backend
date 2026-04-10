@@ -32,10 +32,6 @@ export const uploadFile = async (file) => {
 };
 
 
-
-
-
-
 export const deleteFile = async (fileId) => {
   try {
     await imagekit.deleteFile(fileId);
@@ -43,6 +39,13 @@ export const deleteFile = async (fileId) => {
     console.error("ImageKit delete failed:", err.message);
   }
 }
+
+
+
+
+
+
+
 
 
 
