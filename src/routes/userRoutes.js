@@ -28,14 +28,12 @@ router.put("/edit-profile", authMiddleware, uploadProfileImage.single("profileIm
 
 router.post("/forgot-password", forgotPassword);
 //router.post("/verify-otp", verifyOtp)
-router.post(
-  "/verify-otp",
+router.post("/verify-otp",
   verifyResetToken,
   verifyOtp
 );
 
-router.post(
-  "/reset-password",
+router.post("/reset-password",
   verifyVerifiedResetToken,
   resetPassword
 );

@@ -289,6 +289,7 @@ export async function getUserProfile(req, res) {
       name: user.name,
       phone: user.phone,
       email: user.email,
+      profileImage: user.profileImage,
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -299,13 +300,13 @@ export async function updateUserProfile(req, res) {
   try {
     const user = req.user;
     
-    console.log(req.body)
+    console.log(req.body);
     const { name, email, phone, dob } = req.body || {};
 
     if (!name && !email && !phone && !dob && !req.file) {
       return res.status(400).json({
         success: false,
-        message: "No fields provided to update",
+        message: "No fields provided to update-------------",
       });
     }
 
