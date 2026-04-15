@@ -42,6 +42,32 @@ export const deleteFile = async (fileId) => {
 
 
 
+// For asset images, imagekit storage
+
+export const uploadAssetFile = async (file) => {
+  try {
+    const result = await imagekit.upload({
+      file: file.buffer,
+      fileName: `asset-${Date.now()}-${file.originalname}`,
+      folder: "Agent_alliance/assets",   // ✅ separate folder
+      useUniqueFileName: true,
+    });
+
+    return {
+      url: result.url,
+      fileId: result.fileId,
+      filename: result.name
+    };
+
+  } catch (err) {
+    throw new Error("Asset upload failed: " + err.message);
+  }
+};
+
+ 
+
+
+
 
 
 
