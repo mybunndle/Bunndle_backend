@@ -1,8 +1,6 @@
 // controllers/asset.controller.js
-
 import Asset from "../model/assetModel.js";
 import { uploadAssetFile, deleteFile } from "../services/imageStorageService.js";
-
 
 // ✅ Create Asset (Upload + Save)
 export const add_Asset = async (req, res) => {
@@ -37,7 +35,6 @@ export const add_Asset = async (req, res) => {
       category,
       files: uploadedFiles
     });
-
     return res.status(201).json({
       success: true,
       message: "Asset created successfully",
@@ -52,7 +49,6 @@ export const add_Asset = async (req, res) => {
     });
   }
 };
-
 
 
 // ✅ Get All Assets (for logged-in user)
@@ -88,7 +84,6 @@ export const getAssetById = async (req, res) => {
         message: "Asset not found"
       });
     }
-
     return res.status(200).json({
       success: true,
       data: asset
@@ -101,8 +96,6 @@ export const getAssetById = async (req, res) => {
     });
   }
 };
-
-
 
 // ✅ Delete Asset + Images
 export const deleteAsset = async (req, res) => {
@@ -137,7 +130,7 @@ export const deleteAsset = async (req, res) => {
       message: "Asset deleted successfully"
     });
 
-  } catch (error) {
+  }catch (error) {
     console.error("Delete Asset Error:", error);
     return res.status(500).json({
       success: false,

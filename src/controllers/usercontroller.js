@@ -2,6 +2,7 @@ import userModel from "../model/userModel.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import config from "../config/config.js";
+import { verifyAppleToken } from "../services/appleAuthServise.js";
 
 import sendOTPEmail from "../utils/email.js";
 import generateOTP from "../utils/otp.js";
@@ -201,11 +202,6 @@ export async function loginUser(req, res) {
 // }
 
 
-
-
-
-
-
 export async function googleAuthCallback(req, res) {
   try {
     let googleId, email, name, picture;
@@ -271,12 +267,68 @@ export async function googleAuthCallback(req, res) {
       token,
       user,
     });
-
+    
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Google auth failed" });
   }
 }
+
+export const appleLogin = async (req, res) => {
+  try {
+    const { identityToken } = req.body;
+
+    if (!identityToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Identity token missing",
+      });
+    }
+
+    // 1. Verify Apple token
+    const appleUser = await verifyAppleToken(identityToken);
+
+    const { sub, email } = appleUser;
+
+    // 2. Find or create user
+    let user = await userModel.findOne({ appleId: sub });
+
+    if (!user) {
+      user = await userModel.create({
+        appleId: sub,
+        email: email || null,
+      });
+    }
+
+    // 3. Create your JWT (same as your existing auth)
+    const token = jwt.sign(
+      { userId: user._id },
+      config.jwtSecret,
+      { expiresIn: "5m" }
+    );
+
+    // 4. Send cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Apple login successful",
+      user,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+
 
 export async function getUserProfile(req, res) {
   try {

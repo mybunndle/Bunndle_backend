@@ -11,6 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.15.2",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -20,6 +21,7 @@
     "google-auth-library": "^10.5.0",
     "imagekit": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
+    "jwk-to-pem": "^2.0.7",
     "mongoose": "^9.0.1",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.11",

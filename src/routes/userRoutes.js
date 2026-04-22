@@ -11,7 +11,8 @@ import {
   sendLoginOtp,
   verifyLoginOtp,
   updateUserProfile,
-  googleAuthCallback
+  googleAuthCallback,
+  appleLogin
 }from "../controllers/usercontroller.js";
 
 import { uploadProfileImage } from "../middleware/upload.js";
@@ -75,6 +76,9 @@ router.get(
 
 // ANDROID
 router.post("/google/android", googleAuthCallback);
+
+//ios
+router.post("/apple", appleLogin);
 
 
 export default router;

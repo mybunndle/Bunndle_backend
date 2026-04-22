@@ -43,6 +43,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       index: true,
     },
+    appleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
 
     /* ===== PROFILE ===== */
     dob: Date,
@@ -58,28 +63,10 @@ const userSchema = new mongoose.Schema(
 
     resetOtpExpiry: Date,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export default mongoose.model("User", userSchema);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // import mongoose from "mongoose";
 
@@ -97,7 +84,6 @@ export default mongoose.model("User", userSchema);
 //     sparse: true   // ⭐ REQUIRED
 //    },
 
-
 //     email: {
 //       type: String,
 //       required: true,
@@ -109,7 +95,7 @@ export default mongoose.model("User", userSchema);
 
 //     password: {
 //       type: String,
-  
+
 //       select: false, // 🔒 never return password by default
 //     },
 //     dob: {
@@ -137,23 +123,6 @@ export default mongoose.model("User", userSchema);
 
 // const User = mongoose.model("User", userSchema);
 // export default User;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // const userSchema = new mongoose.Schema(
 //   {
