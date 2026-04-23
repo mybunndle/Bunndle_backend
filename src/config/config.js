@@ -18,7 +18,9 @@ const _config = {
   IMAGEKIT_URL_ENDPOINT:process.env.IMAGEKIT_URL_ENDPOINT,
   CLIENT_ID:process.env.CLIENT_ID,
   CLIENT_SECRET:process.env.CLIENT_SECRET,
-  ANDROID_CLIENT_ID:process.env.ANDROID_CLIENT_ID
+  ANDROID_CLIENT_ID:process.env.ANDROID_CLIENT_ID,
+  APPLE_AUDIENCE:process.env.APPLE_AUDIENCE,
+  jwt_expire:process.env.JWT_EXPIRE
 };
 
 export default _config;

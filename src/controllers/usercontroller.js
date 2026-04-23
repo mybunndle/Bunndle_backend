@@ -279,54 +279,28 @@ export const appleLogin = async (req, res) => {
     const { identityToken } = req.body;
 
     if (!identityToken) {
-      return res.status(400).json({
-        success: false,
-        message: "Identity token missing",
-      });
+      return res.status(400).json({ message: "Token required" });
     }
 
-    // 1. Verify Apple token
-    const appleUser = await verifyAppleToken(identityToken);
+    const { appleId, email } = await verifyAppleToken(identityToken);
 
-    const { sub, email } = appleUser;
-
-    // 2. Find or create user
-    let user = await userModel.findOne({ appleId: sub });
+    let user = await User.findOne({ appleId });
 
     if (!user) {
-      user = await userModel.create({
-        appleId: sub,
-        email: email || null,
-      });
+      user = await User.create({ appleId, email });
     }
 
-    // 3. Create your JWT (same as your existing auth)
     const token = jwt.sign(
       { userId: user._id },
       config.jwtSecret,
-      { expiresIn: "5m" }
+      { expiresIn: config.jwt_expire }
     );
 
-    // 4. Send cookie
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "None",
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Apple login successful",
-      user,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.json({ token, user });
+  } catch (err) {
+    res.status(401).json({ message: err.message });
   }
 };
-
 
 
 

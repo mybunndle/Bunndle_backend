@@ -78,7 +78,7 @@ router.get(
 router.post("/google/android", googleAuthCallback);
 
 //ios
-router.post("/apple", appleLogin);
+router.post("/apple_login", appleLogin);
 
 
 export default router;
