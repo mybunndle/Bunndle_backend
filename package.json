@@ -24,7 +24,7 @@
     "jwk-to-pem": "^2.0.7",
     "mongoose": "^9.0.1",
     "multer": "^2.0.2",
-    "nodemailer": "^7.0.11",
+    "nodemailer": "^8.0.5",
     "passport": "^0.7.0",
     "passport-google-oauth2": "^0.2.0",
     "sharp": "^0.34.5"

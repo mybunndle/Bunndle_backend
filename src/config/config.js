@@ -20,7 +20,8 @@ const _config = {
   CLIENT_SECRET:process.env.CLIENT_SECRET,
   ANDROID_CLIENT_ID:process.env.ANDROID_CLIENT_ID,
   APPLE_AUDIENCE:process.env.APPLE_AUDIENCE,
-  jwt_expire:process.env.JWT_EXPIRE
+  jwt_expire:process.env.JWT_EXPIRE,
+  IOS_CLIENT_ID:process.env.IOS_CLIENT_ID
 };
 
 export default _config;
