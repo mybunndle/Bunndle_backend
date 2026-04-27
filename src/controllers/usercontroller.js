@@ -14,6 +14,7 @@ import userThankYouTemplate from "../utils/userThankYou.js";
 
 import { uploadFile, deleteFile } from "../services/imageStorageService.js";
 import { DEFAULT_OTP, hashOtp } from "../utils/otp_temp.js";
+import blacklistTokenModel from "../model/blacklistTokenModel.js";
 
 
 import { verifyGoogleIdToken } from "../utils/googleClient.js";
@@ -133,6 +134,33 @@ export async function loginUser(req, res) {
     });
   }
 }
+export async function logoutUser(req, res) {
+   try {
+    const token = req.headers.authorization?.split(" ")[1];
+
+    if (!token) {
+      return res.status(400).json({ message: "Token required" });
+    }
+
+    const decoded = jwt.decode(token);
+
+    await blacklistTokenModel.create({
+      token,
+      expiresAt: new Date(decoded.exp * 1000), // convert to ms
+    });
+
+    return res.status(200).json({
+      message: "Logged out successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Logout failed",
+    });
+  }
+
+}
+
+
 
 // export async function googleAuthCallback(req, res) {
 //   try {
@@ -281,7 +309,6 @@ export const appleLogin = async (req, res) => {
     if (!identityToken) {
       return res.status(400).json({ message: "Token required" });
     }
-
     const { appleId, email } = await verifyAppleToken(identityToken);
 
     let user = await User.findOne({ appleId });

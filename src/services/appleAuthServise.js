@@ -76,7 +76,7 @@ export const verifyAppleToken = async (token) => {
   });
 
   if (!verified.sub) throw new Error("Invalid Apple user");
-
+     
   return {
     appleId: verified.sub,
     email: verified.email || null,

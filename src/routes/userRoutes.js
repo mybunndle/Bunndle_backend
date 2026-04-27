@@ -12,7 +12,8 @@ import {
   verifyLoginOtp,
   updateUserProfile,
   googleAuthCallback,
-  appleLogin
+  appleLogin,
+  logoutUser
 }from "../controllers/usercontroller.js";
 
 import { uploadProfileImage } from "../middleware/upload.js";
@@ -23,6 +24,7 @@ const router = express.Router();
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
+router.post("/logout", authMiddleware, logoutUser);
 router.get("/profile", authMiddleware, getUserProfile)
 router.put("/edit-profile", authMiddleware, uploadProfileImage.single("profileImage"), updateUserProfile);
 
@@ -79,6 +81,7 @@ router.post("/google/android", googleAuthCallback);
 
 //ios
 router.post("/apple_login", appleLogin);
+
 
 
 export default router;

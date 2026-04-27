@@ -10,19 +10,20 @@ const userSchema = new mongoose.Schema(
 
     phone: {
       type: String,
-      unique: true,
+      
       sparse: true, // ⭐ allows multiple nulls
       trim: true,
+
     },
 
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-      index: true,
-    },
+  email: {
+  type: String,
+  unique: true,
+  sparse: true, // important for Google/Apple users without email (edge cases)
+  trim: true,
+  lowercase: true,
+  index: true,
+},
 
     password: {
       type: String,
@@ -35,13 +36,15 @@ const userSchema = new mongoose.Schema(
     /* ===== AUTH ===== */
     authProvider: {
       type: String,
-      enum: ["local", "google"],
+      enum: ["local", "google","apple"],
       default: "local",
     },
 
     googleId: {
       type: String,
       index: true,
+      unique: true,
+      
     },
     appleId: {
       type: String,
@@ -54,6 +57,22 @@ const userSchema = new mongoose.Schema(
 
     profileImage: String,
     profileImageId: String,
+
+    kycStatus: {
+        type: String,
+        enum: ["NOT_STARTED", "PENDING", "VERIFIED"],
+        default: "NOT_STARTED",
+     },
+
+    isKycVerified: {
+        type: Boolean,
+        default: false,
+   },
+
+    kycVerifiedAt: Date,
+
+
+
 
     /* ===== RESET PASSWORD ===== */
     resetOtpHash: {
