@@ -302,33 +302,111 @@ export async function googleAuthCallback(req, res) {
   }
 }
 
+// export const appleLogin = async (req, res) => {
+//   try {
+//     const { identityToken } = req.body;
+
+//     if (!identityToken) {
+//       return res.status(400).json({ message: "Token required" });
+//     }
+//     const { appleId, email } = await verifyAppleToken(identityToken);
+
+//     let user = await User.findOne({ appleId });
+
+//     if (!user) {
+//       user = await User.create({ appleId, email });
+//     }
+
+//     const token = jwt.sign(
+//       { userId: user._id },
+//       config.jwtSecret,
+//       { expiresIn: config.jwt_expire }
+//     );
+
+//     res.json({ token, user });
+//   } catch (err) {
+//     res.status(401).json({ message: err.message });
+//   }
+// };
+
 export const appleLogin = async (req, res) => {
   try {
-    const { identityToken } = req.body;
+    const { identityToken, fullName, email: bodyEmail } = req.body;
 
     if (!identityToken) {
-      return res.status(400).json({ message: "Token required" });
+      return res.status(400).json({
+        success: false,
+        message: "Apple identity token required",
+      });
     }
-    const { appleId, email } = await verifyAppleToken(identityToken);
 
-    let user = await User.findOne({ appleId });
+    // Verify Apple token
+    const appleData = await verifyAppleToken(identityToken);
 
-    if (!user) {
-      user = await User.create({ appleId, email });
+    const appleId = appleData.appleId;
+    const email = appleData.email || bodyEmail || undefined;
+
+    if (!appleId) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid Apple token",
+      });
+    }
+
+    // First find user by Apple ID
+    let user = await userModel.findOne({ appleId });
+
+    // If email exists, try linking existing local/google account
+    if (!user && email) {
+      user = await userModel.findOne({ email });
+    }
+
+    if (user) {
+      user.appleId = user.appleId || appleId;
+      user.authProvider = "apple";
+
+      if (!user.email && email) {
+        user.email = email;
+      }
+
+      if (!user.name || user.name === "Apple User") {
+        user.name = fullName || user.name || "Apple User";
+      }
+
+      await user.save();
+    } else {
+      user = await userModel.create({
+        name: fullName || "Apple User",
+        ...(email ? { email } : {}),
+        appleId,
+        authProvider: "apple",
+      });
     }
 
     const token = jwt.sign(
-      { userId: user._id },
+      {
+        id: user._id,
+        email: user.email || null,
+      },
       config.jwtSecret,
-      { expiresIn: config.jwt_expire }
+      { expiresIn: "2d" }
     );
 
-    res.json({ token, user });
+    return res.status(200).json({
+      success: true,
+      message: "Apple login successful",
+      token,
+      user,
+    });
   } catch (err) {
-    res.status(401).json({ message: err.message });
+    console.error("Apple login error:", err);
+
+    return res.status(401).json({
+      success: false,
+      message: err.message || "Apple login failed",
+    });
   }
 };
-
 
 
 export async function getUserProfile(req, res) {
