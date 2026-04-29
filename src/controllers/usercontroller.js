@@ -16,7 +16,6 @@ import { uploadFile, deleteFile } from "../services/imageStorageService.js";
 import { DEFAULT_OTP, hashOtp } from "../utils/otp_temp.js";
 import blacklistTokenModel from "../model/blacklistTokenModel.js";
 
-
 import { verifyGoogleIdToken } from "../utils/googleClient.js";
 
 
@@ -86,7 +85,8 @@ export async function registerUser(req, res) {
 export async function loginUser(req, res) {
   try {
     const { email, password } = req.body;
-
+  
+  
     // 1️⃣ Validate input
     if (!email || !password) {
       return res.status(400).json({
@@ -95,8 +95,14 @@ export async function loginUser(req, res) {
       });
     }
 
-    // 2️⃣ Explicitly SELECT password
+    
     const user = await userModel.findOne({ email }).select("+password");
+     if (!user.password) {
+      return res.status(400).json({
+        message: "Password not set. Please create your password first .",
+        action: "SET_PASSWORD", 
+      });
+    }
 
     if (!user) {
       return res.status(401).json({
@@ -107,6 +113,7 @@ export async function loginUser(req, res) {
 
     // 3️⃣ Compare password
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log("Password match:", isMatch);
 
     if (!isMatch) {
       return res.status(401).json({

@@ -16,7 +16,7 @@ const addressSchema = new mongoose.Schema(
 
     phone: {
       type: String,
-      required: true,
+
       trim: true,
     },
 
@@ -32,17 +32,17 @@ const addressSchema = new mongoose.Schema(
 
     city: {
       type: String,
-      required: true,
+    
     },
 
     locality: {
       type: String,
-      required: true,
+    
     },
 
     addressLine: {
       type: String,
-      required: true,
+  
     },
 
     addressType: {
