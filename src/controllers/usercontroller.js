@@ -20,7 +20,7 @@ import { verifyGoogleIdToken } from "../utils/googleClient.js";
 
 
 const formatDob = (dob) => {
-  if (!dob) return null;
+  if (!dob) return "";
 
   const date = new Date(dob);
 
