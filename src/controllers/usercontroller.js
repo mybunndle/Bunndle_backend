@@ -525,6 +525,59 @@ export async function updateUserProfile(req, res) {
   }
 }
 
+
+export async function uploadProfile(req, res) {
+  
+  try {
+    const user = req.user;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No image file provided",
+      });
+    }
+    
+
+    // 🔎 Get existing user (for old imageId)
+    const existingUser = await userModel.findById(user._id);
+
+    let oldImageId = existingUser?.profileImageId;
+
+    // 🖼 Upload new image
+    const uploadedImage = await uploadFile(req.file);
+
+    // 💾 Update DB
+    const updatedUser = await userModel.findByIdAndUpdate(
+      user._id,
+      {
+        profileImage: uploadedImage.url,
+        profileImageId: uploadedImage.fileId,
+      },
+      { new: true }
+    );
+
+    // ✅ Send response
+    res.status(200).json({
+      success: true,
+      message: "Profile image updated successfully",
+      profileImage: updatedUser.profileImage,
+    });
+
+    // 🧹 Delete old image (non-blocking)
+    if (oldImageId) {
+      deleteFile(oldImageId);
+    }
+
+  } catch (error) {
+    console.error("Upload image error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
 /**
  * STEP 1️⃣ Forgot Password
  */

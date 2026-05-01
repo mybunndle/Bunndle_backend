@@ -13,7 +13,8 @@ import {
   updateUserProfile,
   googleAuthCallback,
   appleLogin,
-  logoutUser
+  logoutUser,
+  uploadProfile
 }from "../controllers/usercontroller.js";
 
 import { uploadProfileImage } from "../middleware/upload.js";
@@ -27,6 +28,7 @@ router.post("/login", loginUser);
 router.post("/logout", authMiddleware, logoutUser);
 router.get("/profile", authMiddleware, getUserProfile)
 router.put("/edit-profile", authMiddleware, uploadProfileImage.single("profileImage"), updateUserProfile);
+router.put("/update-profile-image", authMiddleware, uploadProfileImage.single("profileImage"), uploadProfile);
 
 
 router.post("/forgot-password", forgotPassword);
