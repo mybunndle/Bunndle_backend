@@ -686,9 +686,9 @@ export const resetPassword = async (req, res) => {
 };
 export const quickConnect = async (req, res) => {
   try {
-    const { name, phone, email, message } = req.body;
+    const { name, email, message } = req.body;
 
-    if (!name || !phone || !email || !message) {
+    if (!name || !email || !message) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -696,7 +696,7 @@ export const quickConnect = async (req, res) => {
     await sendEmail(
       config.email,
       "New Quick Connect Request",
-      adminEmailTemplate({ name, phone, email, message })
+      adminEmailTemplate({ name,email, message })
     );
 
     // 📧 Send confirmation to user
@@ -710,8 +710,9 @@ export const quickConnect = async (req, res) => {
       message: "Request submitted successfully. We will contact you soon.",
       name,
       email,
-      phone,
+    
     });
+    console.log("Quick connect request:", { name, email, message });
   } catch (error) {
     res.status(500).json({ message: "Internal server error" });
   }

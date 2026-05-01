@@ -1,4 +1,4 @@
-const adminQuickConnectTemplate = ({ name, phone, email, message }) => {
+const adminQuickConnectTemplate = ({ name, email, message }) => {
   return `
   <!DOCTYPE html>
   <html>
@@ -45,7 +45,7 @@ const adminQuickConnectTemplate = ({ name, phone, email, message }) => {
 
       <div class="info"><strong>Name:</strong> ${name}</div>
       <div class="info"><strong>Email:</strong> ${email}</div>
-      <div class="info"><strong>Phone:</strong> ${phone}</div>
+      
 
       <div class="message">
         <strong>Message:</strong><br />
