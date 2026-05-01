@@ -21,7 +21,14 @@ import { verifyGoogleIdToken } from "../utils/googleClient.js";
 
 const formatDob = (dob) => {
   if (!dob) return null;
-  return new Date(dob).toISOString().replace("T", " ").replace(".000Z", "");
+
+  const date = new Date(dob);
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+
+  return `${day}-${month}-${year}`;
 };
 
 export async function registerUser(req, res) {
@@ -416,6 +423,13 @@ export const appleLogin = async (req, res) => {
 };
 
 
+
+
+
+
+
+
+
 export async function getUserProfile(req, res) {
   try {
     const token = req.headers.authorization.split(" ")[1];
@@ -428,6 +442,11 @@ export async function getUserProfile(req, res) {
       phone: user.phone,
       email: user.email,
       profileImage: user.profileImage,
+      role: user.role,
+      dob: formatDob(user.dob),
+      kycStatus: user.kycStatus,
+      kycDocument: user.kycDocument,
+      kycDocumentId: user.kycDocumentId
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
