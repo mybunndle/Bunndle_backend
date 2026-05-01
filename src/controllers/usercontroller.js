@@ -20,7 +20,7 @@ import { verifyGoogleIdToken } from "../utils/googleClient.js";
 
 
 const formatDob = (dob) => {
-  if (!dob) return "";
+  if (!dob) return "DD/MM/YYYY";
 
   const date = new Date(dob);
 
@@ -439,9 +439,9 @@ export async function getUserProfile(req, res) {
       message: "User profile fetched successfully",
       id: user._id,
       name: user.name,
-      phone: user.phone,
+      phone: user.phone || "",
       email: user.email,
-      profileImage: user.profileImage,
+      profileImage: user.profileImage || "",
       role: user.role,
       dob: formatDob(user.dob),
       kycStatus: user.kycStatus,
