@@ -5,13 +5,14 @@ import { uploadAssetFile, deleteFile } from "../services/imageStorageService.js"
 // ✅ Create Asset (Upload + Save)
 export const add_Asset = async (req, res) => {
   try {
-    const { model, brand, category } = req.body;
+    const { model, brand, category, purchaseYear } = req.body;
+    
 
     // 🔴 Validation
-    if (!model || !category) {
+    if (!model || !category || !purchaseYear) {
       return res.status(400).json({
         success: false,
-        message: "Model and Category are required"
+        message: "Model, Category, and Purchase Year are required"
       });
     }
 
@@ -33,6 +34,7 @@ export const add_Asset = async (req, res) => {
       model,
       brand,
       category,
+      purchaseYear,
       files: uploadedFiles
     });
     return res.status(201).json({

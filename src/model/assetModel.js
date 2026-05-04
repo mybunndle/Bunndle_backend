@@ -20,6 +20,11 @@ const assetSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  purchaseYear: {
+      type: String,
+      required: true,
+
+    },
   files: [
   {
     url: {
