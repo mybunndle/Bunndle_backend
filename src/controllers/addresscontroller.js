@@ -1,11 +1,74 @@
 import addressModel from "../model/addressModel.js";
 import axios from "axios";
 
+// export const addAddress = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+
+//     const {
+//       name,
+//       phone,
+//       pinCode,
+//       state,
+//       city,
+//       locality,
+//       addressLine,
+//       addressType,
+//       customType,
+//       isDefault,
+//     } = req.body;
+
+//     // If new address is default → unset previous default
+//     if (isDefault) {
+//       await addressModel.updateMany(
+//         { userId, isDefault: true },
+//         { $set: { isDefault: false } },
+//       );
+//     }
+
+//     if (addressType === "Other" && !customType) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Custom address type is required when type is Other",
+//       });
+//     }
+
+//     const address = await addressModel.create({
+//       userId,
+//       name,
+//       phone,
+//       pinCode,
+//       state,
+//       city,
+//       locality,
+//       addressLine,
+//       addressType,
+//       customType: addressType === "Other" ? customType : null,
+//       isDefault,
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message: "Address added successfully",
+//       address,
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to add address",
+//       error: error.message,
+//     });
+//   }
+// };
+
+// demo fileds by pincode postal api
+
+
 export const addAddress = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const {
+    let {
       name,
       phone,
       pinCode,
@@ -14,10 +77,39 @@ export const addAddress = async (req, res) => {
       locality,
       addressLine,
       addressType,
+      customType,
       isDefault,
     } = req.body;
 
-    // If new address is default → unset previous default
+    // ✅ normalize (VERY IMPORTANT)
+    addressType =
+      addressType.charAt(0).toUpperCase() +
+      addressType.slice(1).toLowerCase();
+
+    // ✅ validate custom type
+    if (addressType === "Other" && !customType) {
+      return res.status(400).json({
+        success: false,
+        message: "Custom address type is required when type is Other",
+      });
+    }
+
+    // 🔥 CHECK DUPLICATE (Home / Work / Office only)
+    if (["Home", "Work", "Office"].includes(addressType)) {
+      const existing = await addressModel.findOne({
+        userId,
+        addressType,
+      });
+
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: `${addressType} address already exists. Go and edit it.`,
+        });
+      }
+    }
+
+    // ✅ handle default
     if (isDefault) {
       await addressModel.updateMany(
         { userId, isDefault: true },
@@ -25,6 +117,7 @@ export const addAddress = async (req, res) => {
       );
     }
 
+    // ✅ create address
     const address = await addressModel.create({
       userId,
       name,
@@ -35,16 +128,18 @@ export const addAddress = async (req, res) => {
       locality,
       addressLine,
       addressType,
+      customType: addressType === "Other" ? customType : null,
       isDefault,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Address added successfully",
       address,
     });
+
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to add address",
       error: error.message,
@@ -52,17 +147,10 @@ export const addAddress = async (req, res) => {
   }
 };
 
-
-// demo fileds by pincode postal api
-
-
-
-
 export const createAddressFromPincode = async (req, res) => {
   try {
     const userId = req.user.id;
     const { pinCode } = req.body;
-    
 
     // 1️⃣ Validate
     if (!pinCode || pinCode.length !== 6) {
@@ -74,7 +162,7 @@ export const createAddressFromPincode = async (req, res) => {
 
     // 2️⃣ Call Postal API
     const apiRes = await axios.get(
-      `https://api.postalpincode.in/pincode/${pinCode}`
+      `https://api.postalpincode.in/pincode/${pinCode}`,
     );
 
     const apiData = apiRes.data[0];
@@ -91,7 +179,7 @@ export const createAddressFromPincode = async (req, res) => {
 
     const newAddressData = {
       userId,
-      name: postOffice.Name,        // Post Office Name
+      name: postOffice.Name, // Post Office Name
       state: postOffice.State,
       district: postOffice.District,
       pinCode: postOffice.Pincode,
@@ -129,7 +217,6 @@ export const createAddressFromPincode = async (req, res) => {
   }
 };
 
-
 export const updateAddress = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -147,11 +234,10 @@ export const updateAddress = async (req, res) => {
       });
     }
 
-    
     if (req.body.isDefault) {
       await addressModel.updateMany(
         { userId, isDefault: true },
-        { $set: { isDefault: false } }
+        { $set: { isDefault: false } },
       );
     }
 
@@ -172,7 +258,6 @@ export const updateAddress = async (req, res) => {
   }
 };
 
- 
 export const getAddresses = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -225,6 +310,3 @@ export const deleteAddress = async (req, res) => {
     });
   }
 };
-        
-
-
