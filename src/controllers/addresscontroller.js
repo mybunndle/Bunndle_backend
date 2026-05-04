@@ -269,6 +269,7 @@ export const getAddresses = async (req, res) => {
 
     res.status(200).json({
       success: true,
+      message: "Addresses fetched successfully",
       count: addresses.length,
       addresses,
     });
