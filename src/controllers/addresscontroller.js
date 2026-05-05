@@ -311,3 +311,47 @@ export const deleteAddress = async (req, res) => {
     });
   }
 };
+
+
+export const setDefaultAddress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { addressId } = req.params;
+
+    // ✅ check if address exists and belongs to user
+    const address = await addressModel.findOne({
+      _id: addressId,
+      userId,
+    });
+
+    if (!address) {
+      return res.status(404).json({
+        success: false,
+        message: "Address not found",
+      });
+    }
+
+    // ✅ remove previous default
+    await addressModel.updateMany(
+      { userId, isDefault: true },
+      { $set: { isDefault: false } }
+    );
+
+    // ✅ set new default
+    address.isDefault = true;
+    await address.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Default address updated successfully",
+      address,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update default address",
+      error: error.message,
+    });
+  }
+};
