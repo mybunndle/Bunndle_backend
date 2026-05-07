@@ -9,7 +9,8 @@ export const verifyGoogleIdToken = async (idToken) => {
     audience: [
       config.CLIENT_ID,        // Web client
       config.ANDROID_CLIENT_ID, // Android client
-      config.IOS_CLIENT_ID, // IOS client
+      config.IOS_CLIENT_ID, 
+      config.ANDROID_RELEASE_CLIENT_ID // Android release client
     ],
   });
 
