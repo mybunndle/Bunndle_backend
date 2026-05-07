@@ -9,7 +9,7 @@ connectDB()
 // });
 
 app.get("/", (req, res) => {
-  res.send("Server is up and running");
+  res.send("🚀 Server is up and running");
 });
 
 // to run locally and physical device
