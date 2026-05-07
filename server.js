@@ -8,6 +8,9 @@ connectDB()
 //   console.log("Server running on port 3000");
 // });
 
+app.get("/", (req, res) => {
+  res.send("Server is up and running");
+});
 
 // to run locally and physical device
 app.listen(3000, '0.0.0.0', () => {
