@@ -3,6 +3,7 @@ const app = express();
 import userRouter from "./routes/userRoutes.js"
 import addressRouter from "./routes/addressRoutes.js"
 import assetRouter from "./routes/assetRoutes.js"
+import vehicleRouter from "./routes/machinaryRoutes.js"
 import "./config/passport.js";
 import cookieParser from 'cookie-parser';
 import cors from "cors"
@@ -44,6 +45,7 @@ function(request, accessToken, refreshToken, profile, done) {
 app.use("/api/user", userRouter);
 app.use("/api/address", addressRouter)
 app.use("/api/asset",assetRouter)
+app.use("/api/vehicle",vehicleRouter)
 
 
 

@@ -64,6 +64,42 @@ export const uploadAssetFile = async (file) => {
   }
 };
 
+export const deleteAssetFile = async (fileId) => {
+  try {
+    await imagekit.deleteFile(fileId);
+  } catch (err) {
+    console.error("ImageKit delete failed:", err.message);
+  }
+}
+
+
+export const uploadVehicleLogo = async (file) => {
+  try{
+    const result = await imagekit.upload({
+      file: file.buffer,
+      fileName: `vehicle-logo-${Date.now()}-${file.originalname}`,
+      folder: "Agent_alliance/vehicle_logos",   // ✅ separate folder
+      useUniqueFileName: true,
+    });
+
+    return {
+      url: result.url,
+      fileId: result.fileId,
+      filename: result.name
+    };
+  } catch (err) {
+    throw new Error("Vehicle logo upload failed: " + err.message);
+  }
+}
+export const deleteVehicleLogo = async (fileId) => {
+  try {
+    await imagekit.deleteFile(fileId);
+  }
+  catch (err) {
+    console.error("ImageKit delete failed:", err.message);
+  }
+}
+
  
 
 
