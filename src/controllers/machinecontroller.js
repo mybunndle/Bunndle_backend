@@ -30,24 +30,11 @@ export const createVehicle = async (req, res) => {
       });
     }
 
-    // ================= DUPLICATE CHECK =================
-
-    // const existingVehicle = await VehicleModel.findOne({
-    //   brand: brand.trim(),
-    // });
-
-    // if (existingVehicle) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Vehicle brand already exists",
-    //   });
-    // }
-
-    // ================= IMAGEKIT UPLOAD =================
+    // IMAGEKIT UPLOAD
 
     const uploadedLogo = await uploadVehicleLogo(req.file);
 
-    // ================= SAVE IN DATABASE =================
+
 
     const vehicle = await VehicleModel.create({
       brand: brand.trim(),

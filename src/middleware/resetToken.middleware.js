@@ -39,8 +39,6 @@ export const verifyResetToken = (req, res, next) => {
 };
 
 
-
-
 export const verifyVerifiedResetToken = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;

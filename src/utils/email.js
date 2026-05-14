@@ -6,9 +6,9 @@ let transporter; // ✅ singleton
 const createTransporter = () => {
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,           // ✅ stable port
-      secure: false,       // ✅ must be false for 587
+      host: "smtp.hostinger.com",
+      port: 465,           // ✅ stable port
+      secure: true,        // ✅ must be true for 465
       pool: true,          // ✅ reuse connection (FAST)
       maxConnections: 5,
       maxMessages: 100,
@@ -44,3 +44,41 @@ const sendEmail = async (to, subject, html) => {
 };
 
 export default sendEmail;
+
+
+
+// import nodemailer from "nodemailer";
+// import config from "../config/config.js";
+
+// let transporter;
+
+// const createTransporter = () => {
+//   if (!transporter) {
+//     transporter = nodemailer.createTransport({
+//       host: "smtp.hostinger.com",
+//       port: 465,
+//       secure: true,
+
+//       auth: {
+//         user: config.email,
+//         pass: config.password,
+//       },
+
+//       connectionTimeout: 20000,
+//       greetingTimeout: 20000,
+//       socketTimeout: 20000,
+//     });
+
+//     transporter.verify((err, success) => {
+//       if (err) {
+//         console.log("SMTP ERROR:", err);
+//       } else {
+//         console.log("SMTP READY");
+//       }
+//     });
+//   }
+
+//   return transporter;
+// };
+
+// export default createTransporter;
