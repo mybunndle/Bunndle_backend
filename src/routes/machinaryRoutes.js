@@ -13,7 +13,8 @@ import { createVehicle,
     getAgriculturalMachines,
     getMiningVehicles,
     getWarehouseEquipments,
-    getConcreteAndRoadMachinaries
+    getConcreteAndRoadMachinaries,
+    getHeavyVehicles
 
    } from '../controllers/machinecontroller.js';
 const router = express.Router();
@@ -55,6 +56,7 @@ router.get("/power/get_brands",getPowerEquipments)
 router.get("/industrial/get_brands", getIndustrialTools)
 router.get("/trucks/get_brands", getTrucksAndTrailers)
 router.get("/medical/get_brands",getmedicalEquipments)
+router.get("/heavyVehicles/get_brands", getHeavyVehicles)
 
 
 

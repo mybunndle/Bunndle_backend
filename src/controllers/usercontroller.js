@@ -17,7 +17,7 @@ import { DEFAULT_OTP, hashOtp } from "../utils/otp_temp.js";
 import blacklistTokenModel from "../model/blacklistTokenModel.js";
 
 import { verifyGoogleIdToken } from "../utils/googleClient.js";
-
+import axios from "axios";
 
 const formatDob = (dob) => {
   if (!dob) return "DD/MM/YYYY";
@@ -1244,6 +1244,7 @@ export const sendLoginOtp = async (req, res) => {
     });
   }
 };
+
 export const verifyLoginOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
@@ -1302,3 +1303,84 @@ export const verifyLoginOtp = async (req, res) => {
     });
   }
 };
+
+export const sendOTP = async (req, res) => {
+  try {
+    const { mobile } = req.body;
+
+    if (!mobile) {
+      return res.status(400).json({
+        success: false,
+        message: "Mobile number required",
+      });
+    }
+
+    const response = await axios.post(
+      `https://control.msg91.com/api/v5/otp`,
+      {
+        mobile: `91${mobile}`,
+        template_id: process.env.MSG91_TEMPLATE_ID,
+        authkey: process.env.MSG91_AUTH_KEY,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP sent successfully",
+      data: response.data,
+    });
+  } catch (error) {
+    console.log(error.response?.data || error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send OTP",
+    });
+  }
+};
+export const verifyOTP = async (req, res) => {
+  try {
+    const { mobile, otp } = req.body;
+
+    if (!mobile || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Mobile and OTP required",
+      });
+    }
+
+    const response = await axios.get(
+      `https://control.msg91.com/api/v5/otp/verify`,
+      {
+        params: {
+          mobile: `91${mobile}`,
+          otp,
+          authkey: process.env.MSG91_AUTH_KEY,
+        },
+      }
+    );
+
+    if (response.data.type === "success") {
+      return res.status(200).json({
+        success: true,
+        message: "OTP verified successfully",
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: "Invalid OTP",
+    });
+  } catch (error) {
+    console.log(error.response?.data || error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "OTP verification failed",
+    });
+  }
+};
+
+// env required for MSG91 integration
+// MSG91_AUTH_KEY=your_auth_key
+// MSG91_TEMPLATE_ID=your_template_id
