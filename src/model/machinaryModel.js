@@ -5,7 +5,7 @@ const machinarySchema = new mongoose.Schema(
     brand: {
       type: String,
       required: true,
-      unique: true,
+      
       trim: true,
     },
     category: {
