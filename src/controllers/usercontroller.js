@@ -579,6 +579,9 @@ export async function getUserProfile(req, res) {
 
 export async function updateUserProfile(req, res) {
   try {
+
+    // ===== AUTH USER =====
+
     const user = req.user;
 
     if (!user || !user._id) {
@@ -587,6 +590,8 @@ export async function updateUserProfile(req, res) {
         message: "Unauthorized",
       });
     }
+
+    // ===== REQUEST BODY =====
 
     const {
       name,
@@ -610,9 +615,10 @@ export async function updateUserProfile(req, res) {
       });
     }
 
-    // ===== FIND USER =====
+    // ===== FIND EXISTING USER =====
 
-    const existingUser = await userModel.findById(user._id);
+    const existingUser =
+      await userModel.findById(user._id);
 
     if (!existingUser) {
       return res.status(404).json({
@@ -620,6 +626,8 @@ export async function updateUserProfile(req, res) {
         message: "User not found",
       });
     }
+
+    // ===== UPDATE OBJECT =====
 
     const updateData = {};
 
@@ -638,9 +646,26 @@ export async function updateUserProfile(req, res) {
       typeof email === "string" &&
       email.trim()
     ) {
-      updateData.email = email
+
+      const cleanEmail = email
         .trim()
         .toLowerCase();
+
+      // duplicate email check
+      const emailExists =
+        await userModel.findOne({
+          email: cleanEmail,
+          _id: { $ne: user._id },
+        });
+
+      if (emailExists) {
+        return res.status(409).json({
+          success: false,
+          message: "Email already exists",
+        });
+      }
+
+      updateData.email = cleanEmail;
     }
 
     // ===== PHONE =====
@@ -649,7 +674,24 @@ export async function updateUserProfile(req, res) {
       typeof phone === "string" &&
       phone.trim()
     ) {
-      updateData.phone = phone.trim();
+
+      const cleanPhone = phone.trim();
+
+      // duplicate phone check
+      const phoneExists =
+        await userModel.findOne({
+          phone: cleanPhone,
+          _id: { $ne: user._id },
+        });
+
+      if (phoneExists) {
+        return res.status(409).json({
+          success: false,
+          message: "Phone already exists",
+        });
+      }
+
+      updateData.phone = cleanPhone;
     }
 
     // ===== SAFE DOB =====
@@ -659,21 +701,26 @@ export async function updateUserProfile(req, res) {
       dob.trim()
     ) {
 
-      const parsedDob = new Date(dob);
+      const parsedDob =
+        new Date(dob);
 
-      // ✅ prevent Invalid Date crash
-      if (!isNaN(parsedDob.getTime())) {
+      // prevent invalid date crash
+      if (
+        !isNaN(parsedDob.getTime())
+      ) {
         updateData.dob = parsedDob;
       }
     }
 
     // ===== IMAGE UPLOAD =====
 
-    let oldImageId = existingUser.profileImageId;
+    const oldImageId =
+      existingUser.profileImageId || null;
 
     if (req.file) {
 
-      const uploadedImage = await uploadFile(req.file);
+      const uploadedImage =
+        await uploadFile(req.file);
 
       if (
         !uploadedImage ||
@@ -693,15 +740,29 @@ export async function updateUserProfile(req, res) {
         uploadedImage.fileId;
     }
 
+    // ===== PREVENT EMPTY UPDATE =====
+
+    if (
+      Object.keys(updateData).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "No valid fields to update",
+      });
+    }
+
     // ===== UPDATE USER =====
 
     const updatedUser =
       await userModel
         .findByIdAndUpdate(
           user._id,
+
           {
             $set: updateData,
           },
+
           {
             new: true,
             runValidators: true,
@@ -710,7 +771,7 @@ export async function updateUserProfile(req, res) {
         .select("-password");
 
     if (!updatedUser) {
-      return res.status(404).json({
+      return res.status(500).json({
         success: false,
         message: "User update failed",
       });
@@ -720,18 +781,29 @@ export async function updateUserProfile(req, res) {
 
     res.status(200).json({
       success: true,
-      message: "Profile updated successfully",
+      message:
+        "Profile updated successfully",
 
       data: {
         id: updatedUser._id,
-        name: updatedUser.name || "",
-        email: updatedUser.email || "",
-        phone: updatedUser.phone || "",
+        name:
+          updatedUser.name || "",
+
+        email:
+          updatedUser.email || "",
+
+        phone:
+          updatedUser.phone || "",
+
         dob: updatedUser.dob
-          ? formatDob(updatedUser.dob)
+          ? formatDob(
+              updatedUser.dob
+            )
           : null,
+
         profileImage:
-          updatedUser.profileImage || "",
+          updatedUser.profileImage ||
+          "",
       },
     });
 
@@ -739,8 +811,13 @@ export async function updateUserProfile(req, res) {
 
     if (oldImageId && req.file) {
       try {
-        await deleteFile(oldImageId);
+
+        await deleteFile(
+          oldImageId
+        );
+
       } catch (deleteError) {
+
         console.error(
           "Old image delete failed:",
           deleteError
@@ -760,20 +837,37 @@ export async function updateUserProfile(req, res) {
     if (error.code === 11000) {
 
       const duplicateField =
-        Object.keys(error.keyPattern || {})[0];
+        Object.keys(
+          error.keyPattern || {}
+        )[0];
 
       return res.status(409).json({
         success: false,
-        message: `${duplicateField} already exists`,
+        message:
+          `${duplicateField} already exists`,
       });
     }
 
-    // ===== MONGOOSE VALIDATION =====
+    // ===== VALIDATION ERROR =====
 
-    if (error.name === "ValidationError") {
+    if (
+      error.name ===
+      "ValidationError"
+    ) {
       return res.status(400).json({
         success: false,
         message: error.message,
+      });
+    }
+
+    // ===== INVALID OBJECT ID =====
+
+    if (
+      error.name === "CastError"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid data",
       });
     }
 
@@ -781,7 +875,8 @@ export async function updateUserProfile(req, res) {
 
     return res.status(500).json({
       success: false,
-      message: "Internal server error",
+      message:
+        "Internal server error",
     });
   }
 }
