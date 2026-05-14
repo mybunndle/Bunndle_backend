@@ -581,16 +581,37 @@ export async function updateUserProfile(req, res) {
   try {
     const user = req.user;
 
-    const { name, email, phone, dob } = req.body || {};
+    if (!user || !user._id) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
-    if (!name && !email && !phone && !dob && !req.file) {
+    const {
+      name,
+      email,
+      phone,
+      dob,
+    } = req.body || {};
+
+    // ===== VALIDATION =====
+
+    if (
+      !name &&
+      !email &&
+      !phone &&
+      !dob &&
+      !req.file
+    ) {
       return res.status(400).json({
         success: false,
         message: "No fields provided to update",
       });
     }
 
-    // Existing user
+    // ===== FIND USER =====
+
     const existingUser = await userModel.findById(user._id);
 
     if (!existingUser) {
@@ -602,60 +623,98 @@ export async function updateUserProfile(req, res) {
 
     const updateData = {};
 
-    // ===== TEXT FIELDS =====
+    // ===== NAME =====
 
-    if (name && typeof name === "string") {
+    if (
+      typeof name === "string" &&
+      name.trim()
+    ) {
       updateData.name = name.trim();
     }
 
-    if (email && typeof email === "string") {
-      updateData.email = email.trim().toLowerCase();
+    // ===== EMAIL =====
+
+    if (
+      typeof email === "string" &&
+      email.trim()
+    ) {
+      updateData.email = email
+        .trim()
+        .toLowerCase();
     }
 
-    if (phone && typeof phone === "string") {
+    // ===== PHONE =====
+
+    if (
+      typeof phone === "string" &&
+      phone.trim()
+    ) {
       updateData.phone = phone.trim();
     }
 
     // ===== SAFE DOB =====
 
     if (
-      dob &&
       typeof dob === "string" &&
-      !isNaN(Date.parse(dob))
+      dob.trim()
     ) {
-      updateData.dob = new Date(dob);
+
+      const parsedDob = new Date(dob);
+
+      // ✅ prevent Invalid Date crash
+      if (!isNaN(parsedDob.getTime())) {
+        updateData.dob = parsedDob;
+      }
     }
 
-    // ===== IMAGE =====
+    // ===== IMAGE UPLOAD =====
 
     let oldImageId = existingUser.profileImageId;
 
     if (req.file) {
+
       const uploadedImage = await uploadFile(req.file);
 
-      if (!uploadedImage?.url || !uploadedImage?.fileId) {
+      if (
+        !uploadedImage ||
+        !uploadedImage.url ||
+        !uploadedImage.fileId
+      ) {
         return res.status(500).json({
           success: false,
           message: "Image upload failed",
         });
       }
 
-      updateData.profileImage = uploadedImage.url;
-      updateData.profileImageId = uploadedImage.fileId;
+      updateData.profileImage =
+        uploadedImage.url;
+
+      updateData.profileImageId =
+        uploadedImage.fileId;
     }
 
     // ===== UPDATE USER =====
 
-    const updatedUser = await userModel
-      .findByIdAndUpdate(
-        user._id,
-        updateData,
-        {
-          new: true,
-          runValidators: true,
-        }
-      )
-      .select("-password");
+    const updatedUser =
+      await userModel
+        .findByIdAndUpdate(
+          user._id,
+          {
+            $set: updateData,
+          },
+          {
+            new: true,
+            runValidators: true,
+          }
+        )
+        .select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User update failed",
+      });
+    }
 
     // ===== RESPONSE =====
 
@@ -665,13 +724,14 @@ export async function updateUserProfile(req, res) {
 
       data: {
         id: updatedUser._id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        phone: updatedUser.phone,
+        name: updatedUser.name || "",
+        email: updatedUser.email || "",
+        phone: updatedUser.phone || "",
         dob: updatedUser.dob
           ? formatDob(updatedUser.dob)
           : null,
-        profileImage: updatedUser.profileImage || "",
+        profileImage:
+          updatedUser.profileImage || "",
       },
     });
 
@@ -681,21 +741,43 @@ export async function updateUserProfile(req, res) {
       try {
         await deleteFile(oldImageId);
       } catch (deleteError) {
-        console.error("Old image delete failed:", deleteError);
+        console.error(
+          "Old image delete failed:",
+          deleteError
+        );
       }
     }
 
   } catch (error) {
 
-    console.error("Update profile error:", error);
+    console.error(
+      "Update profile error:",
+      error
+    );
 
-    // Duplicate error
+    // ===== DUPLICATE KEY =====
+
     if (error.code === 11000) {
+
+      const duplicateField =
+        Object.keys(error.keyPattern || {})[0];
+
       return res.status(409).json({
         success: false,
-        message: "Email or phone already exists",
+        message: `${duplicateField} already exists`,
       });
     }
+
+    // ===== MONGOOSE VALIDATION =====
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    // ===== FALLBACK =====
 
     return res.status(500).json({
       success: false,

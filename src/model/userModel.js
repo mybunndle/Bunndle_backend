@@ -50,9 +50,18 @@ const userSchema = new mongoose.Schema(
     },
 
     /* ===== PROFILE ===== */
+    
     dob: {
       type: Date,
       default: null,
+
+      validate: {
+        validator: function (value) {
+          return value === null || value instanceof Date;
+        },
+
+        message: "Invalid date format",
+      },
     },
 
     profileImage: String,
