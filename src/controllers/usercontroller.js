@@ -430,94 +430,273 @@ export const appleLogin = async (req, res) => {
 
 
 
+// export async function getUserProfile(req, res) {
+//   try {
+//     const token = req.headers.authorization.split(" ")[1];
+//     const decoded = jwt.verify(token, config.jwtSecret);
+//     const user = await userModel.findById(decoded.id);
+//     res.status(200).json({
+//       message: "User profile fetched successfully",
+//       id: user._id,
+//       name: user.name,
+//       phone: user.phone || "",
+//       email: user.email,
+//       profileImage: user.profileImage || "",
+//       role: user.role,
+//       dob: formatDob(user.dob),
+//       kycStatus: user.kycStatus,
+//       kycDocument: user.kycDocument,
+//       kycDocumentId: user.kycDocumentId
+//     });
+//   } catch (error) {
+//     return res.status(500).json({ error: error.message });
+//   }
+// }
+
 export async function getUserProfile(req, res) {
   try {
-    const token = req.headers.authorization.split(" ")[1];
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
     const decoded = jwt.verify(token, config.jwtSecret);
+
     const user = await userModel.findById(decoded.id);
-    res.status(200).json({
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
       message: "User profile fetched successfully",
-      id: user._id,
-      name: user.name,
-      phone: user.phone || "",
-      email: user.email,
-      profileImage: user.profileImage || "",
-      role: user.role,
-      dob: formatDob(user.dob),
-      kycStatus: user.kycStatus,
-      kycDocument: user.kycDocument,
-      kycDocumentId: user.kycDocumentId
+
+      data: {
+        id: user._id,
+        name: user.name,
+        phone: user.phone || "",
+        email: user.email || "",
+        profileImage: user.profileImage || "",
+        role: user.role || "",
+        dob: user.dob ? formatDob(user.dob) : null,
+        kycStatus: user.kycStatus,
+        kycDocument: user.kycDocument || "",
+        kycDocumentId: user.kycDocumentId || "",
+      },
     });
+
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    console.error("Get profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 }
+// export async function updateUserProfile(req, res) {
+//   try {
+//     const user = req.user;
+    
+//     console.log(req.body);
+//     const { name, email, phone, dob } = req.body || {};
+
+//     if (!name && !email && !phone && !dob && !req.file) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "No fields provided to update-------------",
+//       });
+//     }
+
+//     // 🔎 Get existing user (for old imageId)
+//     const existingUser = await userModel.findById(user._id);
+
+//     const updateData = {};
+//     if (name) updateData.name = name;
+//     if (email) updateData.email = email;
+//     if (phone) updateData.phone = phone;
+//     if (dob) updateData.dob = new Date(dob);
+
+//     let oldImageId = existingUser?.profileImageId;
+
+//     // 🖼 Upload new image first
+//     if (req.file) {
+//       const uploadedImage = await uploadFile(req.file);
+//       updateData.profileImage = uploadedImage.url;
+//       updateData.profileImageId = uploadedImage.fileId;
+//     }
+
+//     const updatedUser = await userModel
+//       .findByIdAndUpdate(user._id, updateData, {
+//         new: true,
+//         runValidators: true,
+//       })
+//       .select("-password");
+
+//     // ✅ Respond SUCCESS immediately
+//     res.status(200).json({
+//       success: true,
+//       message: "Profile updated successfully",
+//       data: {
+//         name: updatedUser.name,
+//         email: updatedUser.email,
+//         phone: updatedUser.phone,
+//         dob: formatDob(updatedUser.dob),
+//         profileImage: updatedUser.profileImage,
+//       },
+//     });
+
+//     // 🧹 Delete old image AFTER response
+//     if (oldImageId && req.file) {
+//       deleteFile(oldImageId); // 🔥 async, non-blocking
+//     }
+//   } catch (error) {
+//     if (error.code === 11000) {
+//       return res.status(409).json({
+//         success: false,
+//         message: "Duplicate email or phone",
+//       });
+//     }
+
+//     console.error("Update profile error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// }
+
 
 export async function updateUserProfile(req, res) {
   try {
     const user = req.user;
-    
-    console.log(req.body);
+
     const { name, email, phone, dob } = req.body || {};
 
     if (!name && !email && !phone && !dob && !req.file) {
       return res.status(400).json({
         success: false,
-        message: "No fields provided to update-------------",
+        message: "No fields provided to update",
       });
     }
 
-    // 🔎 Get existing user (for old imageId)
+    // Existing user
     const existingUser = await userModel.findById(user._id);
 
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     const updateData = {};
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (phone) updateData.phone = phone;
-    if (dob) updateData.dob = new Date(dob);
 
-    let oldImageId = existingUser?.profileImageId;
+    // ===== TEXT FIELDS =====
 
-    // 🖼 Upload new image first
+    if (name && typeof name === "string") {
+      updateData.name = name.trim();
+    }
+
+    if (email && typeof email === "string") {
+      updateData.email = email.trim().toLowerCase();
+    }
+
+    if (phone && typeof phone === "string") {
+      updateData.phone = phone.trim();
+    }
+
+    // ===== SAFE DOB =====
+
+    if (
+      dob &&
+      typeof dob === "string" &&
+      !isNaN(Date.parse(dob))
+    ) {
+      updateData.dob = new Date(dob);
+    }
+
+    // ===== IMAGE =====
+
+    let oldImageId = existingUser.profileImageId;
+
     if (req.file) {
       const uploadedImage = await uploadFile(req.file);
+
+      if (!uploadedImage?.url || !uploadedImage?.fileId) {
+        return res.status(500).json({
+          success: false,
+          message: "Image upload failed",
+        });
+      }
+
       updateData.profileImage = uploadedImage.url;
       updateData.profileImageId = uploadedImage.fileId;
     }
 
+    // ===== UPDATE USER =====
+
     const updatedUser = await userModel
-      .findByIdAndUpdate(user._id, updateData, {
-        new: true,
-        runValidators: true,
-      })
+      .findByIdAndUpdate(
+        user._id,
+        updateData,
+        {
+          new: true,
+          runValidators: true,
+        }
+      )
       .select("-password");
 
-    // ✅ Respond SUCCESS immediately
+    // ===== RESPONSE =====
+
     res.status(200).json({
       success: true,
       message: "Profile updated successfully",
+
       data: {
+        id: updatedUser._id,
         name: updatedUser.name,
         email: updatedUser.email,
         phone: updatedUser.phone,
-        dob: formatDob(updatedUser.dob),
-        profileImage: updatedUser.profileImage,
+        dob: updatedUser.dob
+          ? formatDob(updatedUser.dob)
+          : null,
+        profileImage: updatedUser.profileImage || "",
       },
     });
 
-    // 🧹 Delete old image AFTER response
+    // ===== DELETE OLD IMAGE =====
+
     if (oldImageId && req.file) {
-      deleteFile(oldImageId); // 🔥 async, non-blocking
+      try {
+        await deleteFile(oldImageId);
+      } catch (deleteError) {
+        console.error("Old image delete failed:", deleteError);
+      }
     }
+
   } catch (error) {
+
+    console.error("Update profile error:", error);
+
+    // Duplicate error
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Duplicate email or phone",
+        message: "Email or phone already exists",
       });
     }
 
-    console.error("Update profile error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -526,9 +705,61 @@ export async function updateUserProfile(req, res) {
 }
 
 
-export async function uploadProfile(req, res) {
+// export async function uploadProfile(req, res) {
   
+//   try {
+//     const user = req.user;
+
+//     if (!req.file) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "No image file provided",
+//       });
+//     }
+    
+
+//     // 🔎 Get existing user (for old imageId)
+//     const existingUser = await userModel.findById(user._id);
+
+//     let oldImageId = existingUser?.profileImageId;
+
+//     // 🖼 Upload new image
+//     const uploadedImage = await uploadFile(req.file);
+
+//     // 💾 Update DB
+//     const updatedUser = await userModel.findByIdAndUpdate(
+//       user._id,
+//       {
+//         profileImage: uploadedImage.url,
+//         profileImageId: uploadedImage.fileId,
+//       },
+//       { new: true }
+//     );
+
+//     // ✅ Send response
+//     res.status(200).json({
+//       success: true,
+//       message: "Profile image updated successfully",
+//       profileImage: updatedUser.profileImage,
+//     });
+
+//     // 🧹 Delete old image (non-blocking)
+//     if (oldImageId) {
+//       deleteFile(oldImageId);
+//     }
+
+//   } catch (error) {
+//     console.error("Upload image error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//     });
+//   }
+// }
+
+export async function uploadProfile(req, res) {
   try {
+
     const user = req.user;
 
     if (!req.file) {
@@ -537,46 +768,72 @@ export async function uploadProfile(req, res) {
         message: "No image file provided",
       });
     }
-    
 
-    // 🔎 Get existing user (for old imageId)
+    // Existing user
     const existingUser = await userModel.findById(user._id);
 
-    let oldImageId = existingUser?.profileImageId;
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
 
-    // 🖼 Upload new image
+    const oldImageId = existingUser.profileImageId;
+
+    // Upload image
     const uploadedImage = await uploadFile(req.file);
 
-    // 💾 Update DB
+    if (!uploadedImage?.url || !uploadedImage?.fileId) {
+      return res.status(500).json({
+        success: false,
+        message: "Image upload failed",
+      });
+    }
+
+    // Update DB
     const updatedUser = await userModel.findByIdAndUpdate(
       user._id,
       {
         profileImage: uploadedImage.url,
         profileImageId: uploadedImage.fileId,
       },
-      { new: true }
+      {
+        new: true,
+        runValidators: true,
+      }
     );
 
-    // ✅ Send response
+    // Response
     res.status(200).json({
       success: true,
       message: "Profile image updated successfully",
-      profileImage: updatedUser.profileImage,
+
+      data: {
+        profileImage: updatedUser.profileImage,
+      },
     });
 
-    // 🧹 Delete old image (non-blocking)
+    // Delete old image async
     if (oldImageId) {
-      deleteFile(oldImageId);
+      try {
+        await deleteFile(oldImageId);
+      } catch (deleteError) {
+        console.error("Old image delete failed:", deleteError);
+      }
     }
 
   } catch (error) {
-    console.error("Upload image error:", error);
+
+    console.error("Upload profile error:", error);
+
     return res.status(500).json({
       success: false,
       message: "Internal server error",
     });
   }
 }
+
 
 /**
  * STEP 1️⃣ Forgot Password

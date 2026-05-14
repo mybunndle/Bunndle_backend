@@ -12,16 +12,16 @@ const userSchema = new mongoose.Schema(
       type: String,
       unique: true,
       sparse: true, // ⭐ allows multiple nulls
-      trim: true
+      trim: true,
     },
 
-  email: {
-  type: String,
-  unique: true,
-  sparse: true, // important for Google/Apple users without email (edge cases)
-  trim: true,
-  lowercase: true
-},
+    email: {
+      type: String,
+      unique: true,
+      sparse: true, // important for Google/Apple users without email (edge cases)
+      trim: true,
+      lowercase: true,
+    },
 
     password: {
       type: String,
@@ -34,14 +34,14 @@ const userSchema = new mongoose.Schema(
     /* ===== AUTH ===== */
     authProvider: {
       type: String,
-      enum: ["local", "google","apple"],
+      enum: ["local", "google", "apple"],
       default: "local",
     },
 
     googleId: {
       type: String,
       unique: true,
-      sparse: true
+      sparse: true,
     },
     appleId: {
       type: String,
@@ -50,26 +50,26 @@ const userSchema = new mongoose.Schema(
     },
 
     /* ===== PROFILE ===== */
-    dob: Date,
+    dob: {
+      type: Date,
+      default: null,
+    },
 
     profileImage: String,
     profileImageId: String,
 
     kycStatus: {
-        type: String,
-        enum: ["NOT_STARTED", "PENDING", "VERIFIED"],
-        default: "NOT_STARTED",
-     },
+      type: String,
+      enum: ["NOT_STARTED", "PENDING", "VERIFIED"],
+      default: "NOT_STARTED",
+    },
 
     isKycVerified: {
-        type: Boolean,
-        default: false,
-   },
+      type: Boolean,
+      default: false,
+    },
 
     kycVerifiedAt: Date,
-
-
-
 
     /* ===== RESET PASSWORD ===== */
     resetOtpHash: {
@@ -82,4 +82,4 @@ const userSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-export default mongoose.model("User", userSchema)
+export default mongoose.model("User", userSchema);
