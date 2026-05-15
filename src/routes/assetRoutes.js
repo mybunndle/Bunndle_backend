@@ -1,7 +1,7 @@
 import express from "express";
 import authMiddleware from "../middleware/auth_validate.js";
 import { uploadAssetImages }  from "../middleware/upload.js";
-import  {add_Asset, deleteAsset, getAssetById, getMyAssets}  from "../controllers/assetcontroller.js";
+import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory}  from "../controllers/assetcontroller.js";
 
 const router = express.Router();
 
@@ -21,6 +21,7 @@ router.get("/assets/:id", authMiddleware, getAssetById);
 // router.put("/update_asset/:id", authMiddleware, updateAsset);
 
 router.delete("/delete_asset/:id", authMiddleware, deleteAsset);
+router.get("/all_assets/explore/:category", getAssetsByCategory);
 
 
 

@@ -5,7 +5,7 @@ import { uploadAssetFile, deleteFile } from "../services/imageStorageService.js"
 // ✅ Create Asset (Upload + Save)
 export const add_Asset = async (req, res) => {
   try {
-    const { model, brand, category, purchaseYear } = req.body;
+    const { model, brand, category, purchaseYear, price } = req.body;
     
 
     // 🔴 Validation
@@ -34,6 +34,7 @@ export const add_Asset = async (req, res) => {
       model,
       brand,
       category,
+      price,
       purchaseYear,
       files: uploadedFiles
     });
@@ -140,3 +141,35 @@ export const deleteAsset = async (req, res) => {
     });
   }
 };
+
+
+
+
+
+export const getAssetsByCategory = async (req, res) => {
+  try {
+    const { category } = req.params;
+
+    // ✅ Find only approved assets
+    const assets = await Asset.find({
+      category,
+      isapproved: true
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: assets.length,
+      data: assets
+    });
+
+  } catch (error) {
+    console.error("Get Assets Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+
