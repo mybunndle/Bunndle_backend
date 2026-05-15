@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 const assetSchema = new mongoose.Schema({
-   userId: {
+  userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: true,
@@ -15,6 +15,10 @@ const assetSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  price:{
+    type: Number,
+    
+  },
   category: {
     type: String,
     required: true,
@@ -25,6 +29,10 @@ const assetSchema = new mongoose.Schema({
       required: true,
 
     },
+  isapproved:{
+    type: Boolean,
+    default: false
+  },
   files: [
   {
     url: {

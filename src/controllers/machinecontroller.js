@@ -295,4 +295,19 @@ export const getHeavyVehicles= async (req, res) => {
     });
   }
 };
-
+export const getOfficeEquipments= async (req, res) => {
+  try {
+    const vehicles = await VehicleModel.find({category: "office equipment"});
+    res.status(200).json({
+      success: true,
+      message: "Vehicles retrieved successfully",
+      count: vehicles.length,
+      vehicles,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
