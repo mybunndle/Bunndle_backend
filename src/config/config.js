@@ -10,8 +10,7 @@ const _config = {
   port: process.env.PORT || 3000,
   jwtSecret: process.env.JWT_SECRET || 'secret',
   MONGO_URI: process.env.MONGO_URI ,
-  email: process.env.EMAIL_USER ,
-  password: process.env.APP_PASSWORD,
+  
   reset_scrt:process.env.RESET_SECRET,
   IMAGEKIT_PUBLIC_KEY:process.env.IMAGEKIT_PUBLIC_KEY,
   IMAGEKIT_PRIVATE_KEY:process.env.IMAGEKIT_PRIVATE_KEY,
@@ -23,6 +22,14 @@ const _config = {
   jwt_expire:process.env.JWT_EXPIRE,
   IOS_CLIENT_ID:process.env.IOS_CLIENT_ID,
   ANDROID_RELEASE_CLIENT_ID:process.env.ANDROID_RELEASE_CLIENT_ID,
+  email: process.env.EMAIL_FROM,
+
+  smtpHost: process.env.SMTP_HOST,
+  smtpPort: process.env.SMTP_PORT,
+
+  smtpUser: process.env.SMTP_USER,
+  smtpPass: process.env.SMTP_PASS,
+
 
 };
 
