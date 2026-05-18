@@ -2,6 +2,7 @@
 import Asset from "../model/assetModel.js";
 import { uploadAssetFile, deleteFile } from "../services/imageStorageService.js";
 
+
 // ✅ Create Asset (Upload + Save)
 export const add_Asset = async (req, res) => {
   try {
@@ -142,10 +143,6 @@ export const deleteAsset = async (req, res) => {
   }
 };
 
-
-
-
-
 export const getAssetsByCategory = async (req, res) => {
   try {
     const { category } = req.params;
@@ -215,36 +212,6 @@ export const toggleEnquiryStatus = async (req, res) => {
   }
 };
 
-
-
-export const getAllEnquiredAssets = async (req, res) => {
-  try {
-
-    // ✅ Get all open enquiries
-    const assets = await Asset.find({
-      equiryStatus: "true"
-    })
-    .populate("userId", "name email phone")
-    .sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      success: true,
-      total: assets.length,
-      data: assets
-    });
-
-  } catch (error) {
-
-    console.log(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-
 export const getMyEnquiredAssets = async (req, res) => {
   try {
     // ✅ Logged-in user id
@@ -272,3 +239,32 @@ export const getMyEnquiredAssets = async (req, res) => {
     });
   }
 };
+
+
+export const getAllAssets = async (req, res) => {
+  try {
+
+    const assets = await Asset.find()
+      .populate("userId", "name email phone")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      total: assets.length,
+      data: assets,
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+};
+
+
+

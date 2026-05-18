@@ -1,7 +1,7 @@
 import express from "express";
 import authMiddleware from "../middleware/auth_validate.js";
 import { uploadAssetImages }  from "../middleware/upload.js";
-import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllEnquiredAssets, getMyEnquiredAssets }  from "../controllers/assetcontroller.js";
+import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllAssets, getMyEnquiredAssets }  from "../controllers/assetcontroller.js";
 
 const router = express.Router();
 
@@ -26,15 +26,14 @@ router.get("/all_assets/explore/:category", getAssetsByCategory);
 
 router.patch("/enquiry-status/:id", authMiddleware, toggleEnquiryStatus);
 
-//for user which has benn enquired
+//for user which has been enquired
 router.get("/user-enquiries", authMiddleware, getMyEnquiredAssets);
 
 //for admin to see all enquired assets
-router.get("/enquiries", authMiddleware, getAllEnquiredAssets);
+router.get("/all_list", authMiddleware, getAllAssets);
 
-
-
-
+//for admin approval of assets
+//router.patch("/approve-asset/:id", authMiddleware, approveAsset);
 
 
 
