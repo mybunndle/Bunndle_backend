@@ -173,3 +173,102 @@ export const getAssetsByCategory = async (req, res) => {
 };
 
 
+
+
+export const toggleEnquiryStatus = async (req, res) => {
+  try {
+
+    const { id } = req.params;
+
+    // ✅ Find asset
+    const asset = await Asset.findById(id);
+
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found"
+      });
+    }
+
+    // ✅ Toggle status
+    asset.equiryStatus =
+      asset.equiryStatus === "true"
+        ? "false"
+        : "true";
+
+    await asset.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Enquiry status toggled successfully",
+      data: asset
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+
+
+export const getAllEnquiredAssets = async (req, res) => {
+  try {
+
+    // ✅ Get all open enquiries
+    const assets = await Asset.find({
+      equiryStatus: "true"
+    })
+    .populate("userId", "name email phone")
+    .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      total: assets.length,
+      data: assets
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+
+export const getMyEnquiredAssets = async (req, res) => {
+  try {
+    // ✅ Logged-in user id
+    const userId = req.user.id;
+
+    // ✅ Find only user's enquired assets
+    const assets = await Asset.find({
+      userId,
+      equiryStatus: "true"
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      total: assets.length,
+      data: assets
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};

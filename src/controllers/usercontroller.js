@@ -67,7 +67,7 @@ export async function registerUser(req, res) {
 
     // 🎟️ Generate JWT
     const token = jwt.sign({ id: email }, config.jwtSecret, {
-      expiresIn: "1d",
+      expiresIn: "30d",
     });
 
     return res.status(201).json({
@@ -131,7 +131,7 @@ export async function loginUser(req, res) {
 
     // 4️⃣ Generate token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "24h",
+      expiresIn: "30d",
     });
 
     // 5️⃣ Send response
