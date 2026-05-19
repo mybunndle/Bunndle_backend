@@ -29,7 +29,12 @@ const _config = {
 
   smtpUser: process.env.SMTP_USER,
   smtpPass: process.env.SMTP_PASS,
-
+  
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  user: process.env.EMAIL_USER,
+  pass: process.env.EMAIL_PASS,
+  from: process.env.EMAIL_FROM
 
 };
 

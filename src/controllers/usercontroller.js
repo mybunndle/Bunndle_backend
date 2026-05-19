@@ -72,10 +72,11 @@ export async function registerUser(req, res) {
 
     return res.status(201).json({
       message: "User registered successfully",
-      name,
-      phone,
-      email,
       token,
+      name,
+      email,
+      phone,
+    
     });
   } catch (error) {
     // ✅ Handle Mongo duplicate key error safely
@@ -140,11 +141,11 @@ export async function loginUser(req, res) {
     // 5️⃣ Send response
     return res.status(200).json({
       success: true,
-      
+
       message: "Login successful",
-      name: user.name,
-      email: user.email,
       token,
+      user
+      
     });
   } catch (error) {
     console.error("Login error:", error);
