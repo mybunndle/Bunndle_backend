@@ -1302,6 +1302,7 @@ export const verifyLoginOtp = async (req, res) => {
     return res.status(200).json({
       message: "Login successful",
       token,
+      user,
     });
   } catch (error) {
     console.error(error);
