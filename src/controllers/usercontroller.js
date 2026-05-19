@@ -140,6 +140,7 @@ export async function loginUser(req, res) {
     // 5️⃣ Send response
     return res.status(200).json({
       success: true,
+      
       message: "Login successful",
       name: user.name,
       email: user.email,
