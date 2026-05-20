@@ -24,8 +24,8 @@ const formatDob = (dob) => {
 
   const date = new Date(dob);
 
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
 
   return `${day}-${month}-${year}`;
@@ -76,7 +76,6 @@ export async function registerUser(req, res) {
       name,
       email,
       phone,
-    
     });
   } catch (error) {
     // ✅ Handle Mongo duplicate key error safely
@@ -96,8 +95,7 @@ export async function registerUser(req, res) {
 export async function loginUser(req, res) {
   try {
     const { email, password } = req.body;
-  
-  
+
     // 1️⃣ Validate input
     if (!email || !password) {
       return res.status(400).json({
@@ -106,12 +104,11 @@ export async function loginUser(req, res) {
       });
     }
 
-    
     const user = await userModel.findOne({ email }).select("+password");
-     if (!user.password) {
+    if (!user.password) {
       return res.status(400).json({
         message: "Password not set. Please create your password first .",
-        action: "SET_PASSWORD", 
+        action: "SET_PASSWORD",
       });
     }
 
@@ -144,8 +141,7 @@ export async function loginUser(req, res) {
 
       message: "Login successful",
       token,
-      user
-      
+      user,
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -156,7 +152,7 @@ export async function loginUser(req, res) {
   }
 }
 export async function logoutUser(req, res) {
-   try {
+  try {
     const token = req.headers.authorization?.split(" ")[1];
 
     if (!token) {
@@ -178,10 +174,7 @@ export async function logoutUser(req, res) {
       message: "Logout failed",
     });
   }
-
 }
-
-
 
 // export async function googleAuthCallback(req, res) {
 //   try {
@@ -234,7 +227,7 @@ export async function logoutUser(req, res) {
 //     });
 
 //     // 6️⃣ Redirect by role
-    
+
 //     return res.status(200).json({
 //       success: true,
 //       message: "Login successful",
@@ -250,7 +243,6 @@ export async function logoutUser(req, res) {
 //   }
 // }
 
-
 export async function googleAuthCallback(req, res) {
   try {
     let googleId, email, name, picture;
@@ -259,21 +251,21 @@ export async function googleAuthCallback(req, res) {
     if (req.user) {
       googleId = req.user.id;
       email = req.user.emails?.[0]?.value;
-      name = `${req.user.name?.givenName || ""} ${req.user.name?.familyName || ""}`.trim();
+      name =
+        `${req.user.name?.givenName || ""} ${req.user.name?.familyName || ""}`.trim();
       picture = req.user.photos?.[0]?.value;
-    }
+    } else if (req.body?.idToken) {
 
     /* ===== ANDROID (ID TOKEN) ===== */
-    else if (req.body?.idToken) {
       const payload = await verifyGoogleIdToken(req.body.idToken);
       googleId = payload.sub;
       email = payload.email;
       name = payload.name;
       picture = payload.picture;
-    }
-
-    else {
-      return res.status(400).json({ success: false, message: "Invalid request" });
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid request" });
     }
 
     let user = await userModel.findOne({
@@ -299,7 +291,7 @@ export async function googleAuthCallback(req, res) {
     const token = jwt.sign(
       { id: user._id, role: user.role, email: user.email },
       config.jwtSecret,
-      { expiresIn: "2d" }
+      { expiresIn: "2d" },
     );
 
     if (req.user) {
@@ -316,7 +308,6 @@ export async function googleAuthCallback(req, res) {
       token,
       user,
     });
-    
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Google auth failed" });
@@ -410,7 +401,7 @@ export const appleLogin = async (req, res) => {
         email: user.email || null,
       },
       config.jwtSecret,
-      { expiresIn: "2d" }
+      { expiresIn: "2d" },
     );
 
     return res.status(200).json({
@@ -428,14 +419,6 @@ export const appleLogin = async (req, res) => {
     });
   }
 };
-
-
-
-
-
-
-
-
 
 // export async function getUserProfile(req, res) {
 //   try {
@@ -501,7 +484,6 @@ export async function getUserProfile(req, res) {
         kycDocumentId: user.kycDocumentId || "",
       },
     });
-
   } catch (error) {
     console.error("Get profile error:", error);
 
@@ -514,7 +496,7 @@ export async function getUserProfile(req, res) {
 // export async function updateUserProfile(req, res) {
 //   try {
 //     const user = req.user;
-    
+
 //     console.log(req.body);
 //     const { name, email, phone, dob } = req.body || {};
 
@@ -583,10 +565,8 @@ export async function getUserProfile(req, res) {
 //   }
 // }
 
-
 export async function updateUserProfile(req, res) {
   try {
-
     // ===== AUTH USER =====
 
     const user = req.user;
@@ -600,22 +580,11 @@ export async function updateUserProfile(req, res) {
 
     // ===== REQUEST BODY =====
 
-    const {
-      name,
-      email,
-      phone,
-      dob,
-    } = req.body || {};
+    const { name, email, phone, dob } = req.body || {};
 
     // ===== VALIDATION =====
 
-    if (
-      !name &&
-      !email &&
-      !phone &&
-      !dob &&
-      !req.file
-    ) {
+    if (!name && !email && !phone && !dob && !req.file) {
       return res.status(400).json({
         success: false,
         message: "No fields provided to update",
@@ -624,8 +593,7 @@ export async function updateUserProfile(req, res) {
 
     // ===== FIND EXISTING USER =====
 
-    const existingUser =
-      await userModel.findById(user._id);
+    const existingUser = await userModel.findById(user._id);
 
     if (!existingUser) {
       return res.status(404).json({
@@ -640,30 +608,20 @@ export async function updateUserProfile(req, res) {
 
     // ===== NAME =====
 
-    if (
-      typeof name === "string" &&
-      name.trim()
-    ) {
+    if (typeof name === "string" && name.trim()) {
       updateData.name = name.trim();
     }
 
     // ===== EMAIL =====
 
-    if (
-      typeof email === "string" &&
-      email.trim()
-    ) {
-
-      const cleanEmail = email
-        .trim()
-        .toLowerCase();
+    if (typeof email === "string" && email.trim()) {
+      const cleanEmail = email.trim().toLowerCase();
 
       // duplicate email check
-      const emailExists =
-        await userModel.findOne({
-          email: cleanEmail,
-          _id: { $ne: user._id },
-        });
+      const emailExists = await userModel.findOne({
+        email: cleanEmail,
+        _id: { $ne: user._id },
+      });
 
       if (emailExists) {
         return res.status(409).json({
@@ -677,19 +635,14 @@ export async function updateUserProfile(req, res) {
 
     // ===== PHONE =====
 
-    if (
-      typeof phone === "string" &&
-      phone.trim()
-    ) {
-
+    if (typeof phone === "string" && phone.trim()) {
       const cleanPhone = phone.trim();
 
       // duplicate phone check
-      const phoneExists =
-        await userModel.findOne({
-          phone: cleanPhone,
-          _id: { $ne: user._id },
-        });
+      const phoneExists = await userModel.findOne({
+        phone: cleanPhone,
+        _id: { $ne: user._id },
+      });
 
       if (phoneExists) {
         return res.status(409).json({
@@ -703,79 +656,59 @@ export async function updateUserProfile(req, res) {
 
     // ===== SAFE DOB =====
 
-    if (
-      typeof dob === "string" &&
-      dob.trim()
-    ) {
-
-      const parsedDob =
-        new Date(dob);
+    if (typeof dob === "string" && dob.trim()) {
+      const parsedDob = new Date(dob);
 
       // prevent invalid date crash
-      if (
-        !isNaN(parsedDob.getTime())
-      ) {
+      if (!isNaN(parsedDob.getTime())) {
         updateData.dob = parsedDob;
       }
     }
 
     // ===== IMAGE UPLOAD =====
 
-    const oldImageId =
-      existingUser.profileImageId || null;
+    const oldImageId = existingUser.profileImageId || null;
 
     if (req.file) {
+      const uploadedImage = await uploadFile(req.file);
 
-      const uploadedImage =
-        await uploadFile(req.file);
-
-      if (
-        !uploadedImage ||
-        !uploadedImage.url ||
-        !uploadedImage.fileId
-      ) {
+      if (!uploadedImage || !uploadedImage.url || !uploadedImage.fileId) {
         return res.status(500).json({
           success: false,
           message: "Image upload failed",
         });
       }
 
-      updateData.profileImage =
-        uploadedImage.url;
+      updateData.profileImage = uploadedImage.url;
 
-      updateData.profileImageId =
-        uploadedImage.fileId;
+      updateData.profileImageId = uploadedImage.fileId;
     }
 
     // ===== PREVENT EMPTY UPDATE =====
 
-    if (
-      Object.keys(updateData).length === 0
-    ) {
+    if (Object.keys(updateData).length === 0) {
       return res.status(400).json({
         success: false,
-        message:
-          "No valid fields to update",
+        message: "No valid fields to update",
       });
     }
 
     // ===== UPDATE USER =====
 
-    const updatedUser =
-      await userModel
-        .findByIdAndUpdate(
-          user._id,
+    const updatedUser = await userModel
+      .findByIdAndUpdate(
+        user._id,
 
-          {
-            $set: updateData,
-          },
+        {
+          $set: updateData,
+        },
 
-          {
-            new: true,
-            runValidators: true,
-          }
-        )
-        .select("-password");
+        {
+          new: true,
+          runValidators: true,
+        },
+      )
+      .select("-password");
 
     if (!updatedUser) {
       return res.status(500).json({
@@ -788,29 +721,19 @@ export async function updateUserProfile(req, res) {
 
     res.status(200).json({
       success: true,
-      message:
-        "Profile updated successfully",
+      message: "Profile updated successfully",
 
       data: {
         id: updatedUser._id,
-        name:
-          updatedUser.name || "",
+        name: updatedUser.name || "",
 
-        email:
-          updatedUser.email || "",
+        email: updatedUser.email || "",
 
-        phone:
-          updatedUser.phone || "",
+        phone: updatedUser.phone || "",
 
-        dob: updatedUser.dob
-          ? formatDob(
-              updatedUser.dob
-            )
-          : null,
+        dob: updatedUser.dob ? formatDob(updatedUser.dob) : null,
 
-        profileImage:
-          updatedUser.profileImage ||
-          "",
+        profileImage: updatedUser.profileImage || "",
       },
     });
 
@@ -818,49 +741,28 @@ export async function updateUserProfile(req, res) {
 
     if (oldImageId && req.file) {
       try {
-
-        await deleteFile(
-          oldImageId
-        );
-
+        await deleteFile(oldImageId);
       } catch (deleteError) {
-
-        console.error(
-          "Old image delete failed:",
-          deleteError
-        );
+        console.error("Old image delete failed:", deleteError);
       }
     }
-
   } catch (error) {
-
-    console.error(
-      "Update profile error:",
-      error
-    );
+    console.error("Update profile error:", error);
 
     // ===== DUPLICATE KEY =====
 
     if (error.code === 11000) {
-
-      const duplicateField =
-        Object.keys(
-          error.keyPattern || {}
-        )[0];
+      const duplicateField = Object.keys(error.keyPattern || {})[0];
 
       return res.status(409).json({
         success: false,
-        message:
-          `${duplicateField} already exists`,
+        message: `${duplicateField} already exists`,
       });
     }
 
     // ===== VALIDATION ERROR =====
 
-    if (
-      error.name ===
-      "ValidationError"
-    ) {
+    if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
         message: error.message,
@@ -869,9 +771,7 @@ export async function updateUserProfile(req, res) {
 
     // ===== INVALID OBJECT ID =====
 
-    if (
-      error.name === "CastError"
-    ) {
+    if (error.name === "CastError") {
       return res.status(400).json({
         success: false,
         message: "Invalid data",
@@ -882,15 +782,13 @@ export async function updateUserProfile(req, res) {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Internal server error",
+      message: "Internal server error",
     });
   }
 }
 
-
 // export async function uploadProfile(req, res) {
-  
+
 //   try {
 //     const user = req.user;
 
@@ -900,7 +798,6 @@ export async function updateUserProfile(req, res) {
 //         message: "No image file provided",
 //       });
 //     }
-    
 
 //     // 🔎 Get existing user (for old imageId)
 //     const existingUser = await userModel.findById(user._id);
@@ -943,7 +840,6 @@ export async function updateUserProfile(req, res) {
 
 export async function uploadProfile(req, res) {
   try {
-
     const user = req.user;
 
     if (!req.file) {
@@ -985,7 +881,7 @@ export async function uploadProfile(req, res) {
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     // Response
@@ -1006,9 +902,7 @@ export async function uploadProfile(req, res) {
         console.error("Old image delete failed:", deleteError);
       }
     }
-
   } catch (error) {
-
     console.error("Upload profile error:", error);
 
     return res.status(500).json({
@@ -1017,7 +911,6 @@ export async function uploadProfile(req, res) {
     });
   }
 }
-
 
 /**
  * STEP 1️⃣ Forgot Password
@@ -1056,7 +949,7 @@ export const forgotPassword = async (req, res) => {
         type: "password_reset",
       },
       config.reset_scrt,
-      { expiresIn: "10m" }
+      { expiresIn: "10m" },
     );
 
     // 6️⃣ Send OTP email
@@ -1076,9 +969,6 @@ export const forgotPassword = async (req, res) => {
     });
   }
 };
-
-
-
 
 export const verifyOtp = async (req, res) => {
   try {
@@ -1131,7 +1021,7 @@ export const verifyOtp = async (req, res) => {
         type: "password_reset_verified",
       },
       config.reset_scrt,
-      { expiresIn: "10m" }
+      { expiresIn: "10m" },
     );
 
     return res.status(200).json({
@@ -1190,21 +1080,20 @@ export const quickConnect = async (req, res) => {
     await sendEmail(
       config.from,
       "New Quick Connect Request",
-      adminEmailTemplate({ name,email, message })
+      adminEmailTemplate({ name, email, message }),
     );
 
     // 📧 Send confirmation to user
-    await sendEmail(
-      email,
-      "Thank you for choosing us",
-      userThankYouTemplate({ name })
-    );
+    await sendEmail({
+      to: email,
+      subject: "Quick Connect",
+      html: html,
+    });
 
     res.status(200).json({
       message: "Request submitted successfully. We will contact you soon.",
       name,
       email,
-    
     });
     console.log("Quick connect request:", { name, email, message });
   } catch (error) {
@@ -1323,14 +1212,11 @@ export const sendOTP = async (req, res) => {
       });
     }
 
-    const response = await axios.post(
-      `https://control.msg91.com/api/v5/otp`,
-      {
-        mobile: `91${mobile}`,
-        template_id: process.env.MSG91_TEMPLATE_ID,
-        authkey: process.env.MSG91_AUTH_KEY,
-      }
-    );
+    const response = await axios.post(`https://control.msg91.com/api/v5/otp`, {
+      mobile: `91${mobile}`,
+      template_id: process.env.MSG91_TEMPLATE_ID,
+      authkey: process.env.MSG91_AUTH_KEY,
+    });
 
     return res.status(200).json({
       success: true,
@@ -1365,7 +1251,7 @@ export const verifyOTP = async (req, res) => {
           otp,
           authkey: process.env.MSG91_AUTH_KEY,
         },
-      }
+      },
     );
 
     if (response.data.type === "success") {
