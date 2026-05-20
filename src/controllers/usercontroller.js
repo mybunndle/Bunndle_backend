@@ -1087,7 +1087,7 @@ export const quickConnect = async (req, res) => {
     await sendEmail({
       to: email,
       subject: "Quick Connect",
-      html: html,
+      html: userEmailTemplate({ name, email, message }),
     });
 
     res.status(200).json({
