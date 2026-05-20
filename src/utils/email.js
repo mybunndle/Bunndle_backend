@@ -3,58 +3,67 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// ✅ Create transporter
 const transporter = nodemailer.createTransport({
 
-   host: process.env.EMAIL_HOST,
+  host: process.env.EMAIL_HOST,
 
-   port: process.env.EMAIL_PORT,
+  port: Number(process.env.EMAIL_PORT),
 
-   secure: false,
+  secure: false,
 
-   auth: {
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
 
-      user: process.env.EMAIL_USER,
-
-      pass: process.env.EMAIL_PASS,
-
-   },
+  tls: {
+    rejectUnauthorized: false,
+  },
 
 });
 
-// ✅ Send Email Function
+transporter.verify((error, success) => {
+
+  if (error) {
+
+    console.log("❌ SMTP VERIFY ERROR:", error);
+
+  } else {
+
+    console.log("✅ BREVO SMTP READY");
+  }
+});
+
 const sendEmail = async ({
-   to,
-   subject,
-   html
+  to,
+  subject,
+  html,
 }) => {
 
-   try {
+  try {
 
-      const info = await transporter.sendMail({
+    const info = await transporter.sendMail({
 
-         from: `Bunndle <${process.env.EMAIL_FROM}>`,
+      from: `Bunndle <${process.env.EMAIL_FROM}>`,
 
-         to,
+      to,
 
-         subject,
+      subject,
 
-         html,
+      html,
 
-      });
+    });
 
-      console.log("✅ EMAIL SENT:", info.messageId);
+    console.log("✅ EMAIL SENT:", info.messageId);
 
-      return true;
+    return true;
 
-   } catch(error){
+  } catch (error) {
 
-      console.log("❌ EMAIL ERROR:", error);
+    console.log("❌ EMAIL ERROR:", error);
 
-      return false;
-
-   }
-
+    return false;
+  }
 };
 
 export default sendEmail;
