@@ -10,6 +10,7 @@ import resetCookieOptions from "../config/cookieOptions.js";
 import otpTemplate from "../utils/otpTemplate.js";
 import sendEmail from "../utils/email.js";
 import adminEmailTemplate from "../utils/adminEmailTemplate.js";
+import { userEmailTemplate } from "../utils/userEmailTemplate.js";
 import userThankYouTemplate from "../utils/userThankYou.js";
 
 import { uploadFile, deleteFile } from "../services/imageStorageService.js";
@@ -1069,35 +1070,71 @@ export const resetPassword = async (req, res) => {
   }
 };
 export const quickConnect = async (req, res) => {
+
   try {
+
     const { name, email, message } = req.body;
 
     if (!name || !email || !message) {
-      return res.status(400).json({ message: "All fields are required" });
+
+      return res.status(400).json({
+        message: "All fields are required"
+      });
     }
 
     // 📩 Send email to admin
-    await sendEmail(
-      config.from,
-      "New Quick Connect Request",
-      adminEmailTemplate({ name, email, message }),
-    );
+    await sendEmail({
+
+      to: config.from,
+
+      subject: "New Quick Connect Request",
+
+      html: adminEmailTemplate({
+        name,
+        email,
+        message,
+      }),
+
+    });
 
     // 📧 Send confirmation to user
     await sendEmail({
+
       to: email,
+
       subject: "Quick Connect",
-      html: userEmailTemplate({ name, email, message }),
+
+      html: userEmailTemplate({
+        name,
+        email,
+        message,
+      }),
+
+    });
+
+    console.log("Quick connect request:", {
+      name,
+      email,
+      message,
     });
 
     res.status(200).json({
-      message: "Request submitted successfully. We will contact you soon.",
+
+      message:
+        "Request submitted successfully. We will contact you soon.",
+
       name,
       email,
+
     });
-    console.log("Quick connect request:", { name, email, message });
+
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+
+    console.log(error);
+
+    res.status(500).json({
+      message: "Internal server error"
+    });
   }
 };
 
