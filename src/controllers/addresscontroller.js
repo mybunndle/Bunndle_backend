@@ -341,13 +341,14 @@ export const createAddressFromPincode = async (req,res)=>{
 
         userId,
 
-        name: postOffice.Name,
+        name: "Your Name",
 
         state: postOffice.State,
 
-        district: postOffice.District,
+        city: postOffice.District,
 
         pinCode: postOffice.Pincode,
+
 
         addressType: "Other",
 
