@@ -1188,7 +1188,7 @@ export const quickConnect = async (req, res) => {
 
     // 📩 Send email to admin
     await sendEmail(
-      config.EMAIL_FROM,
+      config.from,
       "New Quick Connect Request",
       adminEmailTemplate({ name,email, message })
     );
