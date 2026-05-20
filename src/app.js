@@ -14,6 +14,11 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth2';
 import config from "./config/config.js"
 
 
+app.use(
+   "/api/payment/webhook",
+   express.raw({ type: "*/*" })
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());

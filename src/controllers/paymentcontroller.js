@@ -179,57 +179,58 @@ export const verifyPayment = async (req,res)=>{
 };
 
 
-export const razorpayWebhook = async (req,res)=>{
 
-   try{
+export const razorpayWebhook = async (req, res) => {
+
+   try {
 
       const secret =
          process.env.RAZORPAY_WEBHOOK_SECRET;
 
-      const shasum = crypto.createHmac(
+      const generatedSignature = crypto
+         .createHmac("sha256", secret)
+         .update(req.body)
+         .digest("hex");
 
-         "sha256",
+      const receivedSignature =
+         req.headers["x-razorpay-signature"];
 
-         secret
-
-      );
-
-      shasum.update(JSON.stringify(req.body));
-
-      const digest = shasum.digest("hex");
-
-      // Verify webhook
-      if(digest !== req.headers["x-razorpay-signature"]){
+      // VERIFY SIGNATURE
+      if (generatedSignature !== receivedSignature) {
 
          return res.status(400).json({
-
-            success:false
-
+            success: false,
+            message: "Invalid webhook signature"
          });
 
       }
 
-      const event = req.body.event;
+      // CONVERT BUFFER TO JSON
+      const eventData =
+         JSON.parse(req.body.toString());
 
-      // Payment success webhook
-      if(event === "payment.captured"){
+      const event = eventData.event;
+
+      console.log("Webhook Event:", event);
+
+      // PAYMENT SUCCESS
+      if (event === "payment.captured") {
 
          const paymentEntity =
-            req.body.payload.payment.entity;
+            eventData.payload.payment.entity;
+
+         console.log(paymentEntity);
 
          await Payment.findOneAndUpdate(
 
             {
-
                razorpayPaymentId:
                   paymentEntity.id
-
             },
 
             {
-
-               webhookVerified:true
-
+               webhookVerified: true,
+               status: "SUCCESS"
             }
 
          );
@@ -237,19 +238,15 @@ export const razorpayWebhook = async (req,res)=>{
       }
 
       return res.status(200).json({
-
-         success:true
-
+         success: true
       });
 
-   }catch(error){
+   } catch (error) {
 
       console.log(error);
 
       return res.status(500).json({
-
-         success:false
-
+         success: false
       });
 
    }

@@ -10,7 +10,7 @@ import resetCookieOptions from "../config/cookieOptions.js";
 import otpTemplate from "../utils/otpTemplate.js";
 import sendEmail from "../utils/email.js";
 import adminEmailTemplate from "../utils/adminEmailTemplate.js";
-import { userEmailTemplate } from "../utils/userEmailTemplate.js";
+import userEmailTemplate  from "../utils/userEmailTemplate.js";
 import userThankYouTemplate from "../utils/userThankYou.js";
 
 import { uploadFile, deleteFile } from "../services/imageStorageService.js";

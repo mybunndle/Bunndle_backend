@@ -1,4 +1,4 @@
-export const userEmailTemplate = ({
+const userEmailTemplate = ({
   name,
   email,
   message,
@@ -93,3 +93,5 @@ export const userEmailTemplate = ({
 
   `;
 };
+
+export default userEmailTemplate;
