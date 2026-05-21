@@ -1,7 +1,7 @@
 import express from "express";
 import authMiddleware from "../middleware/auth_validate.js";
 import { uploadAssetImages }  from "../middleware/upload.js";
-import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllAssets, getMyEnquiredAssets,getAssetsByCategoryAndSubCategory }  from "../controllers/assetcontroller.js";
+import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllAssetsForAdmin, getMyEnquiredAssets,getAssetsByCategoryAndSubCategory ,updateAssetApprovalStatus}  from "../controllers/assetcontroller.js";
 
 const router = express.Router();
 
@@ -32,12 +32,12 @@ router.patch("/enquiry-status/:id", authMiddleware, toggleEnquiryStatus);
 router.get("/user-enquiries", authMiddleware, getMyEnquiredAssets);
 
 //for admin to see all enquired assets
-router.get("/all_list", authMiddleware, getAllAssets);
+router.get("/all_list", authMiddleware, getAllAssetsForAdmin);
 
 //for admin approval of assets
-//router.patch("/approve-asset/:id", authMiddleware, approveAsset);
 
 
+router.put("/approve-asset/:id", authMiddleware, updateAssetApprovalStatus);
 
 
 

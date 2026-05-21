@@ -223,7 +223,7 @@ export const getAssetsByCategory = async (req, res) => {
     // ✅ Find only approved assets
     const assets = await Asset.find({
       category,
-      isapproved: true
+      isapproved: approved
     }).sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -254,7 +254,7 @@ export const getAssetsByCategoryAndSubCategory = async (req, res) => {
       subCategory: {
         $regex: new RegExp(subCategory, "i"),
       },
-      isapproved: true,
+      isapproved: approved,
     }).sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -345,30 +345,86 @@ export const getMyEnquiredAssets = async (req, res) => {
 };
 
 
-export const getAllAssets = async (req, res) => {
-  try {
 
-    const assets = await Asset.find()
-      .populate("userId", "name email phone")
+
+export const getAllAssetsForAdmin = async (req, res) => {
+  try {
+    const { status } = req.query;
+
+    // ✅ Build filter object
+    const filter = {};
+
+    // Optional status filter
+    if (status) {
+      filter.isapproved = status;
+    }
+
+    // ✅ Latest assets first
+    const assets = await Asset.find(filter)
+      .populate("userId", "name email")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
-      total: assets.length,
+      count: assets.length,
       data: assets,
     });
 
   } catch (error) {
-
-    console.log(error);
+    console.error("Get Admin Assets Error:", error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
 
 
+export const updateAssetApprovalStatus = async (req, res) => {
+  try {
+    const { assetId } = req.params;
+    const { status } = req.body;
 
+    // ✅ Valid statuses
+    const validStatuses = ["approved", "rejected", "pending"];
+
+    // ✅ Validation
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid status. Use approved, rejected, or pending",
+      });
+    }
+
+    // ✅ Find asset
+    const asset = await Asset.findById(assetId);
+
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found",
+      });
+    }
+
+    // ✅ Update status
+    asset.isapproved = status;
+
+    await asset.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Asset ${status} successfully`,
+      data: asset,
+    });
+
+  } catch (error) {
+    console.error("Update Asset Status Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
