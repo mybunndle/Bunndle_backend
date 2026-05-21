@@ -241,6 +241,34 @@ export const getAssetsByCategory = async (req, res) => {
   }
 };
 
+export const getAssetsBySubCategory = async (req, res) => {
+  try {
+    const { subCategory } = req.params;
+
+    const assets = await Asset.find({
+      subCategory: {
+        $regex: new RegExp(subCategory, "i"),
+
+      },
+       isapproved:true,
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: assets.length,
+      data: assets,
+    });
+
+  } catch (error) {
+    console.error("Get Assets By SubCategory Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 
 
 
