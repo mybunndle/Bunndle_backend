@@ -349,7 +349,6 @@ export const createAddressFromPincode = async (req,res)=>{
 
         pinCode: postOffice.Pincode,
 
-
         addressType: "Other",
 
         customType: "Pincode",

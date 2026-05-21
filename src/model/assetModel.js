@@ -15,14 +15,25 @@ const assetSchema = new mongoose.Schema(
     brand: {
       type: String,
       trim: true,
+      required: true,
     },
     price: {
       type: Number,
-    },
 
+    },
+    assetName:{
+      //can be null
+      type: String,
+      trim: true
+    },
     category: {
       type: String,
       required: true,
+      trim: true,
+      
+    },
+    subCategory:{
+      type: String,
       trim: true,
     },
     purchaseYear: {

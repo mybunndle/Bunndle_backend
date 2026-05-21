@@ -4,52 +4,124 @@ import { uploadAssetFile, deleteFile } from "../services/imageStorageService.js"
 
 
 // ✅ Create Asset (Upload + Save)
-export const add_Asset = async (req, res) => {
-  try {
-    const { model, brand, category, purchaseYear, price } = req.body;
+// export const add_Asset = async (req, res) => {
+//   try {
+//     const { model, brand, category, purchaseYear, price } = req.body;
     
 
-    // 🔴 Validation
+//     // 🔴 Validation
+//     if (!model || !category || !purchaseYear) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Model, Category, and Purchase Year are required"
+//       });
+//     }
+
+//     if (!req.files || req.files.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "At least 1 file is required"
+//       });
+//     }
+
+//     // ⚡ Upload all files in parallel
+//     const uploadedFiles = await Promise.all(
+//       req.files.map(file => uploadAssetFile(file))
+//     );
+
+//     // ✅ Save in DB
+//     const asset = await Asset.create({
+//       userId: req.user.id,   // from auth middleware
+//       model,
+//       brand,
+//       category,
+//       price,
+//       purchaseYear,
+//       files: uploadedFiles
+//     });
+//     return res.status(201).json({
+//       success: true,
+//       message: "Asset created successfully",
+//       data: asset
+//     });
+
+//   } catch (error) {
+//     console.error("Create Asset Error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message
+//     });
+//   }
+// };
+
+
+export const add_Asset = async (req, res) => {
+  try {
+    const {
+      model,
+      brand,
+      category,
+      subCategory,
+      assetName,
+      purchaseYear,
+      price,
+    } = req.body;
+
+    // 🔴 Required field validation
     if (!model || !category || !purchaseYear) {
       return res.status(400).json({
         success: false,
-        message: "Model, Category, and Purchase Year are required"
+        message: "Model, Category, and Purchase Year are required",
       });
     }
 
+    // 🔴 File validation
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "At least 1 file is required"
+        message: "At least 1 file is required",
       });
     }
 
     // ⚡ Upload all files in parallel
     const uploadedFiles = await Promise.all(
-      req.files.map(file => uploadAssetFile(file))
+      req.files.map((file) => uploadAssetFile(file))
     );
 
-    // ✅ Save in DB
-    const asset = await Asset.create({
-      userId: req.user.id,   // from auth middleware
+    // ✅ Create asset object
+    const assetData = {
+      userId: req.user.id,
       model,
       brand,
       category,
-      price,
       purchaseYear,
-      files: uploadedFiles
-    });
+      price,
+      files: uploadedFiles,
+    };
+
+    // ✅ Add optional fields only if provided
+    if (assetName) {
+      assetData.assetName = assetName;
+    }
+
+    if (subCategory) {
+      assetData.subCategory = subCategory;
+    }
+
+    // ✅ Save in DB
+    const asset = await Asset.create(assetData);
+
     return res.status(201).json({
       success: true,
       message: "Asset created successfully",
-      data: asset
+      data: asset,
     });
-
   } catch (error) {
     console.error("Create Asset Error:", error);
+
     return res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
