@@ -1,6 +1,7 @@
 // controllers/asset.controller.js
 import Asset from "../model/assetModel.js";
 import { uploadAssetFile, deleteFile } from "../services/imageStorageService.js";
+import mongoose from "mongoose";
 
 
 // ✅ Create Asset (Upload + Save)
@@ -381,20 +382,34 @@ export const getAllAssetsForAdmin = async (req, res) => {
 };
 
 
+
+
+
 export const updateAssetApprovalStatus = async (req, res) => {
   try {
-    const { assetId } = req.params;
+    const { id: assetId } = req.params;
     const { status } = req.body;
 
-    // ✅ Valid statuses
-    const validStatuses = ["approved", "rejected", "pending"];
+    // ✅ Validate Mongo ID
+    if (!mongoose.isValidObjectId(assetId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Asset ID",
+      });
+    }
 
-    // ✅ Validation
-    if (!status || !validStatuses.includes(status)) {
+    // ✅ Allowed statuses
+    const validStatuses = [
+      "approved",
+      "rejected",
+      "pending",
+    ];
+
+    if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
         message:
-          "Invalid status. Use approved, rejected, or pending",
+          "Status must be approved, rejected or pending",
       });
     }
 
@@ -408,7 +423,7 @@ export const updateAssetApprovalStatus = async (req, res) => {
       });
     }
 
-    // ✅ Update status
+    // ✅ Update
     asset.isapproved = status;
 
     await asset.save();
@@ -428,3 +443,64 @@ export const updateAssetApprovalStatus = async (req, res) => {
     });
   }
 };
+
+
+
+// export const updateAssetApprovalStatus = async (req, res) => {
+//   try {
+//     const { assetId } = req.params;
+//     const { status } = req.body;
+
+//     // ✅ Validate ObjectId
+//     if (!mongoose.Types.ObjectId.isValid(assetId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid Asset ID",
+//       });
+//     }
+
+//     // ✅ Allowed statuses
+//     const validStatuses = [
+//       "approved",
+//       "rejected",
+//       "pending",
+//     ];
+
+//     if (!validStatuses.includes(status)) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "Status must be approved, rejected or pending",
+//       });
+//     }
+
+//     // ✅ Find asset
+//     const asset = await Asset.findById(assetId);
+
+//     if (!asset) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Asset not found",
+//       });
+//     }
+
+//     // ✅ Update status
+//     asset.isapproved = status;
+
+//     await asset.save();
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `Asset ${status} successfully`,
+//       data: asset,
+//     });
+
+//   } catch (error) {
+//     console.error("Update Status Error:", error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
