@@ -135,6 +135,7 @@ export const getMyAssets = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      count: assets.length,
       data: assets
     });
 
@@ -241,16 +242,19 @@ export const getAssetsByCategory = async (req, res) => {
   }
 };
 
-export const getAssetsBySubCategory = async (req, res) => {
+export const getAssetsByCategoryAndSubCategory = async (req, res) => {
   try {
-    const { subCategory } = req.params;
+    const { category, subCategory } = req.params;
 
+    // ✅ Find approved assets by category + subCategory
     const assets = await Asset.find({
+      category: {
+        $regex: new RegExp(category, "i"),
+      },
       subCategory: {
         $regex: new RegExp(subCategory, "i"),
-
       },
-       isapproved:true,
+      isapproved: true,
     }).sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -260,7 +264,7 @@ export const getAssetsBySubCategory = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Get Assets By SubCategory Error:", error);
+    console.error("Get Assets Error:", error);
 
     return res.status(500).json({
       success: false,
