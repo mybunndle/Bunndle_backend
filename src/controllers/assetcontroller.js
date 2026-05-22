@@ -1,6 +1,6 @@
 // controllers/asset.controller.js
 import Asset from "../model/assetModel.js";
-import { uploadAssetFile, deleteFile } from "../services/imageStorageService.js";
+import { uploadAssetFile, deleteAssetFile } from "../services/imageStorageService.js";
 import mongoose from "mongoose";
 
 
@@ -197,7 +197,7 @@ export const deleteAsset = async (req, res) => {
 
     // 🗑️ Delete images from ImageKit
     await Promise.all(
-      asset.files.map(file => deleteFile(file.fileId))
+      asset.files.map(file => deleteAssetFile(file.fileId))
     );
 
     // 🗑️ Delete DB record

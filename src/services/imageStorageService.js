@@ -64,13 +64,40 @@ export const uploadAssetFile = async (file) => {
   }
 };
 
+// export const deleteAssetFile = async (fileId) => {
+//   try {
+//     await imagekit.deleteFile(fileId);
+//   } catch (err) {
+//     console.error("ImageKit delete failed:", err.message);
+//   }
+// }
 export const deleteAssetFile = async (fileId) => {
   try {
+
+    // ✅ Prevent ImageKit error
+    if (!fileId) {
+      console.log(
+        "Skipping delete because fileId is missing"
+      );
+      return false;
+    }
+
     await imagekit.deleteFile(fileId);
+
+    console.log("Image deleted successfully");
+
+    return true;
+
   } catch (err) {
-    console.error("ImageKit delete failed:", err.message);
+
+    console.error(
+      "ImageKit delete failed:",
+      err.message
+    );
+
+    return false;
   }
-}
+};
 
 
 export const uploadVehicleLogo = async (file) => {
