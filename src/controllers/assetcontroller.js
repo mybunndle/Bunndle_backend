@@ -224,7 +224,7 @@ export const getAssetsByCategory = async (req, res) => {
     // ✅ Find only approved assets
     const assets = await Asset.find({
       category,
-      isapproved: approved
+      isapproved:"approved"
     }).sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -255,7 +255,7 @@ export const getAssetsByCategoryAndSubCategory = async (req, res) => {
       subCategory: {
         $regex: new RegExp(subCategory, "i"),
       },
-      isapproved: approved,
+      isapproved: "approved",
     }).sort({ createdAt: -1 });
 
     return res.status(200).json({

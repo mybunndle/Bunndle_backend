@@ -12,11 +12,16 @@ app.get("/", (req, res) => {
 connectDB()
   .then(() => {
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(
-        `Server running on port ${PORT}`
-      );
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
     });
+
+    // ✅ Increase request timeout to 5 minutes
+    server.timeout = 300000;
+
+    // ✅ Optional but recommended
+    server.keepAliveTimeout = 300000;
+    server.headersTimeout = 310000;
 
   })
   .catch((error) => {
