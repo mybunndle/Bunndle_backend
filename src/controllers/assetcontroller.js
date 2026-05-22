@@ -504,3 +504,69 @@ export const updateAssetApprovalStatus = async (req, res) => {
 //     });
 //   }
 // };
+
+
+
+
+
+export const updateAssetPrice = async (req, res) => {
+
+  console.log("Update Price Request:" )
+  try {
+    const { id: assetId } = req.params;
+    const { price } = req.body;
+
+    // ✅ Validate Mongo ID
+    if (!mongoose.isValidObjectId(assetId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Asset ID",
+      });
+    }
+
+    // ✅ Validate price
+    if (price === undefined || price === null) {
+      return res.status(400).json({
+        success: false,
+        message: "Price is required",
+      });
+    }
+
+    // ✅ Optional: prevent negative values
+    if (price < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Price cannot be negative",
+      });
+    }
+
+    // ✅ Find asset
+    const asset = await Asset.findById(assetId);
+
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found",
+      });
+    }
+
+    // ✅ Update price
+    asset.price = price;
+
+    await asset.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Asset price updated successfully",
+      data: asset,
+    });
+
+  } catch (error) {
+    console.error("Update Asset Price Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
