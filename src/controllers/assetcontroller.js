@@ -509,34 +509,16 @@ export const updateAssetApprovalStatus = async (req, res) => {
 
 
 
-export const updateAssetPrice = async (req, res) => {
-
-  console.log("Update Price Request:" )
+export const updateAssetStatusAndPrice = async (req, res) => {
   try {
     const { id: assetId } = req.params;
-    const { price } = req.body;
+    const { status, price } = req.body;
 
     // ✅ Validate Mongo ID
     if (!mongoose.isValidObjectId(assetId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid Asset ID",
-      });
-    }
-
-    // ✅ Validate price
-    if (price === undefined || price === null) {
-      return res.status(400).json({
-        success: false,
-        message: "Price is required",
-      });
-    }
-
-    // ✅ Optional: prevent negative values
-    if (price < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Price cannot be negative",
       });
     }
 
@@ -550,19 +532,49 @@ export const updateAssetPrice = async (req, res) => {
       });
     }
 
-    // ✅ Update price
-    asset.price = price;
+    // ✅ Update Status (optional)
+    if (status !== undefined) {
+      const validStatuses = [
+        "approved",
+        "rejected",
+        "pending",
+      ];
 
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Status must be approved, rejected or pending",
+        });
+      }
+
+      asset.isapproved = status;
+    }
+
+    // ✅ Update Price (optional)
+    if (price !== undefined) {
+
+      if (price < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Price cannot be negative",
+        });
+      }
+
+      asset.price = price;
+    }
+
+    // ✅ Save changes
     await asset.save();
 
     return res.status(200).json({
       success: true,
-      message: "Asset price updated successfully",
+      message: "Asset updated successfully",
       data: asset,
     });
 
   } catch (error) {
-    console.error("Update Asset Price Error:", error);
+    console.error("Update Asset Error:", error);
 
     return res.status(500).json({
       success: false,
