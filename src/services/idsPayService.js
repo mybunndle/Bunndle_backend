@@ -14,7 +14,7 @@ export const generateDigilockerTokenService = async (aadhaar_number) => {
 
       aadhaar_number,
 
-      redirectUrl: "http://localhost:3000/api/kyc/digilocker-callback",
+      redirectUrl: "https://backend.bunndle.in/api/kyc/digilocker-callback",
 
       logoUrl: "https://via.placeholder.com/200x200.png",
     };
