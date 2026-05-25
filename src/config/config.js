@@ -34,7 +34,13 @@ const _config = {
   port: process.env.EMAIL_PORT,
   user: process.env.EMAIL_USER,
   pass: process.env.EMAIL_PASS,
-  from: process.env.EMAIL_FROM
+  from: process.env.EMAIL_FROM,
+
+
+  ids_base_url:process.env.IDSPAY_BASE_URL,
+  ids_api_key:process.env.IDSPAY_API_KEY,
+  ids_api_id:process.env.IDSPAY_API_ID,
+  ids_token_id:process.env.IDSPAY_TOKEN_ID
 
 };
 
