@@ -1,8 +1,46 @@
 import axios from "axios";
 import config from "../config/config.js";
 
-export const verifyDigilockerKycService =
-  async (aadhaar_number) => {
+export const generateDigilockerTokenService = async (aadhaar_number) => {
+  try {
+    const payload = {
+      api_id: config.ids_api_id,
+
+      api_key: config.ids_api_key,
+
+      token_id: config.ids_token_id,
+
+      methodName: "generateToken",
+
+      aadhaar_number,
+
+      redirectUrl: "http://localhost:3000/api/kyc/digilocker-callback",
+
+      logoUrl: "https://via.placeholder.com/200x200.png",
+    };
+
+    console.log("PAYLOAD:", payload);
+
+    const response = await axios.post(
+      `${config.ids_base_url}/srv2/validation/digilocker-digital-kyc`,
+      payload,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    return response.data;
+  } catch (error) {
+    console.log("IDSPAY ERROR:", error.response?.data || error.message);
+
+    throw error;
+  }
+};
+
+export const fetchDigilockerDetailsService =
+  async (client_id) => {
 
     try {
 
@@ -14,15 +52,15 @@ export const verifyDigilockerKycService =
 
         token_id: config.ids_token_id,
 
-        methodName:
-          "DIGILOCKER_DIGITAL_KYC",
+        methodName: "fetchDetails",
 
-        aadhaar_number,
-
-        consent: "Y",
+        client_id,
       };
 
-      console.log("PAYLOAD:", payload);
+      console.log(
+        "FETCH DETAILS PAYLOAD:",
+        payload
+      );
 
       const response = await axios.post(
         `${config.ids_base_url}/srv2/validation/digilocker-digital-kyc`,
@@ -40,9 +78,9 @@ export const verifyDigilockerKycService =
     } catch (error) {
 
       console.log(
-        "IDSPAY ERROR:",
+        "FETCH DETAILS ERROR:",
         error.response?.data ||
-          error.message
+        error.message
       );
 
       throw error;
