@@ -1,10 +1,10 @@
 import {
   generateDigilockerTokenService,
   fetchDigilockerDetailsService,
-} from "../services/idspayService.js";
+} from "../services/idsPayService.js";
 
 import AadhaarVerification
-from "../model/adharVerifiactionModel.js";
+from "../model/adharVerificationModel.js";
 
 import User from "../model/userModel.js";
 

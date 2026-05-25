@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const aadhaarVerificationSchema = new mongoose.Schema(
+const adhaarVerificationSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -58,5 +58,5 @@ const aadhaarVerificationSchema = new mongoose.Schema(
 
 export default mongoose.model(
   "AadhaarVerification",
-  aadhaarVerificationSchema
+  adhaarVerificationSchema
 );
