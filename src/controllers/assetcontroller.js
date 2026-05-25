@@ -67,6 +67,15 @@ export const add_Asset = async (req, res) => {
       purchaseYear,
       price,
     } = req.body;
+    
+     const user = req.user; 
+    
+    if (!user.isKycVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Only verified users can add assets"
+      });
+    }
 
     // 🔴 Required field validation
     if (!model || !category || !purchaseYear) {
@@ -218,9 +227,10 @@ export const deleteAsset = async (req, res) => {
 };
 
 export const getAssetsByCategory = async (req, res) => {
+
   try {
     const { category } = req.params;
-
+    
     // ✅ Find only approved assets
     const assets = await Asset.find({
       category,
@@ -281,6 +291,15 @@ export const toggleEnquiryStatus = async (req, res) => {
   try {
 
     const { id } = req.params;
+    
+    const user = req.user; 
+    
+    if (!user.isKycVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Only verified users can add assets"
+      });
+    }
 
     // ✅ Find asset
     const asset = await Asset.findById(id);
