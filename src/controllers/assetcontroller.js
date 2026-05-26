@@ -601,3 +601,81 @@ export const updateAssetStatusAndPrice = async (req, res) => {
     });
   }
 };
+
+
+
+// =====================================
+// DASHBOARD STATS API
+// =====================================
+
+
+
+export const getDashboardStats =async (req, res) => {
+  const userId =req.user?._id;
+
+    try {
+       // approved count
+      const approvedCount =
+        await Asset.countDocuments({
+          userId:userId,
+          isapproved: "approved",
+        });
+
+      //rejected count
+
+      const rejectedCount =
+        await Asset.countDocuments({
+          userId:userId,
+          status: "rejected",
+        });
+
+      // =========================
+      // COUNT PENDING
+      // =========================
+
+      const pendingCount =
+        await Asset.countDocuments({
+          userId:userId,
+          isapproved:"pending",
+        });
+
+      
+      // TOTAL ASSETS
+
+      const totalAssets =
+        await Asset.countDocuments({
+          userId:userId,
+        });
+
+
+      return res.status(200).json({
+        success: true,
+
+        data: {
+
+          approved:approvedCount,
+
+          rejected:rejectedCount,
+
+          pending:pendingCount,
+
+          totalAssets:totalAssets,
+        },
+      });
+
+    } catch (error) {
+
+      console.log(
+        "DASHBOARD STATS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to fetch dashboard stats",
+        error:
+          error.message,
+      });
+    }
+  };

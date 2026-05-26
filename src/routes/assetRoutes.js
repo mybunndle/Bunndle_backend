@@ -1,7 +1,7 @@
 import express from "express";
 import authMiddleware from "../middleware/auth_validate.js";
 import { uploadAssetImages }  from "../middleware/upload.js";
-import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllAssetsForAdmin, getMyEnquiredAssets,getAssetsByCategoryAndSubCategory ,updateAssetApprovalStatus,updateAssetStatusAndPrice}  from "../controllers/assetcontroller.js";
+import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllAssetsForAdmin, getMyEnquiredAssets,getAssetsByCategoryAndSubCategory ,updateAssetApprovalStatus,updateAssetStatusAndPrice,getDashboardStats}  from "../controllers/assetcontroller.js";
 
 const router = express.Router();
 
@@ -39,7 +39,7 @@ router.get("/all_list", authMiddleware, getAllAssetsForAdmin);
 
 router.put("/approve-asset/:id", authMiddleware, updateAssetApprovalStatus);
 router.put("/update-asset/:id",authMiddleware,updateAssetStatusAndPrice);
-
+router.get("/dashboard-stats", authMiddleware, getDashboardStats);
 
 
 export default router;

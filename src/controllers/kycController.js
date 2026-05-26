@@ -505,11 +505,6 @@ export const generateDigilockerToken =
 
     } catch (error) {
 
-      console.log(
-        "DIGILOCKER ERROR:",
-        error.response?.data ||
-        error.message
-      );
 
       // =========================
       // EXTRACT ERROR MESSAGE
@@ -571,11 +566,7 @@ export const fetchDigilockerDetails =
           client_id
         );
 
-      console.log(
-        "DIGILOCKER DETAILS:",
-        data
-      );
-
+      
       // =========================
       // EXTRACT DATA
       // =========================
@@ -655,12 +646,7 @@ export const fetchDigilockerDetails =
 
     } catch (error) {
 
-      console.log(
-        "FETCH DETAILS ERROR:",
-        error.response?.data ||
-        error.message
-      );
-
+     
       const apiError =
         error.response?.data?.error?.error;
 
@@ -689,10 +675,7 @@ export const digilockerCallback =
 
     try {
 
-      console.log(
-        "CALLBACK QUERY:",
-        req.query
-      );
+     
 
       const client_id =
         req.query.client_id;
@@ -731,10 +714,7 @@ export const digilockerCallback =
           client_id
         );
 
-      console.log(
-        "FETCH DETAILS:",
-        data
-      );
+      
 
       // =========================
       // EXTRACT DATA
@@ -815,11 +795,7 @@ export const digilockerCallback =
 
     } catch (error) {
 
-      console.log(
-        "CALLBACK ERROR:",
-        error.response?.data ||
-        error.message
-      );
+     
 
       const apiError =
         error.response?.data?.error?.error;
