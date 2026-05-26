@@ -954,7 +954,11 @@ export const forgotPassword = async (req, res) => {
     );
 
     // 6️⃣ Send OTP email
-    await sendOTPEmail(user.email, "Your Password Reset OTP", otpTemplate(otp));
+    await sendEmail({
+      to: user.email,
+      subject: "Your Password Reset OTP",
+      html: otpTemplate(otp),
+    });
 
     // 7️⃣ Respond (NO cookies)
     return res.status(200).json({
