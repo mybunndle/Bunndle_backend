@@ -684,11 +684,6 @@ export const fetchDigilockerDetails =
   };
 
 
-
-// =====================================
-// CALLBACK
-// =====================================
-
 export const digilockerCallback =
   async (req, res) => {
 
