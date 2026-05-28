@@ -661,6 +661,8 @@ export const getDashboardStats =async (req, res) => {
           pending:pendingCount,
 
           totalAssets:totalAssets,
+
+          recentAssets: await Asset.find({userId:userId}).sort({createdAt:-1}).limit(5).select("files"),
         },
       });
 
