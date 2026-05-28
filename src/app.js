@@ -6,6 +6,7 @@ import assetRouter from "./routes/assetRoutes.js"
 import vehicleRouter from "./routes/machinaryRoutes.js"
 import paymentRouter from "./routes/paymentRoutes.js"
 import kycRoutes from "./routes/kycRoutes.js";
+import enquiryRouter from "./routes/enquiryRoutes.js"
 import "./config/passport.js";
 import cookieParser from 'cookie-parser';
 import cors from "cors"
@@ -55,6 +56,7 @@ app.use("/api/asset",assetRouter)
 app.use("/api/machine",vehicleRouter)
 app.use("/api/payment", paymentRouter)
 app.use("/api/kyc", kycRoutes)
+app.use("/api/enquiry", enquiryRouter)
 
 
 

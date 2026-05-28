@@ -45,10 +45,7 @@ const assetSchema = new mongoose.Schema(
       enum:["approved","rejected","pending"],
       default:"pending",
     },
-    equiryStatus: {
-      type: String,
-      default: "false",
-    },
+
     files: [
       {
         url: {

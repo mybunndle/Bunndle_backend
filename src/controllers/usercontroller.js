@@ -1142,6 +1142,11 @@ export const quickConnect = async (req, res) => {
   }
 };
 
+
+
+
+
+
 // Mobile OTP Generation and verify Functions----------------------------------
 
 export const sendLoginOtp = async (req, res) => {

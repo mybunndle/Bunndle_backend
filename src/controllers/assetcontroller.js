@@ -337,6 +337,7 @@ export const toggleEnquiryStatus = async (req, res) => {
 };
 
 export const getMyEnquiredAssets = async (req, res) => {
+  console.log("Fetching enquired assets for user:", req.user.id);
   try {
     // ✅ Logged-in user id
     const userId = req.user.id;
@@ -344,7 +345,7 @@ export const getMyEnquiredAssets = async (req, res) => {
     // ✅ Find only user's enquired assets
     const assets = await Asset.find({
       userId,
-      equiryStatus: "true"
+       equiryStatus:"true"
     }).sort({ createdAt: -1 });
 
     return res.status(200).json({
