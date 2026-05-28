@@ -9,7 +9,7 @@ import {
 
 const router= express.Router();
 
-router.post("/toggle/:assetId", auth_middleware, toggleEnquiry);
+router.post("/send_enquiry/:assetId", auth_middleware, toggleEnquiry);
 router.get("/my_enquiries", auth_middleware, getMyEnquiredAssets);
 router.get("/all", auth_middleware, getAllEnquiries);
 

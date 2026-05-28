@@ -1,4 +1,5 @@
 import AssetEnquiry from "../model/assetEnquiryModel.js";
+import Asset from "../model/assetModel.js";
 
 export const toggleEnquiry = async (req, res) => {
   try {
@@ -76,62 +77,182 @@ export const getMyEnquiredAssets = async (req, res) => {
   }
 };
 
+// export const getAllEnquiries =
+//   async (req, res) => {
+
+//     try {
+
+//       // =========================
+//       // PAGINATION
+//       // =========================
+
+//       const page =
+//         Number(req.query.page) || 1;
+
+//       const limit =
+//         Number(req.query.limit) || 10;
+
+//       const skip =
+//         (page - 1) * limit;
+
+//       // =========================
+//       // FETCH ENQUIRIES
+//       // =========================
+
+//       const enquiries =
+//         await AssetEnquiry.find()
+
+//           // user who enquired
+//           .populate(
+//             "userId",
+//             "name email phone"
+//           )
+
+//           // asset details
+//           .populate({
+//             path: "assetId",
+
+//             populate: {
+//               path: "userId",
+//               select:
+//                 "name email phone",
+//             },
+//           })
+
+//           .sort({
+//             createdAt: -1,
+//           })
+
+//           .skip(skip)
+
+//           .limit(limit);
+
+//       // =========================
+//       // TOTAL COUNT
+//       // =========================
+
+//       const total =
+//         await AssetEnquiry.countDocuments();
+
+//       // =========================
+//       // RESPONSE
+//       // =========================
+
+//       return res.status(200).json({
+
+//         success: true,
+
+//         currentPage: page,
+
+//         totalPages:
+//           Math.ceil(total / limit),
+
+//         total,
+
+//         data: enquiries,
+//       });
+
+//     } catch (error) {
+
+//       console.log(error);
+
+//       return res.status(500).json({
+
+//         success: false,
+
+//         message:
+//           error.message,
+//       });
+//     }
+//   };
 export const getAllEnquiries =
   async (req, res) => {
 
     try {
 
       // =========================
-      // PAGINATION
+      // FETCH ALL ASSETS
       // =========================
 
-      const page =
-        Number(req.query.page) || 1;
+      const assets =
+        await Asset.find()
 
-      const limit =
-        Number(req.query.limit) || 10;
-
-      const skip =
-        (page - 1) * limit;
-
-      // =========================
-      // FETCH ENQUIRIES
-      // =========================
-
-      const enquiries =
-        await AssetEnquiry.find()
-
-          // user who enquired
+          // asset owner
           .populate(
             "userId",
             "name email phone"
           )
 
-          // asset details
-          .populate({
-            path: "assetId",
-
-            populate: {
-              path: "userId",
-              select:
-                "name email phone",
-            },
-          })
-
           .sort({
             createdAt: -1,
-          })
-
-          .skip(skip)
-
-          .limit(limit);
+          });
 
       // =========================
-      // TOTAL COUNT
+      // MAP ENQUIRIES
       // =========================
 
-      const total =
-        await AssetEnquiry.countDocuments();
+      const assetsWithEnquiries =
+        await Promise.all(
+
+          assets.map(
+            async (asset) => {
+
+              // get enquiries
+              const enquiries =
+                await AssetEnquiry.find({
+                  assetId: asset._id,
+                })
+
+                // enquiry user
+                .populate(
+                  "userId",
+                  "name email phone"
+                );
+
+              return {
+
+                assetId:
+                  asset._id,
+
+                model:
+                  asset.model,
+
+                brand:
+                  asset.brand,
+
+                category:
+                  asset.category,
+
+                purchaseYear:
+                  asset.purchaseYear,
+
+                files:
+                  asset.files,
+
+                assetOwner:
+                  asset.userId,
+
+                totalEnquiries:
+                  enquiries.length,
+
+                enquiries:
+                  enquiries.map(
+                    (item) => ({
+
+                      enquiryId:
+                        item._id,
+
+                      user:
+                        item.userId,
+
+                      createdAt:
+                        item.createdAt,
+                    })
+                  ),
+              };
+            }
+          )
+        );
 
       // =========================
       // RESPONSE
@@ -141,14 +262,11 @@ export const getAllEnquiries =
 
         success: true,
 
-        currentPage: page,
+        totalAssets:
+          assetsWithEnquiries.length,
 
-        totalPages:
-          Math.ceil(total / limit),
-
-        total,
-
-        data: enquiries,
+        data:
+          assetsWithEnquiries,
       });
 
     } catch (error) {
