@@ -46,8 +46,8 @@ router.get("/dashboard-stats", authMiddleware, getDashboardStats);
 router.post("/request-delete/:id", authMiddleware, requestAssetDeletion);
 
 // for admin to delete asset with delete request
-router.delete("/delete-asset-request/:id", adminAuthMiddleware, approveAssetDeletion);
-router.get("/delete-requests", adminAuthMiddleware, getDeleteRequests);
+router.delete("/delete-asset/:id",adminAuthMiddleware, approveAssetDeletion);
+router.get("/delete-requests",adminAuthMiddleware, getDeleteRequests);
 
 
 export default router;

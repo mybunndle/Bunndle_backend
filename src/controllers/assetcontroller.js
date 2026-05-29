@@ -783,7 +783,7 @@ export const requestAssetDeletion = async (req, res) => {
     return res.status(200).json({
       success: true,
       message:
-        "Request sent to admin to delete asset",
+        "Request sent to Admin to delete asset",
     });
 
   } catch (error) {
@@ -804,6 +804,7 @@ export const requestAssetDeletion = async (req, res) => {
   try {
 
     const { id } = req.params;
+    console.log(req.user)
 
     // =========================
     // CHECK ADMIN
@@ -859,7 +860,7 @@ export const requestAssetDeletion = async (req, res) => {
     return res.status(200).json({
       success: true,
       message:
-        "Asset deleted successfully by admin",
+        "Asset deleted successfully by Admin",
     });
 
   } catch (error) {
@@ -878,8 +879,8 @@ export const requestAssetDeletion = async (req, res) => {
 
 export const getDeleteRequests = async (req, res) => {
   try {
-
-    if (req.user.role !== "admin") {
+      console.log(req.user)
+    if (req.user.type !== "ADMIN") {
       return res.status(403).json({
         success: false,
         message: "Admin access only",
