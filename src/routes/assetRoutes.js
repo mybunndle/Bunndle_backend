@@ -1,7 +1,8 @@
 import express from "express";
 import authMiddleware from "../middleware/auth_validate.js";
+import adminAuthMiddleware from "../middleware/admin_validate.js";
 import { uploadAssetImages }  from "../middleware/upload.js";
-import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllAssetsForAdmin, getMyEnquiredAssets,getAssetsByCategoryAndSubCategory ,updateAssetApprovalStatus,updateAssetStatusAndPrice,getDashboardStats}  from "../controllers/assetcontroller.js";
+import  {add_Asset, deleteAsset, getAssetById, getMyAssets, getAssetsByCategory, toggleEnquiryStatus, getAllAssetsForAdmin, getMyEnquiredAssets,getAssetsByCategoryAndSubCategory ,updateAssetApprovalStatus,updateAssetStatusAndPrice,getDashboardStats, approveAssetDeletion, getDeleteRequests, requestAssetDeletion}  from "../controllers/assetcontroller.js";
 
 const router = express.Router();
 
@@ -40,6 +41,13 @@ router.get("/all_list", authMiddleware, getAllAssetsForAdmin);
 router.put("/approve-asset/:id", authMiddleware, updateAssetApprovalStatus);
 router.put("/update-asset/:id",authMiddleware,updateAssetStatusAndPrice);
 router.get("/dashboard-stats", authMiddleware, getDashboardStats);
+
+
+router.post("/request-delete/:id", authMiddleware, requestAssetDeletion);
+
+// for admin to delete asset with delete request
+router.delete("/delete-asset-request/:id", adminAuthMiddleware, approveAssetDeletion);
+router.get("/delete-requests", adminAuthMiddleware, getDeleteRequests);
 
 
 export default router;

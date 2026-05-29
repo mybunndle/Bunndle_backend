@@ -19,20 +19,18 @@ const assetSchema = new mongoose.Schema(
     },
     price: {
       type: Number,
-
     },
-    assetName:{
+    assetName: {
       //can be null
       type: String,
-      trim: true
+      trim: true,
     },
     category: {
       type: String,
       required: true,
       trim: true,
-      
     },
-    subCategory:{
+    subCategory: {
       type: String,
       trim: true,
     },
@@ -42,8 +40,15 @@ const assetSchema = new mongoose.Schema(
     },
     isapproved: {
       type: String,
-      enum:["approved","rejected","pending"],
-      default:"pending",
+      enum: ["approved", "rejected", "pending"],
+      default: "pending",
+    },
+    deleteRequest: {
+      type: Boolean,
+      default: false,
+    },
+    deleteRequestAt: {
+      type: Date,
     },
 
     files: [
@@ -60,7 +65,6 @@ const assetSchema = new mongoose.Schema(
           type: String,
           required: true,
         },
-      
       },
     ],
   },

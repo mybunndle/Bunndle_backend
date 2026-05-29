@@ -34,7 +34,7 @@ const formatDob = (dob) => {
 
 export async function registerUser(req, res) {
   try {
-    const { name, phone, email, password } = req.body;
+    const { name, phone, email, password,type } = req.body;
 
     if (!name || !phone || !email || !password) {
       return res.status(400).json({
@@ -64,6 +64,7 @@ export async function registerUser(req, res) {
       phone,
       email,
       password: hashedPassword,
+      type: type || "USER", // Set default type to "USER" if not provided
     });
 
     // 🎟️ Generate JWT

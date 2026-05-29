@@ -63,6 +63,11 @@ const userSchema = new mongoose.Schema(
         message: "Invalid date format",
       },
     },
+    type:{
+      type: String,
+      enum: ["USER", "ADMIN"],
+      default: "USER",
+    },
 
     profileImage: String,
     profileImageId: String,

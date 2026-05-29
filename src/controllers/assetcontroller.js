@@ -682,3 +682,230 @@ export const getDashboardStats =async (req, res) => {
       });
     }
   };
+
+//delete asset with delete request by admin
+
+
+
+//for user
+export const requestAssetDeletion = async (req, res) => {
+  try {
+
+    const { id } = req.params;
+
+    // validate id
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid asset id",
+      });
+    }
+
+    // find asset
+
+    const asset = await Asset.findById(id);
+
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found",
+      });
+    }
+
+
+    if (
+      asset.userId.toString() !==
+      req.user._id.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You are not allowed to delete this asset",
+      });
+    }
+
+    // not-parooved?? delete directly
+
+    if (asset.isapproved !== "approved") {
+      // deleting from imagekit
+
+      if (asset.files?.length > 0) {
+        for (const file of asset.files) {
+
+          if (file.fileId) {
+            await deleteAssetFile(file.fileId);
+          }
+
+        }
+
+      }
+
+      // dlete asset
+
+      await Asset.findByIdAndDelete(id);
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Asset deleted successfully",
+      });
+
+    }
+
+    // =========================================
+    // APPROVED ASSET
+    // SEND REQUEST TO ADMIN
+    // =========================================
+
+    // =========================
+    // ALREADY REQUESTED
+    // =========================
+
+    if (asset.deleteRequest) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Delete request already sent to admin",
+      });
+    }
+
+    // =========================
+    // SEND REQUEST
+    // =========================
+
+    asset.deleteRequest = true;
+
+    asset.deleteRequestAt = new Date();
+
+    await asset.save();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Request sent to admin to delete asset",
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to process asset deletion",
+      error: error.message,
+    });
+  }
+ };
+
+ //for admin
+ export const approveAssetDeletion = async (req, res) => {
+  try {
+
+    const { id } = req.params;
+
+    // =========================
+    // CHECK ADMIN
+    // =========================
+
+    if (req.user.type !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only admin can delete assets",
+      });
+    }
+
+    // =========================
+    // VALIDATE ID
+    // =========================
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid asset id",
+      });
+    }
+
+    // find asset
+
+    const asset = await Asset.findById(id);
+
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found",
+      });
+    }
+
+    // imagekit deletion
+
+    if (asset.files?.length > 0) {
+
+      for (const file of asset.files) {
+
+        if (file.fileId) {
+          await deleteAssetFile(file.fileId);
+        }
+
+      }
+
+    }
+
+    // deleting the asset
+
+    await Asset.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Asset deleted successfully by admin",
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to delete asset",
+      error: error.message,
+    });
+
+  }
+};
+
+export const getDeleteRequests = async (req, res) => {
+  try {
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin access only",
+      });
+    }
+
+    const requests = await Asset.find({
+      deleteRequest: true,
+    })
+      .populate("userId", "name email")
+      .sort({ deleteRequestAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: requests.length,
+      data: requests,
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to fetch delete requests",
+      error: error.message,
+    });
+
+  }
+};
