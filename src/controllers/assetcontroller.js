@@ -402,9 +402,6 @@ export const getAllAssetsForAdmin = async (req, res) => {
 };
 
 
-
-
-
 export const updateAssetApprovalStatus = async (req, res) => {
   try {
     const { id: assetId } = req.params;
@@ -423,13 +420,15 @@ export const updateAssetApprovalStatus = async (req, res) => {
       "approved",
       "rejected",
       "pending",
+      "approvedButNotInApp",
+
     ];
 
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
         message:
-          "Status must be approved, rejected or pending",
+          "Status must be approved, rejected, pending or approvedButNotInApp",
       });
     }
 
@@ -558,13 +557,14 @@ export const updateAssetStatusAndPrice = async (req, res) => {
         "approved",
         "rejected",
         "pending",
+        "approvedButNotInApp"
       ];
 
       if (!validStatuses.includes(status)) {
         return res.status(400).json({
           success: false,
           message:
-            "Status must be approved, rejected or pending",
+            "Status must be approved, rejected, pending or approvedButNotInApp",
         });
       }
 

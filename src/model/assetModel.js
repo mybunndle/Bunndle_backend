@@ -40,7 +40,7 @@ const assetSchema = new mongoose.Schema(
     },
     isapproved: {
       type: String,
-      enum: ["approved", "rejected", "pending"],
+      enum: ["approved","rejected","pending","approvedButNotInApp"],
       default: "pending",
     },
     deleteRequest: {
