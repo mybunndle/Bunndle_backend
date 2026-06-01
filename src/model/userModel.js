@@ -69,7 +69,11 @@ const userSchema = new mongoose.Schema(
       default: "USER",
     },
 
-    profileImage: String,
+    profileImage:{
+      type: String,
+      default: null,
+    },
+    
     profileImageId: String,
 
     kycStatus: {

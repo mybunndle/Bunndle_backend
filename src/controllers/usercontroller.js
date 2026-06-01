@@ -293,7 +293,7 @@ export async function googleAuthCallback(req, res) {
     const token = jwt.sign(
       { id: user._id, role: user.role, email: user.email },
       config.jwtSecret,
-      { expiresIn: "2d" },
+      { expiresIn: "30d" },
     );
 
     if (req.user) {
@@ -403,7 +403,7 @@ export const appleLogin = async (req, res) => {
         email: user.email || null,
       },
       config.jwtSecret,
-      { expiresIn: "2d" },
+      { expiresIn: "30d" },
     );
 
     return res.status(200).json({
