@@ -1,11 +1,16 @@
 import mongoose from "mongoose";
 import Asset from "../model/coAssetModel.js";
+import {uploadCoAssetFile,deleteCoAssetFile } from "../services/imageStorageService.js";
+
 
 import Ownership from "../model/ownerShipModel.js";
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
 
+
+
 export const createCoAsset = async (req, res) => {
-  console.log(req.body);
+    console.log("BODY =>", req.body);
+    console.log("FILES =>", req.files);
   try {
     const {
       assetName,
@@ -18,7 +23,9 @@ export const createCoAsset = async (req, res) => {
       lockInMonths,
     } = req.body;
 
-    const existingAsset = await Asset.findOne({ assetCode });
+    const existingAsset = await Asset.findOne({
+      assetCode,
+    });
 
     if (existingAsset) {
       return res.status(400).json({
@@ -27,35 +34,96 @@ export const createCoAsset = async (req, res) => {
       });
     }
 
-    const amountPerFraction = assetCost / totalFractions;
+    if (
+      !assetName ||
+      !assetCode ||
+      !assetCost ||
+      !totalFractions
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Required fields are missing",
+      });
+    }
+
+    if (Number(totalFractions) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid fraction count",
+      });
+    }
+
+    // Upload Images To ImageKit
+    const images = [];
+
+    if (req.files?.length) {
+      for (const file of req.files) {
+        const uploadedFile =
+          await uploadCoAssetFile(file);
+
+        images.push({
+          url: uploadedFile.url,
+          fileId: uploadedFile.fileId,
+          filename: uploadedFile.filename,
+        });
+      }
+    }
+
+    const amountPerFraction =
+      Number(assetCost) /
+      Number(totalFractions);
 
     const asset = await Asset.create({
       assetName,
       assetCode,
       description,
-      assetCost,
-      totalFractions,
-      availableFractions: totalFractions,
+
+      assetCost: Number(assetCost),
+
+      totalFractions:
+        Number(totalFractions),
+
+      availableFractions:
+        Number(totalFractions),
+
       amountPerFraction,
-      rentalAmountPerFraction,
-      durationMonths,
-      lockInMonths,
+
+      rentalAmountPerFraction:
+        Number(
+          rentalAmountPerFraction
+        ),
+
+      durationMonths:
+        Number(durationMonths),
+
+      lockInMonths:
+        Number(lockInMonths),
+
+      images,
+
       createdBy: req.user._id,
+
       status: "ACTIVE",
     });
 
     return res.status(201).json({
       success: true,
+      message:
+        "Co-Asset created successfully",
       data: asset,
     });
   } catch (error) {
+    console.error(
+      "Create Co Asset Error:",
+      error
+    );
+
     return res.status(500).json({
       success: false,
       message: error.message,
     });
   }
 };
-
 export const getCoAssets = async (req, res) => {
   try {
     const assets = await Asset.find({

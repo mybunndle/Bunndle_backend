@@ -38,7 +38,11 @@ const coAssetSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
-
+    reservedFractions: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     amountPerFraction: {
       type: Number,
       required: true,
@@ -63,19 +67,18 @@ const coAssetSchema = new mongoose.Schema(
 
     images: [
       {
-        url: String,
-        fileId: String,
+        url: {
+          type: String,
+        },
+        fileId: {
+          type: String,
+        },
       },
     ],
 
     status: {
       type: String,
-      enum: [
-        "DRAFT",
-        "ACTIVE",
-        "SOLD_OUT",
-        "INACTIVE",
-      ],
+      enum: ["DRAFT", "ACTIVE", "SOLD_OUT", "INACTIVE"],
       default: "DRAFT",
     },
 
@@ -86,14 +89,10 @@ const coAssetSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 coAssetSchema.index({ status: 1 });
 coAssetSchema.index({ assetName: "text" });
 
-export default mongoose.model(
-  "CoAsset",
-  coAssetSchema
-);
-
+export default mongoose.model("CoAsset", coAssetSchema);

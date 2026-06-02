@@ -127,6 +127,53 @@ export const deleteVehicleLogo = async (fileId) => {
   }
 }
 
+export const uploadCoAssetFile = async (file) => {
+  try {
+    if (!file) {
+      throw new Error("File is required");
+    }
+
+    const result = await imagekit.upload({
+      file: file.buffer,
+      fileName: `co-assets-${Date.now()}-${file.originalname}`,
+      folder: "/Agent_alliance/co-assets",
+      useUniqueFileName: true,
+    });
+
+    return {
+      url: result.url,
+      fileId: result.fileId,
+      filename: result.name,
+    };
+  } catch (err) {
+    console.error("ImageKit Upload Error:", err);
+
+    throw new Error(
+      `Co-asset upload failed: ${err.message}`
+    );
+  }
+};
+export const deleteCoAssetFile = async (fileId) => {
+  try {
+    if (!fileId) {
+      console.warn(
+        "Skipping delete because fileId is missing"
+      );
+      return;
+    }
+
+    await imagekit.deleteFile(fileId);
+
+    return true;
+  } catch (err) {
+    console.error(
+      "ImageKit delete failed:",
+      err.message
+    );
+    return false;
+  }
+};
+
  
 
 

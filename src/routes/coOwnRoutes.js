@@ -1,6 +1,7 @@
 import express from "express";
 import auth_middleware from "../middleware/auth_validate.js";
 import admin_middleware from "../middleware/admin_validate.js";
+import { uploadAssetImages }  from "../middleware/upload.js";
 import { buyFractions, createCoAsset, getAssetInvestors, getCoAssetById, getCoAssets, getPurchaseHistory } from "../controllers/coOwnController.js";
 
 import { getAssetById } from "../controllers/assetcontroller.js";
@@ -10,7 +11,7 @@ const router= express.Router();
 
 
 router.post("/add-assets",
-  admin_middleware,
+  admin_middleware,uploadAssetImages.array("files", 5), 
   createCoAsset
 );
 
