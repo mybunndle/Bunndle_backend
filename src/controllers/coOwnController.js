@@ -134,6 +134,7 @@ export const getCoAssets = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      message: "Co-Assets retrieved successfully",
       count: assets.length,
       data: assets,
     });
