@@ -14,14 +14,14 @@ export const allocateFractions = async ({
   const session = await mongoose.startSession();
 
   try {
-    session.startTransaction();
+    await session.startTransaction();
 
     // Validate fractions
     if (!fractions || fractions <= 0) {
       throw new Error("Invalid fraction count");
     }
 
-    // Prevent duplicate processing
+    // Prevent duplicate payment processing
     if (razorpayPaymentId) {
       const existingPurchase =
         await PurchaseHistory.findOne({
@@ -35,7 +35,7 @@ export const allocateFractions = async ({
       }
     }
 
-    // Get Asset
+    // Asset exists?
     const asset = await Asset.findById(
       assetId
     ).session(session);
@@ -44,31 +44,11 @@ export const allocateFractions = async ({
       throw new Error("Asset not found");
     }
 
-    // Check available fractions
-    if (
-      asset.availableFractions < fractions
-    ) {
-      throw new Error(
-        "Not enough fractions available"
-      );
-    }
-
     // Calculate amount
     const totalAmount =
       fractions * asset.amountPerFraction;
 
-    // Reduce available fractions
-    asset.availableFractions -= fractions;
-
-    if (
-      asset.availableFractions === 0
-    ) {
-      asset.status = "SOLD_OUT";
-    }
-
-    await asset.save({ session });
-
-    // Check existing ownership
+    // Update ownership
     const ownership =
       await Ownership.findOne({
         assetId,
@@ -115,28 +95,21 @@ export const allocateFractions = async ({
       );
     }
 
-    // Create Purchase History
+    // Purchase history
     await PurchaseHistory.create(
       [
         {
           assetId,
           userId,
-
           fractionsPurchased:
             fractions,
-
           amountPerFraction:
             asset.amountPerFraction,
-
           totalAmount,
-
           paymentStatus:
             "SUCCESS",
-
           razorpayOrderId,
-
           razorpayPaymentId,
-
           transactionReference:
             razorpayPaymentId,
         },

@@ -113,6 +113,7 @@ export const createOrder = async (req, res) => {
     });
   }
 };
+
 export const verifyPayment = async (req, res) => {
   try {
     const {
@@ -143,7 +144,7 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Get Payment Record
+    // Find Payment
     const payment =
       await Payment.findOne({
         razorpayOrderId:
@@ -158,12 +159,49 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Duplicate Payment Protection
+    // Duplicate verification protection
     if (payment.status === "SUCCESS") {
       return res.status(200).json({
         success: true,
         message:
           "Payment already verified",
+      });
+    }
+
+    // Find Order
+    const order =
+      await Order.findById(
+        payment.orderId
+      );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Order not found",
+      });
+    }
+
+    // Allow payment only for pending orders
+    if (
+      order.status !==
+      "PENDING_PAYMENT"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Order status is ${order.status}. Payment cannot be processed.`,
+      });
+    }
+
+    // Optional extra protection
+    if (
+      order.expiresAt &&
+      order.expiresAt < new Date()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Order has expired.",
       });
     }
 
@@ -178,46 +216,18 @@ export const verifyPayment = async (req, res) => {
 
     await payment.save();
 
-    // Get Order
-    const order =
-      await Order.findById(
-        payment.orderId
-      );
-
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
-    }
-
-    // Order already processed?
-    if (
-      order.status === "COMPLETED"
-    ) {
-      return res.status(200).json({
-        success: true,
-        message:
-          "Order already completed",
-      });
-    }
-
-    // Allocate Fractions
+    // Allocate Ownership
     await allocateFractions({
       assetId: order.assetId,
-
       userId: order.userId,
-
       fractions: order.fractions,
-
       razorpayOrderId:
         razorpay_order_id,
-
       razorpayPaymentId:
         razorpay_payment_id,
     });
 
-    // Release Reserved Fractions
+    // Release reserved fractions
     await Asset.findByIdAndUpdate(
       order.assetId,
       {
@@ -228,7 +238,7 @@ export const verifyPayment = async (req, res) => {
       }
     );
 
-    // Mark Order Complete
+    // Complete Order
     order.status = "COMPLETED";
 
     await order.save();
