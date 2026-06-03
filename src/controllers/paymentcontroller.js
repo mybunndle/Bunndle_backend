@@ -73,8 +73,8 @@ export const createOrder = async (req, res) => {
       status: "PENDING_PAYMENT",
 
       expiresAt: new Date(
-        Date.now() + 15 * 60 * 1000
-      ), // 15 mins
+        Date.now() + 5 * 60 * 1000
+      ), // 5 mins
     });
 
     // Create Razorpay Order

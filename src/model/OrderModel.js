@@ -31,21 +31,21 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    expiresAt: {
+      type: Date,
+      required: true,
+    },
 
     status: {
       type: String,
-      enum: [
-        "PENDING_PAYMENT",
-        "PAYMENT_SUCCESS",
-        "COMPLETED",
-        "FAILED",
-      ],
+      enum: ["PENDING_PAYMENT", "PAYMENT_SUCCESS", "COMPLETED", "FAILED", "EXPIRED"],
       default: "PENDING_PAYMENT",
     },
   },
+
   {
     timestamps: true,
-  }
+  },
 );
 
 export default mongoose.model("Order", orderSchema);

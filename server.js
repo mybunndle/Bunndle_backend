@@ -1,5 +1,6 @@
 import app from "./src/app.js";
 import connectDB from "./src/db/db.js";
+import "./src/cron/cronExecute.js";
 
 const PORT = process.env.PORT || 3000;
 
