@@ -20,7 +20,10 @@ const coAssetSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-
+   specification:{
+      type: String,
+      default:"",
+   },
     assetCost: {
       type: Number,
       required: true,

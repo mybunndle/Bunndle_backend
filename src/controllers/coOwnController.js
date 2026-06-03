@@ -16,6 +16,7 @@ export const createCoAsset = async (req, res) => {
       assetName,
       assetCode,
       description,
+      specification,
       assetCost,
       totalFractions,
       rentalAmountPerFraction,
@@ -77,7 +78,7 @@ export const createCoAsset = async (req, res) => {
       assetName,
       assetCode,
       description,
-
+      specification,
       assetCost: Number(assetCost),
 
       totalFractions:
