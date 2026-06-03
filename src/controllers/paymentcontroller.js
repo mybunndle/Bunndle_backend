@@ -122,7 +122,7 @@ export const verifyPayment = async (req, res) => {
       razorpay_signature,
     } = req.body;
 
-    // Verify Signature
+    // Verify Razorpay Signature
     const generatedSignature = crypto
       .createHmac(
         "sha256",
@@ -144,7 +144,7 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Find Payment
+    // Find Payment Record
     const payment =
       await Payment.findOne({
         razorpayOrderId:
@@ -159,7 +159,7 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Duplicate verification protection
+    // Duplicate Verification Protection
     if (payment.status === "SUCCESS") {
       return res.status(200).json({
         success: true,
@@ -182,7 +182,7 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Allow payment only for pending orders
+    // Allow only pending orders
     if (
       order.status !==
       "PENDING_PAYMENT"
@@ -193,17 +193,34 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Optional extra protection
+    // Extra protection if cron hasn't run yet
     if (
       order.expiresAt &&
       order.expiresAt < new Date()
     ) {
+      order.status = "EXPIRED";
+      await order.save();
+
+      payment.status = "EXPIRED";
+      await payment.save();
+
       return res.status(400).json({
         success: false,
         message:
           "Order has expired.",
       });
     }
+
+    // Allocate Ownership First
+    await allocateFractions({
+      assetId: order.assetId,
+      userId: order.userId,
+      fractions: order.fractions,
+      razorpayOrderId:
+        razorpay_order_id,
+      razorpayPaymentId:
+        razorpay_payment_id,
+    });
 
     // Update Payment
     payment.razorpayPaymentId =
@@ -216,18 +233,7 @@ export const verifyPayment = async (req, res) => {
 
     await payment.save();
 
-    // Allocate Ownership
-    await allocateFractions({
-      assetId: order.assetId,
-      userId: order.userId,
-      fractions: order.fractions,
-      razorpayOrderId:
-        razorpay_order_id,
-      razorpayPaymentId:
-        razorpay_payment_id,
-    });
-
-    // Release reserved fractions
+    // Release Reserved Fractions
     await Asset.findByIdAndUpdate(
       order.assetId,
       {
