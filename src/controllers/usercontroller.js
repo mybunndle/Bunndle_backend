@@ -137,6 +137,11 @@ export async function loginUser(req, res) {
       expiresIn: "30d",
     });
 
+  
+
+console.log("TOKEN:", token);
+console.log("DECODED:", jwt.decode(token));
+
     // 5️⃣ Send response
     return res.status(200).json({
       success: true,
@@ -455,12 +460,14 @@ export async function getUserProfile(req, res) {
         message: "Unauthorized",
       });
     }
-
+     
     const token = authHeader.split(" ")[1];
 
     const decoded = jwt.verify(token, config.jwtSecret);
 
     const user = await userModel.findById(decoded.id);
+    console.log("TOKEN:", token);
+     console.log("DECODED:", jwt.decode(token));
 
     if (!user) {
       return res.status(404).json({

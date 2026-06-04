@@ -2,7 +2,7 @@ import express from "express";
 import auth_middleware from "../middleware/auth_validate.js";
 import admin_middleware from "../middleware/admin_validate.js";
 import { uploadAssetImages }  from "../middleware/upload.js";
-import { buyFractions, createCoAsset, getAssetInvestors, getCoAssetById, getCoAssets, getPurchaseHistory } from "../controllers/coOwnController.js";
+import { createCoAsset, getAssetInvestors, getCoAssetById, getCoAssets, getPurchaseHistory, getMyOwnerships } from "../controllers/coOwnController.js";
 
 import { getAssetById } from "../controllers/assetcontroller.js";
 
@@ -25,17 +25,17 @@ router.get(
   getCoAssetById
 );
 
-router.post(
-  "/assets/:assetId/buy",
-    auth_middleware,
-  buyFractions
-);
-
 
 router.get(
   "/my-purchases",
   auth_middleware,
   getPurchaseHistory
+);
+
+router.get(
+  "/my-ownerships",
+  auth_middleware,
+  getMyOwnerships
 );
 
 router.get(

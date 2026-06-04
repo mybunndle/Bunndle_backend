@@ -191,100 +191,43 @@ export const getPurchaseHistory = async (req, res) => {
   }
 };
 
-export const buyFractions = async (req, res) => {
-  const session = await mongoose.startSession();
-   console.log(req.user);
+
+
+
+
+
+export const getMyOwnerships = async (
+  req,
+  res
+) => {
   try {
-    session.startTransaction();
+    const userId = req.user.id;
 
-    const { assetId } = req.params;
-    const { fractions } = req.body;
-
-    const asset = await Asset.findById(assetId).session(session);
-
-    if (!asset) {
-      throw new Error("Asset not found");
-    }
-
-    if (fractions <= 0) {
-      throw new Error("Invalid fraction count");
-    }
-
-    if (asset.availableFractions < fractions) {
-      throw new Error("Not enough fractions available");
-    }
-
-    const totalAmount = fractions * asset.amountPerFraction;
-
-    asset.availableFractions -= fractions;
-
-    if (asset.availableFractions === 0) {
-      asset.status = "SOLD_OUT";
-    }
-
-    await asset.save({ session });
-
-    const ownership = await Ownership.findOne({
-      assetId,
-      userId: req.user._id,
-    }).session(session);
-
-    if (ownership) {
-      ownership.fractionsOwned += fractions;
-
-      ownership.investedAmount += totalAmount;
-
-      ownership.averagePurchasePrice =
-        ownership.investedAmount / ownership.fractionsOwned;
-
-      await ownership.save({
-        session,
-      });
-    } else {
-      await Ownership.create(
-        [
-          {
-            assetId,
-            userId: req.user._id,
-            fractionsOwned: fractions,
-            investedAmount: totalAmount,
-            averagePurchasePrice: asset.amountPerFraction,
-          },
-        ],
-        { session },
-      );
-    }
-
-    await PurchaseHistory.create(
-      [
-        {
-          assetId,
-          userId: req.user._id,
-          fractionsPurchased: fractions,
-          amountPerFraction: asset.amountPerFraction,
-          totalAmount,
-          paymentStatus: "SUCCESS",
-        },
-      ],
-      { session },
-    );
-
-    await session.commitTransaction();
+    const ownerships =
+      await Ownership.find({
+        userId,
+      })
+        .populate({
+          path: "assetId",
+          select:
+            "assetName assetCode images amountPerFraction totalFractions availableFractions status",
+        })
+        .sort({
+          createdAt: -1,
+        });
 
     return res.status(200).json({
       success: true,
-      message: "Fractions purchased successfully",
-      totalAmount,
+      count: ownerships.length,
+      data: ownerships,
     });
   } catch (error) {
-    await session.abortTransaction();
+    console.log(error);
 
-    return res.status(400).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
-  } finally {
-    session.endSession();
   }
 };
 
