@@ -52,7 +52,7 @@ export const createOrder = async (req, res) => {
         success: false,
         message:
           "KYC verification is required before making an investment.",
-        kycRequired: true,
+      
       });
     }
 
