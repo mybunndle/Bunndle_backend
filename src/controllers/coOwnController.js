@@ -173,15 +173,57 @@ export const getPurchaseHistory = async (req, res) => {
   try {
     const purchases = await PurchaseHistory.find({
       userId: req.user._id,
+      paymentStatus: "SUCCESS",
     })
-      .populate("assetId", "assetName assetCode")
+      .populate(
+        "assetId",
+        "assetName assetCode images specification"
+      )
       .sort({
         createdAt: -1,
-      });
+      })
+      .lean();
+
+    const formattedPurchases =
+      purchases.map((purchase) => ({
+        id: purchase._id,
+
+        asset: purchase.assetId,
+
+        fractionsPurchased:
+          purchase.fractionsPurchased,
+
+        amountPerFraction:
+          purchase.amountPerFraction,
+
+        totalAmount:
+          purchase.totalAmount,
+
+        paymentStatus:
+          purchase.paymentStatus,
+
+        purchaseDate:
+          purchase.createdAt.toLocaleDateString(
+            "en-IN"
+          ),
+
+        purchaseTime:
+          purchase.createdAt.toLocaleTimeString(
+            "en-IN",
+            {
+              hour: "2-digit",
+              minute: "2-digit",
+            }
+          ),
+
+        createdAt:
+          purchase.createdAt,
+      }));
 
     return res.status(200).json({
       success: true,
-      data: purchases,
+      count: formattedPurchases.length,
+      data: formattedPurchases,
     });
   } catch (error) {
     return res.status(500).json({
@@ -253,3 +295,7 @@ export const getAssetInvestors = async (req, res) => {
     });
   }
 };
+
+
+
+

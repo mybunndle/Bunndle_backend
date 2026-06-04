@@ -8,9 +8,11 @@ import { allocateFractions } from "../services/ownerShipService.js";
 export const createOrder = async (req, res) => {
   try {
     const userId = req.user.id;
-
     const { assetId, fractions } = req.body;
 
+    // =========================
+    // VALIDATION
+    // =========================
     if (!assetId || !fractions) {
       return res.status(400).json({
         success: false,
@@ -27,13 +29,42 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Atomic reservation
+    // =========================
+    // KYC CHECK
+    // =========================
+    const user = await User.findById(userId).select(
+      "kycStatus isKycVerified"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (
+      user.kycStatus !== "VERIFIED" ||
+      !user.isKycVerified
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "KYC verification is required before making an investment.",
+        kycRequired: true,
+      });
+    }
+
+    // =========================
+    // RESERVE FRACTIONS
+    // =========================
     const asset = await Asset.findOneAndUpdate(
       {
         _id: assetId,
         availableFractions: {
           $gte: fractionCount,
         },
+        status: "ACTIVE",
       },
       {
         $inc: {
@@ -49,63 +80,71 @@ export const createOrder = async (req, res) => {
     if (!asset) {
       return res.status(400).json({
         success: false,
-        message: "Not enough fractions available",
+        message:
+          "Not enough fractions available or asset is inactive",
       });
     }
 
+    // =========================
+    // CALCULATE AMOUNT
+    // =========================
     const amount =
-      fractionCount *
-      asset.amountPerFraction;
+      fractionCount * asset.amountPerFraction;
 
-    // Create Order
+    // =========================
+    // CREATE ORDER
+    // =========================
     const order = await Order.create({
       userId,
-
       assetId,
-
       fractions: fractionCount,
-
       amountPerFraction:
         asset.amountPerFraction,
-
       totalAmount: amount,
-
       status: "PENDING_PAYMENT",
 
+      // Reservation valid for 5 minutes
       expiresAt: new Date(
         Date.now() + 5 * 60 * 1000
-      ), // 5 mins
+      ),
     });
 
-    // Create Razorpay Order
+    // =========================
+    // CREATE RAZORPAY ORDER
+    // =========================
     const razorpayOrder =
       await razorpay.orders.create({
-        amount: amount * 100,
+        amount: amount * 100, // paise
         currency: "INR",
         receipt: `receipt_${order._id}`,
       });
 
-    // Create Payment Record
+    // =========================
+    // CREATE PAYMENT RECORD
+    // =========================
     await Payment.create({
       userId,
-
       orderId: order._id,
-
       razorpayOrderId:
         razorpayOrder.id,
-
       amount,
-
       status: "PENDING",
     });
 
+    // =========================
+    // RESPONSE
+    // =========================
     return res.status(200).json({
       success: true,
+      message: "Order created successfully",
       order,
       razorpayOrder,
     });
   } catch (error) {
-    console.log(error);
+    console.error(
+      "Create Order Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,

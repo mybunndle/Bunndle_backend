@@ -5,7 +5,7 @@ const purchaseHistorySchema =
     {
       assetId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Asset",
+         ref: "CoAsset",
         required: true,
       },
 
