@@ -4,6 +4,7 @@ import Payment from "../model/PaymentModel.js";
 import Asset from "../model/coAssetModel.js";
 import razorpay from "../config/razorpay.js";
 import { allocateFractions } from "../services/ownerShipService.js";
+import User from "../model/userModel.js";
 
 export const createOrder = async (req, res) => {
   try {
