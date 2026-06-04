@@ -210,7 +210,7 @@ export const getMyOwnerships = async (
         .populate({
           path: "assetId",
           select:
-            "assetName assetCode images amountPerFraction totalFractions availableFractions status",
+            "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction durationMonths lockInMonths",
         })
         .sort({
           createdAt: -1,
