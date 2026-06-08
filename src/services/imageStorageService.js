@@ -174,6 +174,36 @@ export const deleteCoAssetFile = async (fileId) => {
   }
 };
 
+
+
+
+export const uploadHomePageImage = async (file) => {
+  try {
+    if (!file) {
+      throw new Error("File is required");
+    }
+
+    const result = await imagekit.upload({
+      file: file.buffer,
+      fileName: `home-page-${Date.now()}-${file.originalname}`,
+      folder: "/Agent_alliance/home-page-images",
+      useUniqueFileName: true,
+    });
+
+    return {
+      url: result.url,
+      fileId: result.fileId,
+      filename: result.name,
+    };
+  } catch (err) {
+    console.error("ImageKit Upload Error:", err);
+
+    throw new Error(
+      `Co-asset upload failed: ${err.message}`
+    );
+  }
+};
+
  
 
 
