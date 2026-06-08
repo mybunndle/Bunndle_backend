@@ -49,7 +49,7 @@ export const uploadVehicleImages = multer({
 export const uploadHomeImage = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 20 * 1024 * 1024, // 20MB max input
+    fileSize: 10* 1024 * 1024, // 10MB max input
   },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {

@@ -1,5 +1,7 @@
 import HomeList from "../model/homeBannerSchema.js";
+import topInDemandModel from "../model/topdemandModel.js";
 import { uploadHomePageImage } from "../services/imageStorageService.js";
+
 
 /**
  * Create or Update Home Page Data
@@ -68,6 +70,63 @@ export const getHomeList = async (req, res) => {
   } catch (error) {
     console.error("Get Home List Error:", error);
 
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+//top in demand images
+export const saveTopInDemand = async (req, res) => {
+  try {
+    const { brand, model, price } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Image is required",
+      });
+    }
+
+    const uploadedImage = await uploadHomePageImage(req.file);
+
+    const data = await topInDemandModel.create({
+      brand,
+      model,
+      price,
+      image: uploadedImage.url,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Top In Demand created successfully",
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Get All
+export const getTopInDemand = async (req, res) => {
+  try {
+    const data = await topInDemandModel.find().sort({
+      createdAt: -1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: data.length,
+      data,
+    });
+  } catch (error) {
     return res.status(500).json({
       success: false,
       message: error.message,

@@ -4,6 +4,8 @@ import auth_middleware from "../middleware/auth_validate.js";
 import {
   saveHomeList,
   getHomeList,
+  saveTopInDemand,
+  getTopInDemand
 } from "../controllers/home_page_controller.js";
 
 import { uploadHomeImage } from "../middleware/upload.js";
@@ -29,6 +31,20 @@ router.get(
   "/getlistimages",
   
   getHomeList
+);
+
+
+//top in demands
+
+router.post(
+  "/savetopindemand",
+  uploadHomeImage.single("image"),
+  saveTopInDemand
+);
+
+router.get(
+  "/gettopindemand",
+  getTopInDemand
 );
 
 export default router;
