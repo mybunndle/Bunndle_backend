@@ -2,6 +2,7 @@ import HomeList from "../model/homeBannerSchema.js";
 import topInDemandModel from "../model/topdemandModel.js";
 import { uploadHomePageImage } from "../services/imageStorageService.js";
 import ExploreDealAndRecomended from "../model/exploredeals&RecomendedModel.js";
+import TrendingOffers from "../model/trending&LimitedOffersModel.js";
 
 
 /**
@@ -258,3 +259,123 @@ export const getExploreDeals = async (req, res) => {
     });
   }
 };
+
+
+
+//trending and limited offers controllers
+
+
+
+export const addTrending = async (req, res) => {
+  try {
+    const { model, category, brand ,price,type} = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Image is required.",
+      });
+    }
+
+    // Upload image to ImageKit
+    const uploadedImage = await uploadHomePageImage(req.file);
+
+    const data = await TrendingOffers.create({
+      image: uploadedImage,
+      model,
+      category,
+      brand,
+      type: "Trending",
+      price, // or "0" since price is required in your schema
+      discount: 0,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Trending item added successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+
+export const getTrendingItems = async (req, res) => {
+  try {
+    const data = await TrendingOffers.find({
+      type: "Trending",
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Trending items fetched successfully.",
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+
+
+//offer items
+
+export const addOfferItem = async (req, res) => {
+  try {
+    const { category, price, discount } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Image is required.",
+      });
+    }
+
+    if (!category || !price) {
+      return res.status(400).json({
+        success: false,
+        message: "Category and price are required.",
+      });
+    }
+
+    // Upload image to ImageKit
+    const uploadedImage = await uploadHomePageImage(req.file);
+
+    const data = await TrendingOffers.create({
+      image: uploadedImage.url, // use uploadedImage if image field is an object
+      category,
+      price,
+      discount: discount || 0,
+      brand: null,
+      model: null,
+      type: "Offers",
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Offer item added successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+

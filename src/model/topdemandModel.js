@@ -14,7 +14,7 @@ const topInDemandSchema = new mongoose.Schema(
 
     model: {
       type: String,
-      required: true,
+    
       trim: true,
     },
 

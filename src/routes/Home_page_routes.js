@@ -4,7 +4,7 @@ import auth_middleware from "../middleware/auth_validate.js";
 import {
   saveHomeList,getHomeList,saveTopInDemand,getTopInDemand,addExploreDealImageOnly,getExploreDealImages,
   addExploreDealWithDetails,
-  getExploreDeals,
+  getExploreDeals, addTrending,getTrendingItems,addOfferItem
 } from "../controllers/home_page_controller.js";
 
 import { uploadHomeImage } from "../middleware/upload.js";
@@ -38,16 +38,29 @@ router.get("/gettopindemand", getTopInDemand);
 //explore deals and recomended
 
 // Explore Deals - Add only image
-router.post("/add_explore_deals_image",uploadHomeImage.single("image"),addExploreDealImageOnly);
+router.post("/add_explore_deals_images",uploadHomeImage.single("image"),addExploreDealImageOnly);
 
 // Explore Deals - Get images
-router.get("/get_explore_deals_image", getExploreDealImages);
+router.get("/get_explore_deals_images", getExploreDealImages);
 
 // Explore Deals - Add image + brand + category + model
-router.post("/add_explore_deals",uploadHomeImage.single("image"),addExploreDealWithDetails);
+router.post("/add_explore_recommended",uploadHomeImage.single("image"),addExploreDealWithDetails);
 
 // Explore Deals - Get all data
-router.get("/get_explore_deals", getExploreDeals);
+router.get("/get_explore_recommended", getExploreDeals);
 
+
+//trending and limited time offers 
+
+router.post("/add_explore_trending_offers",uploadHomeImage.single("image"), addTrending);
+router.get("/get_explore_trending_offers", getTrendingItems);
+
+
+//limited time offers
+
+router.post("/add_explore_limited_time_offers",uploadHomeImage.single("image"), addOfferItem);
+//router.get("/get_explore_limited_time_offers", getTrendingItems);
+
+//router.get("/get_offer_items", getOfferItems);
 
 export default router;
