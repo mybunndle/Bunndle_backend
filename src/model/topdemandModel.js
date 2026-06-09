@@ -7,6 +7,10 @@ const topInDemandSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    serialNo:{
+      type: Number,
+      required: true,
+    },
 
     model: {
       type: String,

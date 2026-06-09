@@ -82,7 +82,7 @@ export const getHomeList = async (req, res) => {
 //top in demand images
 export const saveTopInDemand = async (req, res) => {
   try {
-    const { brand, model, price } = req.body;
+    const { brand, model, price,serialNo } = req.body;
     const file = req.file;
     if (!file) {
       return res.status(400).json({
@@ -97,6 +97,7 @@ export const saveTopInDemand = async (req, res) => {
       brand,
       model,
       price,
+      serialNo,
       image: uploadedImage.url,
     });
 
@@ -119,7 +120,7 @@ export const saveTopInDemand = async (req, res) => {
 export const getTopInDemand = async (req, res) => {
   try {
     const data = await topInDemandModel.find().sort({
-      createdAt: -1,
+      serialNo: 1,
     });
 
     return res.status(200).json({
