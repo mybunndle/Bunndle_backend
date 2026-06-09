@@ -45,7 +45,7 @@ const trendingOffersSchema = new mongoose.Schema(
     },
 
     discount: {
-      type: Number,
+      type: String,
       default: 0,
       min: 0,
     },

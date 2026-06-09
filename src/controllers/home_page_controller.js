@@ -344,24 +344,20 @@ export const addOfferItem = async (req, res) => {
       });
     }
 
-    if (!category || !price) {
-      return res.status(400).json({
-        success: false,
-        message: "Category and price are required.",
-      });
-    }
-
-    // Upload image to ImageKit
     const uploadedImage = await uploadHomePageImage(req.file);
 
     const data = await TrendingOffers.create({
-      image: uploadedImage.url, // use uploadedImage if image field is an object
       category,
       price,
-      discount: discount || 0,
+      discount: discount || "0",
       brand: null,
       model: null,
       type: "Offers",
+      image: {
+        url: uploadedImage.url,
+        fileId: uploadedImage.fileId,
+        filename: uploadedImage.filename,
+      },
     });
 
     return res.status(201).json({
@@ -379,3 +375,27 @@ export const addOfferItem = async (req, res) => {
   }
 };
 
+
+export const getOfferItems = async (req, res) => {
+  try {
+    const data = await TrendingOffers.find({
+      type: "Offers",
+    }).sort({
+      createdAt: -1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Offer items fetched successfully.",
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};

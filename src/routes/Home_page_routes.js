@@ -4,7 +4,8 @@ import auth_middleware from "../middleware/auth_validate.js";
 import {
   saveHomeList,getHomeList,saveTopInDemand,getTopInDemand,addExploreDealImageOnly,getExploreDealImages,
   addExploreDealWithDetails,
-  getExploreDeals, addTrending,getTrendingItems,addOfferItem
+  getExploreDeals, addTrending,getTrendingItems,addOfferItem,
+  getOfferItems
 } from "../controllers/home_page_controller.js";
 
 import { uploadHomeImage } from "../middleware/upload.js";
@@ -59,7 +60,7 @@ router.get("/get_explore_trending_offers", getTrendingItems);
 //limited time offers
 
 router.post("/add_explore_limited_time_offers",uploadHomeImage.single("image"), addOfferItem);
-//router.get("/get_explore_limited_time_offers", getTrendingItems);
+router.get("/get_explore_limited_time_offers", getOfferItems);
 
 //router.get("/get_offer_items", getOfferItems);
 
