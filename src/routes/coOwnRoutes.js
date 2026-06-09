@@ -1,50 +1,39 @@
 import express from "express";
 import auth_middleware from "../middleware/auth_validate.js";
 import admin_middleware from "../middleware/admin_validate.js";
-import { uploadAssetImages }  from "../middleware/upload.js";
-import { createCoAsset, getAssetInvestors, getCoAssetById, getCoAssets, getPurchaseHistory, getMyOwnerships } from "../controllers/coOwnController.js";
+import { uploadAssetImages } from "../middleware/upload.js";
+import {
+  createCoAsset,
+  getAssetInvestors,
+  getCoAssetById,
+  getCoAssets,
+  getPurchaseHistory,
+  getMyOwnerships,
+} from "../controllers/coOwnController.js";
 
 import { getAssetById } from "../controllers/assetcontroller.js";
 
+const router = express.Router();
 
-const router= express.Router();
-
-
-router.post("/add-assets",
-  admin_middleware,uploadAssetImages.array("files", 5), 
-  createCoAsset
+router.post(
+  "/add-assets",
+  admin_middleware,
+  uploadAssetImages.array("files", 5),
+  createCoAsset,
 );
 
-router.get(
-  "/assets",
-  getCoAssets
-);
+router.get("/assets", getCoAssets);
 
-router.get(
-  "/asset/:id",
-  getCoAssetById
-);
+router.get("/asset/:id", getCoAssetById);
 
+router.get("/my-purchases", auth_middleware, getPurchaseHistory);
 
-router.get(
-  "/my-purchases",
-  auth_middleware,
-  getPurchaseHistory
-);
-
-router.get(
-  "/my-ownerships",
-  auth_middleware,
-  getMyOwnerships
-);
+router.get("/my-ownerships", auth_middleware, getMyOwnerships);
 
 router.get(
   "/admin/assets/:assetId/investors",
   admin_middleware,
-  getAssetInvestors
+  getAssetInvestors,
 );
-
-
-
 
 export default router;

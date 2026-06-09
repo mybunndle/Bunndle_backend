@@ -1,6 +1,7 @@
 import HomeList from "../model/homeBannerSchema.js";
 import topInDemandModel from "../model/topdemandModel.js";
 import { uploadHomePageImage } from "../services/imageStorageService.js";
+import ExploreDealAndRecomended from "../model/exploredeals&RecomendedModel.js";
 
 
 /**
@@ -82,15 +83,15 @@ export const getHomeList = async (req, res) => {
 export const saveTopInDemand = async (req, res) => {
   try {
     const { brand, model, price } = req.body;
-
-    if (!req.file) {
+    const file = req.file;
+    if (!file) {
       return res.status(400).json({
         success: false,
         message: "Image is required",
       });
     }
 
-    const uploadedImage = await uploadHomePageImage(req.file);
+    const uploadedImage = await uploadHomePageImage(file);
 
     const data = await topInDemandModel.create({
       brand,
@@ -130,6 +131,129 @@ export const getTopInDemand = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+
+
+//explore deals and recomended
+
+
+
+// Add Image Only
+export const addExploreDealImageOnly = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Image is required.",
+      });
+    }
+
+    // Upload image to ImageKit
+    const image = await uploadHomePageImage(req.file);
+
+    const data = await ExploreDealAndRecomended.create({
+      image,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Image added successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getExploreDealImages = async (req, res) => {
+  try {
+    const images= await ExploreDealAndRecomended.find({
+      brand: { $exists: false, $ne: "" },
+      category: { $exists: false, $ne: "" },
+      model: { $exists: false, $ne: "" },
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Explore deal images fetched successfully.",
+      count: images.length,
+      data: images,
+    });
+  } catch (error) {
+    console.error("Error fetching explore deal images:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+
+
+export const addExploreDealWithDetails = async (req, res) => {
+  try {
+    const { brand, category, model } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Image is required.",
+      });
+    }
+
+    // Upload image to ImageKit
+    const image = await uploadHomePageImage(req.file);
+
+    const data = await ExploreDealAndRecomended.create({
+      image,
+      brand,
+      category,
+      model,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Explore Deal added successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+export const getExploreDeals = async (req, res) => {
+  try {
+    const deals = await ExploreDealAndRecomended.find({
+      brand: { $exists: true, $ne: "" },
+      category: { $exists: true, $ne: "" },
+      model: { $exists: true, $ne: "" },
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Recommended deals fetched successfully.",
+      count: deals.length,
+      data: deals,
+    });
+  } catch (error) {
+    console.error("Error fetching recommended deals:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
     });
   }
 };
