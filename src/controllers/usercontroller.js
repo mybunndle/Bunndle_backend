@@ -10,7 +10,7 @@ import resetCookieOptions from "../config/cookieOptions.js";
 import otpTemplate from "../utils/otpTemplate.js";
 import sendEmail from "../utils/email.js";
 import adminEmailTemplate from "../utils/adminEmailTemplate.js";
-import userEmailTemplate  from "../utils/userEmailTemplate.js";
+import userEmailTemplate from "../utils/userEmailTemplate.js";
 import userThankYouTemplate from "../utils/userThankYou.js";
 
 import { uploadFile, deleteFile } from "../services/imageStorageService.js";
@@ -34,7 +34,7 @@ const formatDob = (dob) => {
 
 export async function registerUser(req, res) {
   try {
-    const { name, phone, email, password,type } = req.body;
+    const { name, phone, email, password, type } = req.body;
 
     if (!name || !phone || !email || !password) {
       return res.status(400).json({
@@ -107,6 +107,12 @@ export async function loginUser(req, res) {
     }
 
     const user = await userModel.findOne({ email }).select("+password");
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
     if (!user.password) {
       return res.status(400).json({
         message: "Password not set. Please create your password first .",
@@ -114,12 +120,7 @@ export async function loginUser(req, res) {
       });
     }
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
+    
 
     // 3️⃣ Compare password
     const isMatch = await bcrypt.compare(password, user.password);
@@ -137,10 +138,8 @@ export async function loginUser(req, res) {
       expiresIn: "30d",
     });
 
-  
-
-console.log("TOKEN:", token);
-console.log("DECODED:", jwt.decode(token));
+    console.log("TOKEN:", token);
+    console.log("DECODED:", jwt.decode(token));
 
     // 5️⃣ Send response
     return res.status(200).json({
@@ -262,8 +261,7 @@ export async function googleAuthCallback(req, res) {
         `${req.user.name?.givenName || ""} ${req.user.name?.familyName || ""}`.trim();
       picture = req.user.photos?.[0]?.value;
     } else if (req.body?.idToken) {
-
-    /* ===== ANDROID (ID TOKEN) ===== */
+      /* ===== ANDROID (ID TOKEN) ===== */
       const payload = await verifyGoogleIdToken(req.body.idToken);
       googleId = payload.sub;
       email = payload.email;
@@ -460,14 +458,14 @@ export async function getUserProfile(req, res) {
         message: "Unauthorized",
       });
     }
-     
+
     const token = authHeader.split(" ")[1];
 
     const decoded = jwt.verify(token, config.jwtSecret);
 
     const user = await userModel.findById(decoded.id);
     console.log("TOKEN:", token);
-     console.log("DECODED:", jwt.decode(token));
+    console.log("DECODED:", jwt.decode(token));
 
     if (!user) {
       return res.status(404).json({
@@ -1082,21 +1080,17 @@ export const resetPassword = async (req, res) => {
   }
 };
 export const quickConnect = async (req, res) => {
-
   try {
-
     const { name, email, message } = req.body;
 
     if (!name || !email || !message) {
-
       return res.status(400).json({
-        message: "All fields are required"
+        message: "All fields are required",
       });
     }
 
     // 📩 Send email to admin
     await sendEmail({
-
       to: config.from,
 
       subject: "New Quick Connect Request",
@@ -1106,12 +1100,10 @@ export const quickConnect = async (req, res) => {
         email,
         message,
       }),
-
     });
 
     // 📧 Send confirmation to user
     await sendEmail({
-
       to: email,
 
       subject: "Quick Connect",
@@ -1121,7 +1113,6 @@ export const quickConnect = async (req, res) => {
         email,
         message,
       }),
-
     });
 
     console.log("Quick connect request:", {
@@ -1131,29 +1122,19 @@ export const quickConnect = async (req, res) => {
     });
 
     res.status(200).json({
-
-      message:
-        "Request submitted successfully. We will contact you soon.",
+      message: "Request submitted successfully. We will contact you soon.",
 
       name,
       email,
-
     });
-
   } catch (error) {
-
     console.log(error);
 
     res.status(500).json({
-      message: "Internal server error"
+      message: "Internal server error",
     });
   }
 };
-
-
-
-
-
 
 // Mobile OTP Generation and verify Functions----------------------------------
 
