@@ -2,6 +2,7 @@
 import Asset from "../model/assetModel.js";
 import { uploadAssetFile, deleteAssetFile } from "../services/imageStorageService.js";
 import mongoose from "mongoose";
+import AssetEnquiry from "../model/assetEnquiryModel.js";
 
 
 // ✅ Create Asset (Upload + Save)
@@ -800,16 +801,16 @@ export const requestAssetDeletion = async (req, res) => {
  };
 
  //for admin
- export const approveAssetDeletion = async (req, res) => {
-  try {
 
+export const approveAssetDeletion = async (req, res) => {
+  try {
     const { id } = req.params;
-    console.log(req.user)
+
+    console.log(req.user);
 
     // =========================
     // CHECK ADMIN
     // =========================
-
     if (req.user.type !== "ADMIN") {
       return res.status(403).json({
         success: false,
@@ -820,7 +821,6 @@ export const requestAssetDeletion = async (req, res) => {
     // =========================
     // VALIDATE ID
     // =========================
-
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -828,8 +828,9 @@ export const requestAssetDeletion = async (req, res) => {
       });
     }
 
-    // find asset
-
+    // =========================
+    // FIND ASSET
+    // =========================
     const asset = await Asset.findById(id);
 
     if (!asset) {
@@ -839,41 +840,50 @@ export const requestAssetDeletion = async (req, res) => {
       });
     }
 
-    // imagekit deletion
-
+    // =========================
+    // DELETE IMAGEKIT FILES
+    // =========================
     if (asset.files?.length > 0) {
-
       for (const file of asset.files) {
-
-        if (file.fileId) {
-          await deleteAssetFile(file.fileId);
+        try {
+          if (file.fileId) {
+            await deleteAssetFile(file.fileId);
+          }
+        } catch (err) {
+          console.error(
+            `Failed to delete ImageKit file ${file.fileId}:`,
+            err.message
+          );
         }
-
       }
-
     }
 
-    // deleting the asset
+    // =========================
+    // DELETE ALL ENQUIRIES
+    // RELATED TO THIS ASSET
+    // =========================
+    const deletedEnquiries = await AssetEnquiry.deleteMany({
+      assetId: asset._id,
+    });
 
-    await Asset.findByIdAndDelete(id);
+    // =========================
+    // DELETE ASSET
+    // =========================
+    await Asset.findByIdAndDelete(asset._id);
 
     return res.status(200).json({
       success: true,
-      message:
-        "Asset deleted successfully by Admin",
+      message: "Asset and all related enquiries deleted successfully.",
+      deletedEnquiries: deletedEnquiries.deletedCount,
     });
-
   } catch (error) {
-
     console.log(error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to delete asset",
+      message: "Failed to delete asset",
       error: error.message,
     });
-
   }
 };
 

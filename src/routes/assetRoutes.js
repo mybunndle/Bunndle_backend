@@ -42,10 +42,11 @@ router.put("/approve-asset/:id", authMiddleware, updateAssetApprovalStatus);
 router.put("/update-asset/:id",authMiddleware,updateAssetStatusAndPrice);
 router.get("/dashboard-stats", authMiddleware, getDashboardStats);
 
-
+//user delete request for asset deletion
 router.post("/request-delete/:id", authMiddleware, requestAssetDeletion);
 
 // for admin to delete asset with delete request
+
 router.delete("/delete-asset/:id",adminAuthMiddleware, approveAssetDeletion);
 router.get("/delete-requests",adminAuthMiddleware, getDeleteRequests);
 
