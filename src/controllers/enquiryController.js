@@ -48,6 +48,7 @@ export const toggleEnquiry = async (req, res) => {
 
 export const getMyEnquiredAssets = async (req, res) => {
   try {
+    console.log("Fetching my enquired assets for user:", req.user._id);
     const userId = req.user._id;
     const enquiries = await AssetEnquiry.find({
       userId,
@@ -61,7 +62,7 @@ export const getMyEnquiredAssets = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      total: enquiries.length,
+      total: assets.length,
       data: assets,
     });
   } catch (error) {
