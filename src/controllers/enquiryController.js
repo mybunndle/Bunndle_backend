@@ -61,7 +61,7 @@ export const getMyEnquiredAssets = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      total: assets.length,
+      total: enquiries.length,
       data: assets,
     });
   } catch (error) {
