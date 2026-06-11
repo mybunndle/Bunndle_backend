@@ -302,7 +302,7 @@ export const getAllEnquiries =
 
     return res.status(200).json({
       success: true,
-      total: assetIds.length,
+      total: enquiries.length,
       data: assetIds,
     });
   }
