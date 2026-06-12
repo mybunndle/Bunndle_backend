@@ -70,9 +70,9 @@ export const createCoAsset = async (req, res) => {
       }
     }
 
-    const amountPerFraction =
-      Number(assetCost) /
-      Number(totalFractions);
+    const amountPerFraction = Math.ceil(
+  Number(assetCost) / Number(totalFractions)
+);
 
     const asset = await Asset.create({
       assetName,
