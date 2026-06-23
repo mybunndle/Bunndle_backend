@@ -1,5 +1,6 @@
 import express from "express";
 import authMiddleware from "../middleware/auth_validate.js";
+import adminAuthMiddleware from "../middleware/admin_validate.js";
 import {
   registerUser,
   loginUser, 

@@ -144,7 +144,7 @@ export async function loginUser(req, res) {
     // 5️⃣ Send response
     return res.status(200).json({
       success: true,
-
+        
       message: "Login successful",
       token,
       user,
@@ -484,7 +484,7 @@ export async function getUserProfile(req, res) {
         phone: user.phone || "",
         email: user.email || "",
         profileImage: user.profileImage || "",
-        role: user.role || "",
+        type: user.type || "",
         dob: user.dob ? formatDob(user.dob) : null,
         kycStatus: user.kycStatus,
         kycDocument: user.kycDocument || "",

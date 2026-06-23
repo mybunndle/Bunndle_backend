@@ -920,3 +920,44 @@ export const getDeleteRequests = async (req, res) => {
 
   }
 };
+
+
+
+
+
+
+
+// GET /api/assets?page=1
+export const getAssets = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 1;
+
+    const skip = (page - 1) * limit;
+
+    const assets = await Asset.find()
+      .skip(skip)
+      .limit(limit);
+
+    const totalAssets = await Asset.countDocuments();
+
+    res.status(200).json({
+      success: true,
+      message: "Assets fetched successfully",
+      currentPage: page,
+      perPage: limit,
+      count: assets.length,
+      totalAssets,
+      totalPages: Math.ceil(totalAssets / limit),
+      hasNextPage: page < Math.ceil(totalAssets / limit),
+      hasPrevPage: page > 1,
+      data: assets,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch assets",
+      error: error.message,
+    });
+  }
+};

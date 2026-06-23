@@ -13,7 +13,7 @@ export const releaseExpiredReservations =
         });
         console.log("Expired orders found: ", expiredOrders.length);
 
-      for (const order of expiredOrders) {
+      for (const order of expiredOrders){
 
         await Asset.findByIdAndUpdate(
           order.assetId,
@@ -27,11 +27,8 @@ export const releaseExpiredReservations =
             },
           }
         );
-
         order.status = "EXPIRED";
-
         await order.save();
-
         console.log(
           `Released reservation for order ${order._id}`
         );
