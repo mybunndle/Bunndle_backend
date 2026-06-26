@@ -160,7 +160,6 @@ export const getMyAssets = async (req, res) => {
 };
 
 
-
 // ✅ Get Single Asset
 export const getAssetById = async (req, res) => {
   try {
@@ -284,8 +283,6 @@ export const getAssetsByCategoryAndSubCategory = async (req, res) => {
     });
   }
 };
-
-
 
 
 export const toggleEnquiryStatus = async (req, res) => {

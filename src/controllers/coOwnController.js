@@ -281,7 +281,7 @@ export const getAssetInvestors = async (req, res) => {
   try {
     const investors = await Ownership.find({
       assetId: req.params.assetId,
-    }).populate("userId", "name email phone");
+    }).populate("userId", "name email phone fractionsOwned totalFractions")
 
     return res.status(200).json({
       success: true,

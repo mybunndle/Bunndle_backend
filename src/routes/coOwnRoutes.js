@@ -32,7 +32,6 @@ router.get("/my-ownerships", auth_middleware, getMyOwnerships);
 
 router.get(
   "/admin/assets/:assetId/investors",
-  admin_middleware,
   getAssetInvestors,
 );
 

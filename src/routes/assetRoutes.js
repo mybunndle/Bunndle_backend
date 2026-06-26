@@ -35,13 +35,13 @@ router.patch("/enquiry-status/:id", authMiddleware, toggleEnquiryStatus);
 router.get("/user-enquiries", authMiddleware, getMyEnquiredAssets);
 
 //for admin to see all enquired assets
-router.get("/all_list", authMiddleware, getAllAssetsForAdmin);
+router.get("/all_enquiry_admin", adminAuthMiddleware, getAllAssetsForAdmin);
 
 //for admin approval of assets
 
 
 router.put("/approve-asset/:id", authMiddleware, updateAssetApprovalStatus);
-router.put("/update-asset/:id",authMiddleware,updateAssetStatusAndPrice);
+router.put("/update-asset/:id",adminAuthMiddleware,updateAssetStatusAndPrice);
 router.get("/dashboard-stats", authMiddleware, getDashboardStats);
 
 //user delete request for asset deletion

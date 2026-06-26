@@ -31,5 +31,4 @@ connectDB()
       "MongoDB connection failed:",
       error
     );
-
   });
