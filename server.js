@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("🚀 Server is up and running");
+  res.send("🚀 Server-with doker is up and running");
 });
 
 // Start server only after DB connects
