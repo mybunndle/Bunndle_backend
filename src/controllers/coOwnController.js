@@ -1,16 +1,16 @@
 import mongoose from "mongoose";
 import Asset from "../model/coAssetModel.js";
-import {uploadCoAssetFile,deleteCoAssetFile } from "../services/imageStorageService.js";
-
+import {
+  uploadCoAssetFile,
+  deleteCoAssetFile,
+} from "../services/imageStorageService.js";
 
 import Ownership from "../model/ownerShipModel.js";
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
 
-
-
 export const createCoAsset = async (req, res) => {
-    console.log("BODY =>", req.body);
-    console.log("FILES =>", req.files);
+  console.log("BODY =>", req.body);
+  console.log("FILES =>", req.files);
   try {
     const {
       assetName,
@@ -35,12 +35,7 @@ export const createCoAsset = async (req, res) => {
       });
     }
 
-    if (
-      !assetName ||
-      !assetCode ||
-      !assetCost ||
-      !totalFractions
-    ) {
+    if (!assetName || !assetCode || !assetCost || !totalFractions) {
       return res.status(400).json({
         success: false,
         message: "Required fields are missing",
@@ -59,8 +54,7 @@ export const createCoAsset = async (req, res) => {
 
     if (req.files?.length) {
       for (const file of req.files) {
-        const uploadedFile =
-          await uploadCoAssetFile(file);
+        const uploadedFile = await uploadCoAssetFile(file);
 
         images.push({
           url: uploadedFile.url,
@@ -71,8 +65,8 @@ export const createCoAsset = async (req, res) => {
     }
 
     const amountPerFraction = Math.ceil(
-  Number(assetCost) / Number(totalFractions)
-);
+      Number(assetCost) / Number(totalFractions),
+    );
 
     const asset = await Asset.create({
       assetName,
@@ -81,24 +75,17 @@ export const createCoAsset = async (req, res) => {
       specification,
       assetCost: Number(assetCost),
 
-      totalFractions:
-        Number(totalFractions),
+      totalFractions: Number(totalFractions),
 
-      availableFractions:
-        Number(totalFractions),
+      availableFractions: Number(totalFractions),
 
       amountPerFraction,
 
-      rentalAmountPerFraction:
-        Number(
-          rentalAmountPerFraction
-        ),
+      rentalAmountPerFraction: Number(rentalAmountPerFraction),
 
-      durationMonths:
-        Number(durationMonths),
+      durationMonths: Number(durationMonths),
 
-      lockInMonths:
-        Number(lockInMonths),
+      lockInMonths: Number(lockInMonths),
 
       images,
 
@@ -109,15 +96,11 @@ export const createCoAsset = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message:
-        "Co-Asset created successfully",
+      message: "Co-Asset created successfully",
       data: asset,
     });
   } catch (error) {
-    console.error(
-      "Create Co Asset Error:",
-      error
-    );
+    console.error("Create Co Asset Error:", error);
 
     return res.status(500).json({
       success: false,
@@ -175,50 +158,34 @@ export const getPurchaseHistory = async (req, res) => {
       userId: req.user._id,
       paymentStatus: "SUCCESS",
     })
-      .populate(
-        "assetId",
-        "assetName assetCode images specification"
-      )
+      .populate("assetId", "assetName assetCode images specification")
       .sort({
         createdAt: -1,
       })
       .lean();
 
-    const formattedPurchases =
-      purchases.map((purchase) => ({
-        id: purchase._id,
+    const formattedPurchases = purchases.map((purchase) => ({
+      id: purchase._id,
 
-        asset: purchase.assetId,
+      asset: purchase.assetId,
 
-        fractionsPurchased:
-          purchase.fractionsPurchased,
+      fractionsPurchased: purchase.fractionsPurchased,
 
-        amountPerFraction:
-          purchase.amountPerFraction,
+      amountPerFraction: purchase.amountPerFraction,
 
-        totalAmount:
-          purchase.totalAmount,
+      totalAmount: purchase.totalAmount,
 
-        paymentStatus:
-          purchase.paymentStatus,
+      paymentStatus: purchase.paymentStatus,
 
-        purchaseDate:
-          purchase.createdAt.toLocaleDateString(
-            "en-IN"
-          ),
+      purchaseDate: purchase.createdAt.toLocaleDateString("en-IN"),
 
-        purchaseTime:
-          purchase.createdAt.toLocaleTimeString(
-            "en-IN",
-            {
-              hour: "2-digit",
-              minute: "2-digit",
-            }
-          ),
+      purchaseTime: purchase.createdAt.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
 
-        createdAt:
-          purchase.createdAt,
-      }));
+      createdAt: purchase.createdAt,
+    }));
 
     return res.status(200).json({
       success: true,
@@ -233,30 +200,21 @@ export const getPurchaseHistory = async (req, res) => {
   }
 };
 
-
-
-
-
-
-export const getMyOwnerships = async (
-  req,
-  res
-) => {
+export const getMyOwnerships = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const ownerships =
-      await Ownership.find({
-        userId,
+    const ownerships = await Ownership.find({
+      userId,
+    })
+      .populate({
+        path: "assetId",
+        select:
+          "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction assetCost specification durationMonths lockInMonths",
       })
-        .populate({
-          path: "assetId",
-          select:
-            "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction assetCost specification durationMonths lockInMonths",
-        })
-        .sort({
-          createdAt: -1,
-        });
+      .sort({
+        createdAt: -1,
+      });
 
     return res.status(200).json({
       success: true,
@@ -273,15 +231,13 @@ export const getMyOwnerships = async (
   }
 };
 
-
-
 //admin controller
 
 export const getAssetInvestors = async (req, res) => {
   try {
     const investors = await Ownership.find({
       assetId: req.params.assetId,
-    }).populate("userId", "name email phone fractionsOwned totalFractions")
+    }).populate("userId", "name email phone fractionsOwned totalFractions");
 
     return res.status(200).json({
       success: true,
@@ -296,6 +252,51 @@ export const getAssetInvestors = async (req, res) => {
   }
 };
 
+export const delete_co_own = async (req, res) => {
+  try {
+    const asset_id = req.params.id;
 
+    // validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(asset_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid asset id",
+      });
+    }
 
+    // check asset exists or not
+    const asset = await Asset.findById(asset_id);
 
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found",
+      });
+    }
+
+    // check if any ownership exists for this asset
+    const ownership = await Ownership.findOne({
+      assetId: asset_id,
+    });
+
+    if (ownership) {
+      return res.status(403).json({
+        success: false,
+        message: "This asset has owners, so admin cannot delete it",
+      });
+    }
+
+    // delete asset only if no ownership exists
+    await Asset.findByIdAndDelete(asset_id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Asset deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

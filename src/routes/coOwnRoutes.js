@@ -9,6 +9,7 @@ import {
   getCoAssets,
   getPurchaseHistory,
   getMyOwnerships,
+  delete_co_own
 } from "../controllers/coOwnController.js";
 
 import { getAssetById } from "../controllers/assetcontroller.js";
@@ -25,6 +26,8 @@ router.post(
 router.get("/assets", getCoAssets);
 
 router.get("/asset/:id", getCoAssetById);
+
+router.delete("/delete-asset/:id",admin_middleware, delete_co_own);
 
 router.get("/my-purchases", auth_middleware, getPurchaseHistory);
 
