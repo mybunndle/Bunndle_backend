@@ -1,5 +1,6 @@
 import AssetEnquiry from "../model/assetEnquiryModel.js";
 import Asset from "../model/assetModel.js";
+import User from "../model/userModel.js";
 import mongoose from "mongoose";
 
 export const toggleEnquiry = async (req, res) => {
@@ -118,6 +119,7 @@ export const getAllEnquiries = async (req, res) => {
             user: item.userId,
 
             remarks: item.adminRemarks,
+             
 
             createdAt: item.createdAt,
           })),
@@ -173,35 +175,121 @@ export const getMyEnquiryAssetIds = async (req, res) => {
   });
 };
 
+// export const updateAdminRemark = async (req, res) => {
+//   try {
+//     const { enquiryId } = req.params;
+//     const { adminRemarks } = req.body;
+    
+//     const adminId = req.user?._id || req.user?.id;
+//     console.log("Adding admin remark for enquiry:", enquiryId, adminRemarks);
+//     if (!adminId) {
+//       return res
+//         .status(401)
+//         .json({ success: false, message: "Unauthorized admin" });
+//     }
+//     if (!mongoose.Types.ObjectId.isValid(enquiryId)) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "Invalid enquiry id" });
+//     }
+//     if (!adminRemarks || adminRemarks.trim() === "") {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: "Admin remark is required" });
+//     }
+//     if (adminRemarks.trim().length > 500) {
+//       return res
+//         .status(400)
+//         .json({
+//           success: false,
+//           message: "Admin remark should not exceed 500 characters",
+//         });
+//     }
+//     const updatedEnquiry = await AssetEnquiry.findByIdAndUpdate(
+//       enquiryId,
+//       {
+//         $push: {
+//           adminRemarks: {
+//             remark: adminRemarks.trim(),
+//             updatedBy: adminId,
+            
+//             updatedAt: new Date(),
+//           },
+//         },
+//       },
+//       { new: true, runValidators: true },
+//     )
+//       .populate("userId", "name email phone")
+//       .populate("assetId", "assetName model brand category")
+//       .populate("adminRemarks.updatedBy", "name email");
+//     if (!updatedEnquiry) {
+//       return res
+//         .status(404)
+//         .json({ success: false, message: "Enquiry not found" });
+//     }
+//     return res
+//       .status(200)
+//       .json({
+//         success: true,
+//         message: "Admin remark added successfully",
+//         data: updatedEnquiry,
+//       });
+//   } catch (error) {
+//     console.log("Update admin remarks error:", error);
+//     return res.status(500).json({ success: false, message: error.message });
+//   }
+// };
+
+
+
+
+
 export const updateAdminRemark = async (req, res) => {
   try {
     const { enquiryId } = req.params;
     const { adminRemarks } = req.body;
+
     const adminId = req.user?._id || req.user?.id;
+
     console.log("Adding admin remark for enquiry:", enquiryId, adminRemarks);
+
     if (!adminId) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Unauthorized admin" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized admin",
+      });
     }
+
     if (!mongoose.Types.ObjectId.isValid(enquiryId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid enquiry id" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid enquiry id",
+      });
     }
+
     if (!adminRemarks || adminRemarks.trim() === "") {
-      return res
-        .status(400)
-        .json({ success: false, message: "Admin remark is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Admin remark is required",
+      });
     }
+
     if (adminRemarks.trim().length > 500) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Admin remark should not exceed 500 characters",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Admin remark should not exceed 500 characters",
+      });
     }
+
+    const admin = await User.findById(adminId).select("name email");
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: "Admin user not found",
+      });
+    }
+
     const updatedEnquiry = await AssetEnquiry.findByIdAndUpdate(
       enquiryId,
       {
@@ -209,29 +297,40 @@ export const updateAdminRemark = async (req, res) => {
           adminRemarks: {
             remark: adminRemarks.trim(),
             updatedBy: adminId,
+            updatedByName: admin.name,
             updatedAt: new Date(),
           },
         },
       },
-      { new: true, runValidators: true },
+      {
+        new: true,
+        runValidators: true,
+      }
     )
       .populate("userId", "name email phone")
       .populate("assetId", "assetName model brand category")
       .populate("adminRemarks.updatedBy", "name email");
+
     if (!updatedEnquiry) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Enquiry not found" });
-    }
-    return res
-      .status(200)
-      .json({
-        success: true,
-        message: "Admin remark added successfully",
-        data: updatedEnquiry,
+      return res.status(404).json({
+        success: false,
+        message: "Enquiry not found",
       });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Admin remark added successfully",
+      data: updatedEnquiry,
+    });
   } catch (error) {
     console.log("Update admin remarks error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
+

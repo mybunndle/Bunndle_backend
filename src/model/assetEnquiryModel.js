@@ -77,6 +77,11 @@ const adminRemarkSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    updatedByName: {
+      type: String,
+      required: true,
+      default: "",
+    },
 
     updatedAt: {
       type: Date,
