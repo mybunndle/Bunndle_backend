@@ -584,7 +584,7 @@ export const updateAssetStatusAndPrice = async (req, res) => {
 
     // ✅ Save changes
     await asset.save();
-    console.log(asset);
+  
 
     return res.status(200).json({
       success: true,
