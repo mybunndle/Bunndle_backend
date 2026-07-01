@@ -233,19 +233,86 @@ export const getMyOwnerships = async (req, res) => {
 
 //admin controller
 
+
+
+// export const getAssetInvestors = async (req, res) => {
+//   console.log("Asset ID:", req.params.assetId);
+//   try {
+//     const investors = await Ownership.find({
+//       assetId: req.params.assetId,
+//     }).populate("userId", "name email phone fractionsOwned totalFractions rentalAmountPerFraction");
+
+//     return res.status(200).json({
+//       success: true,
+//       count: investors.length,
+//       data: investors,
+
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
 export const getAssetInvestors = async (req, res) => {
-  console.log("Asset ID:", req.params.assetId);
   try {
+    const { assetId } = req.params;
+
+    
+
+    if (!assetId) {
+      return res.status(400).json({
+        success: false,
+        message: "Asset ID is required",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(assetId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid asset ID",
+      });
+    }
+
+    const asset = await Asset.findById(assetId).lean();
+
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found",
+      });
+    }
+
+    const rentalAmountPerFraction = Number(asset.rentalAmountPerFraction || 0);
+
     const investors = await Ownership.find({
-      assetId: req.params.assetId,
-    }).populate("userId", "name email phone fractionsOwned totalFractions");
+      assetId: assetId,
+    })
+      .populate("userId", "name email phone")
+      .lean();
+
+    const investorsWithRentalAmount = investors.map((investor) => {
+      const fractionsOwned = Number(investor.fractionsOwned || 0);
+
+      const rentalAmountPerMonth =
+        fractionsOwned * rentalAmountPerFraction;
+
+      return {
+        ...investor,
+        rentalAmountPerMonth,
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      count: investors.length,
-      data: investors,
+      count: investorsWithRentalAmount.length,
+      data: investorsWithRentalAmount,
     });
   } catch (error) {
+    console.error("Get Asset Investors Error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message,

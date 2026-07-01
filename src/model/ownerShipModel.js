@@ -27,7 +27,7 @@ const ownershipSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-
+   
     averagePurchasePrice: {
       type: Number,
       default: 0,
@@ -52,3 +52,6 @@ export default mongoose.model(
   "Ownership",
   ownershipSchema
 );
+
+
+
