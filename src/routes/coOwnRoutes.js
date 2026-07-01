@@ -34,7 +34,7 @@ router.get("/my-purchases", auth_middleware, getPurchaseHistory);
 router.get("/my-ownerships", auth_middleware, getMyOwnerships);
 
 router.get(
-  "/admin/assets/:assetId/investors",
+  "/assets-investors/:assetId",
   getAssetInvestors,
 );
 

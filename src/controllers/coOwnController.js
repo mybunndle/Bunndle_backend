@@ -234,6 +234,7 @@ export const getMyOwnerships = async (req, res) => {
 //admin controller
 
 export const getAssetInvestors = async (req, res) => {
+  console.log("Asset ID:", req.params.assetId);
   try {
     const investors = await Ownership.find({
       assetId: req.params.assetId,
