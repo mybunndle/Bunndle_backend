@@ -9,7 +9,8 @@ import {
   getCoAssets,
   getPurchaseHistory,
   getMyOwnerships,
-  delete_co_own
+  delete_co_own,
+  getPurchaseHistoryByUserId
 } from "../controllers/coOwnController.js";
 
 import { getAssetById } from "../controllers/assetcontroller.js";
@@ -37,5 +38,8 @@ router.get(
   "/assets-investors/:assetId",
   getAssetInvestors,
 );
+
+
+router.get("/purchase-history/:userId", admin_middleware, getPurchaseHistoryByUserId);
 
 export default router;

@@ -7,6 +7,7 @@ import {
 
 import Ownership from "../model/ownerShipModel.js";
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
+import paymentModel from "../model/PaymentModel.js";
 
 export const createCoAsset = async (req, res) => {
   console.log("BODY =>", req.body);
@@ -233,8 +234,6 @@ export const getMyOwnerships = async (req, res) => {
 
 //admin controller
 
-
-
 // export const getAssetInvestors = async (req, res) => {
 //   console.log("Asset ID:", req.params.assetId);
 //   try {
@@ -362,6 +361,109 @@ export const delete_co_own = async (req, res) => {
       message: "Asset deleted successfully",
     });
   } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+
+
+
+
+
+
+export const getPurchaseHistoryByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const purchaseHistory = await PurchaseHistory.find({
+      userId: userId,
+    })
+      .select(
+        "userId assetId totalAmount createdAt paymentStatus fractionsPurchased razorpayOrderId razorpayPaymentId transactionReference"
+      )
+      .populate("userId", "name")
+      .populate("assetId", "assetName model specification assetCode")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const formattedHistory = await Promise.all(
+      purchaseHistory.map(async (purchase) => {
+        const paymentDateTime = new Date(purchase.createdAt);
+
+        const paymentData = await paymentModel
+          .findOne({
+            userId: userId,
+            $or: [
+              { razorpayOrderId: purchase.razorpayOrderId },
+              { razorpayPaymentId: purchase.razorpayPaymentId },
+            ],
+          })
+          .select("razorpayOrderId razorpayPaymentId amount status createdAt")
+          .lean();
+
+        return {
+          username: purchase.userId?.name || "N/A",
+
+          assetName: purchase.assetId?.assetName || "N/A",
+
+          model:
+            purchase.assetId?.model ||
+            purchase.assetId?.specification ||
+            "N/A",
+
+          orderId:
+            paymentData?.razorpayOrderId ||
+            purchase.razorpayOrderId ||
+            "N/A",
+
+          paymentDate: paymentDateTime.toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            timeZone: "Asia/Kolkata",
+          }),
+
+          paymentTime: paymentDateTime.toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+            timeZone: "Asia/Kolkata",
+          }),
+
+          amount: purchase.totalAmount || paymentData?.amount || 0,
+
+          fractionsPurchased: purchase.fractionsPurchased || 0,
+        };
+      })
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "User purchase history fetched successfully",
+      count: formattedHistory.length,
+      data: formattedHistory,
+    });
+  } catch (error) {
+    console.error("Admin Get User Purchase History Error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message,
