@@ -232,6 +232,7 @@ export const getMyOwnerships = async (req, res) => {
   }
 };
 
+
 //admin controller
 
 // export const getAssetInvestors = async (req, res) => {
@@ -395,7 +396,7 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
         "userId assetId totalAmount createdAt paymentStatus fractionsPurchased razorpayOrderId razorpayPaymentId transactionReference"
       )
       .populate("userId", "name")
-      .populate("assetId", "assetName model specification assetCode")
+      .populate("assetId", "assetName assetCode model specification assetCode")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -411,7 +412,7 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
               { razorpayPaymentId: purchase.razorpayPaymentId },
             ],
           })
-          .select("razorpayOrderId razorpayPaymentId amount status createdAt")
+          .select("razorpayOrderId  razorpayPaymentId amount status createdAt")
           .lean();
 
         return {

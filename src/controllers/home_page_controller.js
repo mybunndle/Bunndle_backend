@@ -10,38 +10,71 @@ import TrendingOffers from "../model/trending&LimitedOffersModel.js";
  */
 export const saveHomeList = async (req, res) => {
   try {
-    console.log(req.files);
+    console.log("FILES =>", req.files);
 
     const rentalFiles = req.files?.rentalAssets || [];
     const popularFiles = req.files?.popularDeals || [];
 
-    const rentalAssets = await Promise.all(
-      rentalFiles.map(async (file) => {
-        const uploaded = await uploadHomePageImage(file);
-        return uploaded.url; // or return uploaded if you want the whole object
-      })
-    );
+    const isRentalUploaded = rentalFiles.length > 0;
+    const isPopularUploaded = popularFiles.length > 0;
 
-    const popularDeals = await Promise.all(
-      popularFiles.map(async (file) => {
-        const uploaded = await uploadHomePageImage(file);
-        return uploaded.url;
-      })
-    );
+    if (!isRentalUploaded && !isPopularUploaded) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload rentalAssets or popularDeals images",
+      });
+    }
+
+    // Agar rentalAssets upload kiya hai, to exactly 3 images required
+    if (isRentalUploaded && rentalFiles.length !== 3) {
+      return res.status(400).json({
+        success: false,
+        message: `Rental Assets must have exactly 3 images. You uploaded ${rentalFiles.length}.`,
+      });
+    }
+
+    // Agar popularDeals upload kiya hai, to exactly 3 images required
+    if (isPopularUploaded && popularFiles.length !== 3) {
+      return res.status(400).json({
+        success: false,
+        message: `Popular Deals must have exactly 3 images. You uploaded ${popularFiles.length}.`,
+      });
+    }
 
     let homeList = await HomeList.findOne();
 
-    if (homeList) {
-      homeList.rentalAssets = rentalAssets;
-      homeList.popularDeals = popularDeals;
-
-      await homeList.save();
-    } else {
+    if (!homeList) {
       homeList = await HomeList.create({
-        rentalAssets,
-        popularDeals,
+        rentalAssets: [],
+        popularDeals: [],
       });
     }
+
+    // Only rentalAssets replace hoga, popularDeals old same rahega
+    if (isRentalUploaded) {
+      const uploadedRentalAssets = await Promise.all(
+        rentalFiles.map(async (file) => {
+          const uploaded = await uploadHomePageImage(file);
+          return uploaded.url;
+        })
+      );
+
+      homeList.rentalAssets = uploadedRentalAssets;
+    }
+
+    // Only popularDeals replace hoga, rentalAssets old same rahega
+    if (isPopularUploaded) {
+      const uploadedPopularDeals = await Promise.all(
+        popularFiles.map(async (file) => {
+          const uploaded = await uploadHomePageImage(file);
+          return uploaded.url;
+        })
+      );
+
+      homeList.popularDeals = uploadedPopularDeals;
+    }
+
+    await homeList.save();
 
     return res.status(200).json({
       success: true,
@@ -49,7 +82,7 @@ export const saveHomeList = async (req, res) => {
       data: homeList,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Save Home List Error:", error);
 
     return res.status(500).json({
       success: false,
@@ -58,9 +91,7 @@ export const saveHomeList = async (req, res) => {
   }
 };
 
-/**
- * Get Home Page Data
- */
+
 export const getHomeList = async (req, res) => {
   try {
     const homeList = await HomeList.findOne();
