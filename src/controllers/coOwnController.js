@@ -370,11 +370,6 @@ export const delete_co_own = async (req, res) => {
 
 
 
-
-
-
-
-
 export const getPurchaseHistoryByUserId = async (req, res) => {
   try {
     const { userId } = req.params;
