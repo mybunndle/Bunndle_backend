@@ -5,7 +5,12 @@ import {
   saveHomeList,getHomeList,saveTopInDemand,getTopInDemand,addExploreDealImageOnly,getExploreDealImages,
   addExploreDealWithDetails,
   getExploreDeals, addTrending,getTrendingItems,addOfferItem,
-  getOfferItems
+  getOfferItems,
+  deleteTrendingItemById,
+  deleteOfferItemById,
+  deleteExploreDealImageById,
+  deleteExploreDealById,
+  deletetopInDemandById
 } from "../controllers/home_page_controller.js";
 
 import { uploadHomeImage } from "../middleware/upload.js";
@@ -30,9 +35,10 @@ router.get("/getlistimages",getHomeList);
 
 //top in demands
 
-router.post("/savetopindemand",uploadHomeImage.single("image"),saveTopInDemand,);
+router.post("/savetopindemand",uploadHomeImage.single("image"),saveTopInDemand);
 
 router.get("/gettopindemand", getTopInDemand);
+router.delete("/delete_topindemand/:id", deletetopInDemandById);
 
 
 
@@ -44,23 +50,30 @@ router.post("/add_explore_deals_images",uploadHomeImage.single("image"),addExplo
 // Explore Deals - Get images
 router.get("/get_explore_deals_images", getExploreDealImages);
 
+router.delete("/delete_explore_deals_images/:id", deleteExploreDealImageById);
+
+
 // Explore Deals - Add image + brand + category + model
 router.post("/add_explore_recommended",uploadHomeImage.single("image"),addExploreDealWithDetails);
 
 // Explore Deals - Get all data
 router.get("/get_explore_recommended", getExploreDeals);
+router.delete("/delete_explore_recommended/:id", deleteExploreDealById);
+
 
 
 //trending and limited time offers 
 
 router.post("/add_explore_trending_offers",uploadHomeImage.single("image"), addTrending);
 router.get("/get_explore_trending_offers", getTrendingItems);
+router.delete("/delete_explore_trending_offers/:id",deleteTrendingItemById);
 
 
 //limited time offers
 
 router.post("/add_explore_limited_time_offers",uploadHomeImage.single("image"), addOfferItem);
 router.get("/get_explore_limited_time_offers", getOfferItems);
+router.delete("/delete_explore_limited_time_offers/:id",deleteOfferItemById);
 
 //router.get("/get_offer_items", getOfferItems);
 

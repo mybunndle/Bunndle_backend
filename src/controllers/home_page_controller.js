@@ -3,6 +3,7 @@ import topInDemandModel from "../model/topdemandModel.js";
 import { uploadHomePageImage } from "../services/imageStorageService.js";
 import ExploreDealAndRecomended from "../model/exploredeals&RecomendedModel.js";
 import TrendingOffers from "../model/trending&LimitedOffersModel.js";
+import mongoose from "mongoose";
 
 
 /**
@@ -168,6 +169,35 @@ export const getTopInDemand = async (req, res) => {
   }
 };
 
+export const deletetopInDemandById = async (req, res) =>{
+  try{
+    const id = req.params.id;
+    if (!id){
+      return res.status(400).json({
+        success: false,
+        message: "Invalid request parameters.",
+      });
+    }
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid explore deal image id.",
+      });
+    }
+    const data = await topInDemandModel.findByIdAndDelete(id);
+    return res.status(200).json({
+      success: true,
+      message: "Top In Demand deleted successfully",
+      data,
+    });
+  }catch(error){
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 
 
 //explore deals and recomended
@@ -228,6 +258,36 @@ export const getExploreDealImages = async (req, res) => {
     });
   }
 };
+
+export const deleteExploreDealImageById = async (req, res) =>{
+  try {
+    const { id } = req.params;
+   if (!id){
+      return res.status(400).json({
+        success: false,
+        message: "Invalid request parameters.",
+      });
+    }
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid explore deal image id.",
+      });
+    }
+
+    await ExploreDealAndRecomended.findByIdAndDelete(id);
+    return res.status(200).json({
+      success: true,
+      message: "Explore deal image deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Error deleting explore deal image:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+}
 
 
 
@@ -291,6 +351,36 @@ export const getExploreDeals = async (req, res) => {
   }
 };
 
+
+export const deleteExploreDealById = async (req, res) =>{
+  try {
+    const { id } = req.params;
+   if (!id){
+      return res.status(400).json({
+        success: false,
+        message: "Invalid request parameters.",
+      });
+    }
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid explore deal id.",
+      });
+    }
+
+    await ExploreDealAndRecomended.findByIdAndDelete(id);
+    return res.status(200).json({
+      success: true,
+      message: "Explore deal image deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Error deleting explore deal image:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+}
 
 
 //trending and limited offers controllers
@@ -362,6 +452,52 @@ export const getTrendingItems = async (req, res) => {
 
 
 
+export const deleteTrendingItemById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Trending item id is required.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid trending item id.",
+      });
+    }
+
+    const deletedItem = await TrendingOffers.findOneAndDelete({
+      _id: id,
+      type: "Trending",
+    });
+
+    if (!deletedItem) {
+      return res.status(404).json({
+        success: false,
+        message: "Trending item not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Trending item deleted successfully.",
+      data: deletedItem,
+    });
+  } catch (error) {
+    console.error("Delete Trending Item Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+
 //offer items
 
 export const addOfferItem = async (req, res) => {
@@ -423,6 +559,53 @@ export const getOfferItems = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+
+
+export const deleteOfferItemById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Offer item id is required.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid offer item id.",
+      });
+    }
+
+    const deletedItem = await TrendingOffers.findOneAndDelete({
+      _id: id,
+      type: "Offers",
+    });
+
+    if (!deletedItem) {
+      return res.status(404).json({
+        success: false,
+        message: "Offer item not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Offer item deleted successfully.",
+      data: deletedItem,
+    });
+  } catch (error) {
+    console.error("Delete Offer Item Error:", error);
 
     return res.status(500).json({
       success: false,
