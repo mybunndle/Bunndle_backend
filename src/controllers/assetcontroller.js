@@ -921,12 +921,8 @@ export const getDeleteRequests = async (req, res) => {
 
 
 
-
-
-
-
-// GET /api/assets?page=1
-export const getAssets = async (req, res) => {
+   // GET /api/assets?page=1
+ export const getAssets = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = 1;
@@ -955,6 +951,53 @@ export const getAssets = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch assets",
+      error: error.message,
+    });
+  }
+};
+
+
+// GET /api/assets/approved?page=1
+export const getApprovedAssets = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = 10;
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      isapproved: "approved",
+    };
+
+    const [assets, totalAssets] = await Promise.all([
+      Asset.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+
+      Asset.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(totalAssets / limit);
+
+    return res.status(200).json({
+      success: true,
+      message: "Approved assets fetched successfully",
+      currentPage: page,
+      perPage: limit,
+      count: assets.length,
+      totalAssets,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+      data: assets,
+    });
+  } catch (error) {
+    console.error("Get Approved Assets Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch approved assets",
       error: error.message,
     });
   }
