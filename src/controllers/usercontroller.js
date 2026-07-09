@@ -77,9 +77,16 @@ export async function registerUser(req, res) {
     });
 
     // 🎟️ Generate JWT
-    const token = jwt.sign({ id: email }, config.jwtSecret, {
-      expiresIn: "30d",
-    });
+    const token = jwt.sign(
+      {
+        id: user._id.toString(),
+        type: user.type,
+      },
+      config.jwtSecret,
+      {
+        expiresIn: "30d",
+      },
+    );
 
     return res.status(201).json({
       message: "User registered successfully",
@@ -129,8 +136,6 @@ export async function loginUser(req, res) {
       });
     }
 
-    
-
     // 3️⃣ Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     console.log("Password match:", isMatch);
@@ -153,7 +158,7 @@ export async function loginUser(req, res) {
     // 5️⃣ Send response
     return res.status(200).json({
       success: true,
-        
+
       message: "Login successful",
       token,
       user,
@@ -1245,15 +1250,10 @@ export const quickConnect = async (req, res) => {
 //   }
 // };
 
-
-
-
 export const sendLoginOtp = async (req, res) => {
-  console.log("hit sendLoginOtp endpoint with phone:")
+  console.log("hit sendLoginOtp endpoint with phone:");
   try {
-    const result = await sendLoginOtpService(
-      req.body?.phone
-    );
+    const result = await sendLoginOtpService(req.body?.phone);
 
     return res.status(200).json({
       success: true,
@@ -1309,9 +1309,6 @@ export const verifyLoginOtp = async (req, res) => {
 // MSG91_AUTH_KEY=your_auth_key
 // MSG91_TEMPLATE_ID=your_template_id
 
-
-
-
 // Apne project mein available ho to import karo:
 // import AssetEnquiry from "../model/assetEnquiryModel.js";
 // import Notification from "../model/notificationModel.js";
@@ -1327,62 +1324,65 @@ export const deleteAccount = async (req, res) => {
       });
     }
 
-    /*
-     * IMPORTANT:
-     * Asset model mein owner field agar assetOwner nahi hai,
-     * to actual field name use karo, jaise userId ya ownerId.
-     */
-    const [ownedAssetCount, ownershipCount] = await Promise.all([
-      Asset.countDocuments({
-        assetOwner: userId,
-      }),
+    console.log("====================================");
+    console.log("DELETE ACCOUNT REQUEST");
+    console.log("User ID:", userId.toString());
 
-      Ownership.countDocuments({
+    /*
+     * Actual fields:
+     * Asset      -> userId
+     * Ownership  -> userId
+     */
+    const [associatedAssets, associatedOwnerships] = await Promise.all([
+      Asset.find({
         userId,
-      }),
+      })
+        .select("_id assetName model brand category")
+        .lean(),
+
+      Ownership.find({
+        userId,
+      })
+        .select("_id assetId fractionsOwned investedAmount")
+        .lean(),
     ]);
 
-    const assetExists = ownedAssetCount > 0;
-    const ownershipExists = ownershipCount > 0;
+    const assetExists = associatedAssets.length > 0;
+    const ownershipExists = associatedOwnerships.length > 0;
 
-    console.log("====================================");
-    console.log("DELETE ACCOUNT ASSET CHECK");
-    console.log({
+    console.log("DELETE ACCOUNT ASSOCIATION CHECK:", {
       userId: userId.toString(),
       assetExists,
-      ownedAssetCount,
+      assetCount: associatedAssets.length,
       ownershipExists,
-      ownershipCount,
+      ownershipCount: associatedOwnerships.length,
+      associatedAssets,
+      associatedOwnerships,
     });
-    console.log("====================================");
 
     /*
-     * Asset ya Ownership mein ek bhi record hua,
-     * to account delete nahi hoga.
+     * Asset ya ownership ka ek bhi record available hai,
+     * account delete nahi hoga.
      */
     if (assetExists || ownershipExists) {
-      console.warn("ACCOUNT DELETION BLOCKED:", {
-        userId: userId.toString(),
-        reason: "Asset or ownership is associated",
-        assetExists,
-        ownedAssetCount,
-        ownershipExists,
-        ownershipCount,
-      });
-
       let message =
-        "Please delete or resolve all assets associated with your account before deleting your account.";
+        "Please delete all assets associated with your account before deleting your account.";
 
       if (assetExists && ownershipExists) {
         message =
           "Assets and ownership records are associated with your account. Please delete or resolve them before deleting your account.";
-      } else if (assetExists) {
-        message =
-          "Assets are associated with your account. Please delete your assets before deleting your account.";
       } else if (ownershipExists) {
         message =
-          "Ownership records are associated with your account. Please resolve or delete them before deleting your account.";
+          "Ownership records are associated with your account. Please resolve them before deleting your account.";
       }
+
+      console.warn("ACCOUNT DELETION BLOCKED:", {
+        userId: userId.toString(),
+        assetCount: associatedAssets.length,
+        ownershipCount: associatedOwnerships.length,
+      });
+
+      console.log("====================================");
 
       return res.status(409).json({
         success: false,
@@ -1390,9 +1390,12 @@ export const deleteAccount = async (req, res) => {
         message,
         data: {
           assetExists,
-          ownedAssetCount,
+          assetCount: associatedAssets.length,
+          assets: associatedAssets,
+
           ownershipExists,
-          ownershipCount,
+          ownershipCount: associatedOwnerships.length,
+          ownerships: associatedOwnerships,
         },
       });
     }
@@ -1407,71 +1410,63 @@ export const deleteAccount = async (req, res) => {
     }
 
     /*
-     * Final check just before deletion.
+     * Immediately before deletion, association dobara check karo.
      */
-    const [finalAssetCount, finalOwnershipCount] =
-      await Promise.all([
-        Asset.countDocuments({
-          assetOwner: userId,
-        }),
+    const [finalAssetExists, finalOwnershipExists] = await Promise.all([
+      Asset.exists({
+        userId,
+      }),
 
-        Ownership.countDocuments({
-          userId,
-        }),
-      ]);
+      Ownership.exists({
+        userId,
+      }),
+    ]);
 
     console.log("FINAL ACCOUNT DELETION CHECK:", {
       userId: userId.toString(),
-      finalAssetCount,
-      finalOwnershipCount,
+      assetExists: Boolean(finalAssetExists),
+      ownershipExists: Boolean(finalOwnershipExists),
     });
 
-    if (finalAssetCount > 0 || finalOwnershipCount > 0) {
-      console.warn(
-        "ACCOUNT DELETION CANCELLED DURING FINAL CHECK:",
-        {
-          userId: userId.toString(),
-          finalAssetCount,
-          finalOwnershipCount,
-        }
-      );
+    if (finalAssetExists || finalOwnershipExists) {
+      console.warn("FINAL ACCOUNT DELETION BLOCKED:", {
+        userId: userId.toString(),
+        assetExists: Boolean(finalAssetExists),
+        ownershipExists: Boolean(finalOwnershipExists),
+      });
 
       return res.status(409).json({
         success: false,
         code: "ASSETS_ASSOCIATED_WITH_ACCOUNT",
         message:
-          "An asset or ownership record is still associated with your account. Please delete or resolve it first.",
-        data: {
-          assetExists: finalAssetCount > 0,
-          ownedAssetCount: finalAssetCount,
-          ownershipExists: finalOwnershipCount > 0,
-          ownershipCount: finalOwnershipCount,
-        },
+          "An asset or ownership record is associated with your account. Please delete or resolve it first.",
       });
     }
 
     /*
-     * Related temporary records delete karo only after
-     * confirming assets/ownership do not exist.
+     * Related OTP records tabhi delete honge jab assets
+     * aur ownership records nahi hain.
      */
-    // await Otp.deleteMany({
-    //   userId,
-    // });
+    await Otp.deleteMany({
+      userId,
+    });
 
-    // const deletedUser = await userModel.findByIdAndDelete(
-    //   userId
-    // );
+    const deletedUser = await userModel.findOneAndDelete({
+      _id: userId,
+    });
 
-    // if (!deletedUser) {
-    //   return res.status(404).json({
-    //     success: false,
-    //     message: "User account not found.",
-    //   });
-    // }
+    if (!deletedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User account not found.",
+      });
+    }
 
     console.log("ACCOUNT PERMANENTLY DELETED:", {
       userId: userId.toString(),
     });
+
+    console.log("====================================");
 
     return res.status(200).json({
       success: true,
@@ -1482,8 +1477,7 @@ export const deleteAccount = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        error.message || "Unable to delete your account.",
+      message: error.message || "Unable to delete your account.",
     });
   }
 };
