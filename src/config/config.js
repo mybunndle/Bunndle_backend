@@ -40,7 +40,13 @@ const _config = {
   ids_base_url:process.env.IDSPAY_BASE_URL,
   ids_api_key:process.env.IDSPAY_API_KEY,
   ids_api_id:process.env.IDSPAY_API_ID,
-  ids_token_id:process.env.IDSPAY_TOKEN_ID
+  ids_token_id:process.env.IDSPAY_TOKEN_ID,
+
+  msg91_authkey:process.env.MSG91_AUTHKEY,
+  msg91_flow_id:process.env.MSG91_FLOW_ID,
+  msg91_sender_id:process.env.MSG91_SENDER_ID,
+  use_real_sms:process.env.USE_REAL_SMS,
+  otp_expire_minutes:process.env.OTP_EXPIRE_MINUTES
 
 };
 

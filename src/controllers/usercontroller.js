@@ -18,6 +18,11 @@ import { DEFAULT_OTP, hashOtp } from "../utils/otp_temp.js";
 import blacklistTokenModel from "../model/blacklistTokenModel.js";
 
 import { verifyGoogleIdToken } from "../utils/googleClient.js";
+import {
+  sendLoginOtpService,
+  verifyLoginOtpService,
+} from "../services/otpService.js";
+import { generateToken } from "../utils/generateToken.js";
 import axios from "axios";
 
 const formatDob = (dob) => {
@@ -1138,178 +1143,164 @@ export const quickConnect = async (req, res) => {
 
 // Mobile OTP Generation and verify Functions----------------------------------
 
+// export const sendLoginOtp = async (req, res) => {
+//   try {
+//     const { phone } = req.body;
+
+//     if (!phone) {
+//       return res.status(400).json({
+//         message: "Phone number required",
+//       });
+//     }
+
+//     // 🔍 Check user existence
+//     const user = await userModel.findOne({ phone });
+
+//     if (!user) {
+//       return res.status(404).json({
+//         message: "User not found. Please register first.",
+//       });
+//     }
+
+//     // ✅ Set DEFAULT OTP
+//     user.resetOtpHash = hashOtp(DEFAULT_OTP);
+//     user.resetOtpExpiry = Date.now() + 5 * 60 * 1000; // 5 mins
+
+//     await user.save();
+
+//     // 🔔 For now (DEV only)
+//     console.log("LOGIN OTP:", DEFAULT_OTP);
+
+//     return res.status(200).json({
+//       message: "OTP sent successfully",
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       message: "Server error",
+//     });
+//   }
+// };
+
+// export const verifyLoginOtp = async (req, res) => {
+//   try {
+//     const { phone, otp } = req.body;
+
+//     if (!phone || !otp) {
+//       return res.status(400).json({
+//         message: "Phone and OTP required",
+//       });
+//     }
+
+//     const user = await userModel
+//       .findOne({ phone })
+//       .select("+resetOtpHash +resetOtpExpiry");
+
+//     if (!user) {
+//       return res.status(404).json({
+//         message: "User not found",
+//       });
+//     }
+
+//     if (!user.resetOtpHash || !user.resetOtpExpiry) {
+//       return res.status(400).json({
+//         message: "Invalid OTP or session expired",
+//       });
+//     }
+
+//     if (user.resetOtpExpiry.getTime() < Date.now()) {
+//       return res.status(400).json({
+//         message: "Session expired",
+//       });
+//     }
+
+//     if (user.resetOtpHash !== hashOtp(otp)) {
+//       return res.status(400).json({
+//         message: "Invalid OTP",
+//       });
+//     }
+
+//     // ✅ clear OTP after success
+//     user.resetOtpHash = undefined;
+//     user.resetOtpExpiry = undefined;
+//     await user.save();
+
+//     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+//       expiresIn: "1d",
+//     });
+
+//     return res.status(200).json({
+//       message: "Login successful",
+//       token,
+//       user,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     return res.status(500).json({
+//       message: "Server error",
+//     });
+//   }
+// };
+
+
+
+
 export const sendLoginOtp = async (req, res) => {
+  console.log("hit sendLoginOtp endpoint with phone:")
   try {
-    const { phone } = req.body;
-
-    if (!phone) {
-      return res.status(400).json({
-        message: "Phone number required",
-      });
-    }
-
-    // 🔍 Check user existence
-    const user = await userModel.findOne({ phone });
-
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found. Please register first.",
-      });
-    }
-
-    // ✅ Set DEFAULT OTP
-    user.resetOtpHash = hashOtp(DEFAULT_OTP);
-    user.resetOtpExpiry = Date.now() + 5 * 60 * 1000; // 5 mins
-
-    await user.save();
-
-    // 🔔 For now (DEV only)
-    console.log("LOGIN OTP:", DEFAULT_OTP);
+    const result = await sendLoginOtpService(
+      req.body?.phone
+    );
 
     return res.status(200).json({
-      message: "OTP sent successfully",
+      success: true,
+      message:
+        process.env.USE_REAL_SMS === "true"
+          ? "OTP sent successfully"
+          : "OTP generated in development mode",
+      data: result,
     });
   } catch (error) {
-    return res.status(500).json({
-      message: "Server error",
+    console.error("SEND OTP ERROR:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Unable to send OTP",
     });
   }
 };
 
 export const verifyLoginOtp = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
-
-    if (!phone || !otp) {
-      return res.status(400).json({
-        message: "Phone and OTP required",
-      });
-    }
-
-    const user = await userModel
-      .findOne({ phone })
-      .select("+resetOtpHash +resetOtpExpiry");
-
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    if (!user.resetOtpHash || !user.resetOtpExpiry) {
-      return res.status(400).json({
-        message: "Invalid OTP or session expired",
-      });
-    }
-
-    if (user.resetOtpExpiry.getTime() < Date.now()) {
-      return res.status(400).json({
-        message: "Session expired",
-      });
-    }
-
-    if (user.resetOtpHash !== hashOtp(otp)) {
-      return res.status(400).json({
-        message: "Invalid OTP",
-      });
-    }
-
-    // ✅ clear OTP after success
-    user.resetOtpHash = undefined;
-    user.resetOtpExpiry = undefined;
-    await user.save();
-
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
+    const user = await verifyLoginOtpService({
+      phone: req.body?.phone,
+      otp: req.body?.otp,
     });
 
-    return res.status(200).json({
-      message: "Login successful",
-      token,
-      user,
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: "Server error",
-    });
-  }
-};
-
-export const sendOTP = async (req, res) => {
-  try {
-    const { mobile } = req.body;
-
-    if (!mobile) {
-      return res.status(400).json({
-        success: false,
-        message: "Mobile number required",
-      });
-    }
-
-    const response = await axios.post(`https://control.msg91.com/api/v5/otp`, {
-      mobile: `91${mobile}`,
-      template_id: process.env.MSG91_TEMPLATE_ID,
-      authkey: process.env.MSG91_AUTH_KEY,
-    });
+    const token = generateToken(user);
 
     return res.status(200).json({
       success: true,
-      message: "OTP sent successfully",
-      data: response.data,
-    });
-  } catch (error) {
-    console.log(error.response?.data || error.message);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to send OTP",
-    });
-  }
-};
-export const verifyOTP = async (req, res) => {
-  try {
-    const { mobile, otp } = req.body;
-
-    if (!mobile || !otp) {
-      return res.status(400).json({
-        success: false,
-        message: "Mobile and OTP required",
-      });
-    }
-
-    const response = await axios.get(
-      `https://control.msg91.com/api/v5/otp/verify`,
-      {
-        params: {
-          mobile: `91${mobile}`,
-          otp,
-          authkey: process.env.MSG91_AUTH_KEY,
-        },
+      message: "OTP verified successfully",
+      token,
+      data: {
+        id: user._id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email,
+        type: user.type,
+        profileImage: user.profileImage,
+        kycStatus: user.kycStatus,
       },
-    );
-
-    if (response.data.type === "success") {
-      return res.status(200).json({
-        success: true,
-        message: "OTP verified successfully",
-      });
-    }
-
-    return res.status(400).json({
-      success: false,
-      message: "Invalid OTP",
     });
   } catch (error) {
-    console.log(error.response?.data || error.message);
+    console.error("VERIFY OTP ERROR:", error);
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message: "OTP verification failed",
+      message: error.message || "OTP verification failed",
     });
   }
 };
-
 // env required for MSG91 integration
 // MSG91_AUTH_KEY=your_auth_key
 // MSG91_TEMPLATE_ID=your_template_id
