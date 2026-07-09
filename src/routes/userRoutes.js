@@ -15,7 +15,8 @@ import {
   googleAuthCallback,
   appleLogin,
   logoutUser,
-  uploadProfile
+  uploadProfile,
+  deleteAccount
 }from "../controllers/usercontroller.js";
 
 import { uploadProfileImage } from "../middleware/upload.js";
@@ -86,5 +87,8 @@ router.post("/google/android", googleAuthCallback);
 router.post("/apple_login", appleLogin);
 
 
+
+// account delete routes
+router.delete("/delete-account", authMiddleware, deleteAccount);
 
 export default router;

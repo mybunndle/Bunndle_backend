@@ -925,7 +925,7 @@ export const getDeleteRequests = async (req, res) => {
  export const getAssets = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = 1;
+    const limit = 10;
 
     const skip = (page - 1) * limit;
 

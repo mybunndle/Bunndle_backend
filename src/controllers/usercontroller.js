@@ -1,4 +1,8 @@
 import userModel from "../model/userModel.js";
+
+import Asset from "../model/assetModel.js";
+import Otp from "../model/otpModel.js";
+import Ownership from "../model/ownerShipModel.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import config from "../config/config.js";
@@ -1304,3 +1308,182 @@ export const verifyLoginOtp = async (req, res) => {
 // env required for MSG91 integration
 // MSG91_AUTH_KEY=your_auth_key
 // MSG91_TEMPLATE_ID=your_template_id
+
+
+
+
+// Apne project mein available ho to import karo:
+// import AssetEnquiry from "../model/assetEnquiryModel.js";
+// import Notification from "../model/notificationModel.js";
+
+export const deleteAccount = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user.",
+      });
+    }
+
+    /*
+     * IMPORTANT:
+     * Asset model mein owner field agar assetOwner nahi hai,
+     * to actual field name use karo, jaise userId ya ownerId.
+     */
+    const [ownedAssetCount, ownershipCount] = await Promise.all([
+      Asset.countDocuments({
+        assetOwner: userId,
+      }),
+
+      Ownership.countDocuments({
+        userId,
+      }),
+    ]);
+
+    const assetExists = ownedAssetCount > 0;
+    const ownershipExists = ownershipCount > 0;
+
+    console.log("====================================");
+    console.log("DELETE ACCOUNT ASSET CHECK");
+    console.log({
+      userId: userId.toString(),
+      assetExists,
+      ownedAssetCount,
+      ownershipExists,
+      ownershipCount,
+    });
+    console.log("====================================");
+
+    /*
+     * Asset ya Ownership mein ek bhi record hua,
+     * to account delete nahi hoga.
+     */
+    if (assetExists || ownershipExists) {
+      console.warn("ACCOUNT DELETION BLOCKED:", {
+        userId: userId.toString(),
+        reason: "Asset or ownership is associated",
+        assetExists,
+        ownedAssetCount,
+        ownershipExists,
+        ownershipCount,
+      });
+
+      let message =
+        "Please delete or resolve all assets associated with your account before deleting your account.";
+
+      if (assetExists && ownershipExists) {
+        message =
+          "Assets and ownership records are associated with your account. Please delete or resolve them before deleting your account.";
+      } else if (assetExists) {
+        message =
+          "Assets are associated with your account. Please delete your assets before deleting your account.";
+      } else if (ownershipExists) {
+        message =
+          "Ownership records are associated with your account. Please resolve or delete them before deleting your account.";
+      }
+
+      return res.status(409).json({
+        success: false,
+        code: "ASSETS_ASSOCIATED_WITH_ACCOUNT",
+        message,
+        data: {
+          assetExists,
+          ownedAssetCount,
+          ownershipExists,
+          ownershipCount,
+        },
+      });
+    }
+
+    const user = await userModel.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User account not found.",
+      });
+    }
+
+    /*
+     * Final check just before deletion.
+     */
+    const [finalAssetCount, finalOwnershipCount] =
+      await Promise.all([
+        Asset.countDocuments({
+          assetOwner: userId,
+        }),
+
+        Ownership.countDocuments({
+          userId,
+        }),
+      ]);
+
+    console.log("FINAL ACCOUNT DELETION CHECK:", {
+      userId: userId.toString(),
+      finalAssetCount,
+      finalOwnershipCount,
+    });
+
+    if (finalAssetCount > 0 || finalOwnershipCount > 0) {
+      console.warn(
+        "ACCOUNT DELETION CANCELLED DURING FINAL CHECK:",
+        {
+          userId: userId.toString(),
+          finalAssetCount,
+          finalOwnershipCount,
+        }
+      );
+
+      return res.status(409).json({
+        success: false,
+        code: "ASSETS_ASSOCIATED_WITH_ACCOUNT",
+        message:
+          "An asset or ownership record is still associated with your account. Please delete or resolve it first.",
+        data: {
+          assetExists: finalAssetCount > 0,
+          ownedAssetCount: finalAssetCount,
+          ownershipExists: finalOwnershipCount > 0,
+          ownershipCount: finalOwnershipCount,
+        },
+      });
+    }
+
+    /*
+     * Related temporary records delete karo only after
+     * confirming assets/ownership do not exist.
+     */
+    // await Otp.deleteMany({
+    //   userId,
+    // });
+
+    // const deletedUser = await userModel.findByIdAndDelete(
+    //   userId
+    // );
+
+    // if (!deletedUser) {
+    //   return res.status(404).json({
+    //     success: false,
+    //     message: "User account not found.",
+    //   });
+    // }
+
+    console.log("ACCOUNT PERMANENTLY DELETED:", {
+      userId: userId.toString(),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Your account has been permanently deleted.",
+    });
+  } catch (error) {
+    console.error("DELETE ACCOUNT ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message || "Unable to delete your account.",
+    });
+  }
+};
