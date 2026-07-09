@@ -43,66 +43,100 @@ const formatDob = (dob) => {
 
 export async function registerUser(req, res) {
   try {
-    const { name, phone, email, password, type } = req.body;
+    const { name, phone, email, password } = req.body;
 
     if (!name || !phone || !email || !password) {
       return res.status(400).json({
+        success: false,
         message: "Name, phone, email and password are required",
       });
     }
 
-    // 🔍 Check email or phone already exists
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPhone = String(phone).replace(/\D/g, "");
+
+    if (!/^[6-9]\d{9}$/.test(normalizedPhone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid 10-digit mobile number",
+      });
+    }
+
     const existingUser = await userModel.findOne({
-      $or: [{ email }, { phone }],
+      $or: [
+        { email: normalizedEmail },
+        { phone: normalizedPhone },
+      ],
     });
 
     if (existingUser) {
       return res.status(409).json({
+        success: false,
         message:
-          existingUser.email === email
+          existingUser.email === normalizedEmail
             ? "Email already registered"
             : "Phone number already registered",
       });
     }
 
-    // 🔐 Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await userModel.create({
-      name, // ✅ duplicate allowed
-      phone,
-      email,
+    // Created user ko variable mein store karo
+    const user = await userModel.create({
+      name: name.trim(),
+      phone: normalizedPhone,
+      email: normalizedEmail,
       password: hashedPassword,
-      type: type || "USER", // Set default type to "USER" if not provided
+      type: "USER",
+      authProvider: "local",
     });
 
-    // 🎟️ Generate JWT
-     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
-    });
+    const token = jwt.sign(
+      {
+        id: user._id.toString(),
+        type: user.type,
+      },
+      config.jwtSecret,
+      {
+        expiresIn: "30d",
+      }
+    );
 
     return res.status(201).json({
+      success: true,
       message: "User registered successfully",
       token,
-      name,
-      email,
-      phone,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        type: user.type,
+        authProvider: user.authProvider,
+      },
     });
   } catch (error) {
-    // ✅ Handle Mongo duplicate key error safely
+    console.error("REGISTER USER ERROR:", error);
+
     if (error.code === 11000) {
-      const field = Object.keys(error.keyValue)[0];
+      const field = Object.keys(
+        error.keyPattern || error.keyValue || {}
+      )[0];
+
       return res.status(409).json({
-        message: `${field} already exists`,
+        success: false,
+        message: field
+          ? `${field} already exists`
+          : "Email or phone number already exists",
       });
     }
 
     return res.status(500).json({
+      success: false,
       message: "Internal server error",
     });
   }
 }
-
 export async function loginUser(req, res) {
   try {
     const { email, password } = req.body;
