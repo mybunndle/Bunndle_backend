@@ -18,7 +18,7 @@ const assetSchema = new mongoose.Schema(
       required: true,
     },
     price: {
-      type: Number,
+      type: String,
     },
     assetName: {
       //can be null
