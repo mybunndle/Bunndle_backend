@@ -77,16 +77,9 @@ export async function registerUser(req, res) {
     });
 
     // 🎟️ Generate JWT
-    const token = jwt.sign(
-      {
-        id: user._id.toString(),
-        type: user.type,
-      },
-      config.jwtSecret,
-      {
-        expiresIn: "30d",
-      },
-    );
+     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "30d",
+    });
 
     return res.status(201).json({
       message: "User registered successfully",
@@ -1093,6 +1086,110 @@ export const resetPassword = async (req, res) => {
     });
   }
 };
+
+
+export const changePassword = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    const {
+      currentPassword,
+      newPassword,
+      confirmPassword,
+    } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized access.",
+      });
+    }
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Current password, new password, and confirm password are required.",
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "New password and confirm password do not match.",
+      });
+    }
+
+    const user = await userModel
+      .findById(userId)
+      .select("+password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User account not found.",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        code: "PASSWORD_NOT_SET",
+        message: "Please set your password first.",
+        action: "SET_PASSWORD",
+      });
+    }
+
+    const isCurrentPasswordCorrect = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isCurrentPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: "Current password is incorrect.",
+      });
+    }
+
+    const isSamePassword = await bcrypt.compare(
+      newPassword,
+      user.password
+    );
+
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "New password cannot be the same as your current password.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await userModel.updateOne(
+      { _id: userId },
+      {
+        $set: {
+          password: hashedPassword,
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully.",
+    });
+  } catch (error) {
+    console.error("CHANGE PASSWORD ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to change password. Please try again.",
+    });
+  }
+};
+
 export const quickConnect = async (req, res) => {
   try {
     const { name, email, message } = req.body;

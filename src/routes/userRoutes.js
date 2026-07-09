@@ -16,7 +16,7 @@ import {
   appleLogin,
   logoutUser,
   uploadProfile,
-  deleteAccount
+  deleteAccount,changePassword
 }from "../controllers/usercontroller.js";
 
 import { uploadProfileImage } from "../middleware/upload.js";
@@ -44,6 +44,7 @@ router.post("/reset-password",
   verifyVerifiedResetToken,
   resetPassword
 );
+router.post("/change-password", authMiddleware, changePassword);
 
 router.post("/connect",authMiddleware,quickConnect);
 
