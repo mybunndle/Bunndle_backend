@@ -1,9 +1,11 @@
 const otpTemplate = (otp) => {
-  if (!otp) {
-    throw new Error("OTP is required");
+  const normalizedOtp = String(otp ?? "").trim();
+
+  if (!/^\d{4,8}$/.test(normalizedOtp)) {
+    throw new Error("A valid numeric OTP is required");
   }
 
-  const formattedOtp = String(otp).split("").join(" ");
+  const formattedOtp = normalizedOtp.split("").join(" ");
 
   return `
 <!DOCTYPE html>
@@ -14,20 +16,28 @@ const otpTemplate = (otp) => {
   <title>Password Reset OTP</title>
 </head>
 
-<body style="
-  margin:0;
-  padding:0;
-  background-color:#f3f7fb;
-  font-family:Arial,Helvetica,sans-serif;
-  color:#111827;
-">
+<body
+  bgcolor="#f3f7fb"
+  style="
+    margin:0;
+    padding:0;
+    background-color:#f3f7fb;
+    font-family:Arial,Helvetica,sans-serif;
+    color:#111827;
+  "
+>
   <table
     role="presentation"
     width="100%"
     cellspacing="0"
     cellpadding="0"
     border="0"
-    style="width:100%;background-color:#f3f7fb;padding:30px 12px;"
+    bgcolor="#f3f7fb"
+    style="
+      width:100%;
+      background-color:#f3f7fb;
+      padding:18px 8px;
+    "
   >
     <tr>
       <td align="center">
@@ -38,13 +48,14 @@ const otpTemplate = (otp) => {
           cellspacing="0"
           cellpadding="0"
           border="0"
+          bgcolor="#ffffff"
           style="
             width:100%;
-            max-width:620px;
+            max-width:560px;
             background-color:#ffffff;
-            border-radius:20px;
+            border-radius:16px;
             overflow:hidden;
-            box-shadow:0 12px 35px rgba(14,61,105,0.12);
+            box-shadow:0 8px 24px rgba(14,61,105,0.10);
           "
         >
 
@@ -52,9 +63,10 @@ const otpTemplate = (otp) => {
           <tr>
             <td
               align="center"
+              bgcolor="#0f4f91"
               style="
                 background-color:#0f4f91;
-                padding:38px 24px 34px;
+                padding:26px 18px 24px;
               "
             >
               <table
@@ -62,37 +74,36 @@ const otpTemplate = (otp) => {
                 cellspacing="0"
                 cellpadding="0"
                 border="0"
-                style="margin:0 auto 20px;"
+                style="margin:0 auto 14px;"
               >
                 <tr>
                   <td
                     align="center"
-                    width="125"
-                    height="125"
+                    width="104"
+                    height="104"
+                    bgcolor="#ffffff"
                     style="
-                      width:125px;
-                      height:125px;
+                      width:104px;
+                      height:104px;
                       background-color:#ffffff;
-                      border-radius:18px;
-                      padding:0;
+                      border-radius:14px;
                       overflow:hidden;
+                      padding:0;
                       line-height:0;
                     "
                   >
                     <img
                       src="https://ik.imagekit.io/bunndle/logo/WhatsApp%20Image%202026-07-10%20at%2012.02.32.jpeg"
                       alt="Bunndle"
-                      width="125"
-                      height="125"
+                      width="104"
                       style="
                         display:block;
-                        width:125px;
-                        height:125px;
-                        object-fit:contain;
+                        width:104px;
+                        max-width:104px;
+                        height:auto;
                         background-color:#ffffff;
                         border:0;
-                        margin:0;
-                        padding:0;
+                        margin:0 auto;
                       "
                     />
                   </td>
@@ -104,12 +115,12 @@ const otpTemplate = (otp) => {
                   margin:0;
                   color:#ffffff;
                   font-family:Georgia,'Times New Roman',serif;
-                  font-size:34px;
+                  font-size:27px;
                   line-height:1.25;
                   font-weight:700;
                 "
               >
-                Password Reset Request
+                Password Reset<br />Request
               </h1>
 
               <table
@@ -117,13 +128,13 @@ const otpTemplate = (otp) => {
                 cellspacing="0"
                 cellpadding="0"
                 border="0"
-                style="margin:16px auto 14px;"
+                style="margin:12px auto 10px;"
               >
                 <tr>
                   <td
-                    width="120"
+                    width="78"
                     style="
-                      width:120px;
+                      width:78px;
                       height:1px;
                       background-color:#f58220;
                       font-size:0;
@@ -133,18 +144,18 @@ const otpTemplate = (otp) => {
 
                   <td
                     style="
-                      padding:0 12px;
+                      padding:0 9px;
                       color:#f58220;
-                      font-size:15px;
+                      font-size:11px;
                     "
                   >
                     ◆
                   </td>
 
                   <td
-                    width="120"
+                    width="78"
                     style="
-                      width:120px;
+                      width:78px;
                       height:1px;
                       background-color:#f58220;
                       font-size:0;
@@ -158,8 +169,8 @@ const otpTemplate = (otp) => {
                 style="
                   margin:0;
                   color:#ffffff;
-                  font-size:18px;
-                  line-height:1.5;
+                  font-size:15px;
+                  line-height:1.4;
                 "
               >
                 Bunndle Smart Leasing
@@ -169,7 +180,7 @@ const otpTemplate = (otp) => {
 
           <!-- Body -->
           <tr>
-            <td style="padding:42px 38px 34px;">
+            <td style="padding:28px 20px 26px;">
 
               <!-- Intro -->
               <table
@@ -181,9 +192,9 @@ const otpTemplate = (otp) => {
               >
                 <tr>
                   <td
-                    width="58"
+                    width="46"
                     valign="top"
-                    style="width:58px;padding-right:16px;"
+                    style="width:46px;padding-right:12px;"
                   >
                     <table
                       role="presentation"
@@ -194,16 +205,17 @@ const otpTemplate = (otp) => {
                       <tr>
                         <td
                           align="center"
-                          width="46"
-                          height="46"
+                          width="38"
+                          height="38"
+                          bgcolor="#e9f2ff"
                           style="
-                            width:46px;
-                            height:46px;
+                            width:38px;
+                            height:38px;
                             background-color:#e9f2ff;
                             border-radius:50%;
                             color:#0f4f91;
-                            font-size:22px;
-                            line-height:46px;
+                            font-size:17px;
+                            line-height:38px;
                           "
                         >
                           ✉
@@ -217,8 +229,8 @@ const otpTemplate = (otp) => {
                       style="
                         margin:0;
                         color:#1f2937;
-                        font-size:17px;
-                        line-height:1.8;
+                        font-size:14px;
+                        line-height:1.65;
                       "
                     >
                       We received a request to reset the password for your
@@ -235,24 +247,26 @@ const otpTemplate = (otp) => {
                 cellspacing="0"
                 cellpadding="0"
                 border="0"
-                style="margin:30px 0;"
+                style="margin:22px 0;"
               >
                 <tr>
                   <td
                     align="center"
+                    bgcolor="#f3f8ff"
                     style="
                       background-color:#f3f8ff;
                       border:1px solid #d7e6f7;
-                      border-left:5px solid #f58220;
-                      border-radius:14px;
-                      padding:30px 18px;
+                      border-left:4px solid #f58220;
+                      border-radius:12px;
+                      padding:22px 12px;
                     "
                   >
                     <p
                       style="
-                        margin:0 0 16px;
+                        margin:0 0 12px;
                         color:#475569;
-                        font-size:17px;
+                        font-size:14px;
+                        line-height:1.4;
                       "
                     >
                       Your verification code
@@ -262,10 +276,11 @@ const otpTemplate = (otp) => {
                       style="
                         margin:0;
                         color:#0f4f91;
-                        font-size:44px;
+                        font-size:34px;
                         line-height:1.2;
                         font-weight:700;
-                        letter-spacing:7px;
+                        letter-spacing:4px;
+                        white-space:nowrap;
                         font-family:Arial,Helvetica,sans-serif;
                       "
                     >
@@ -282,13 +297,13 @@ const otpTemplate = (otp) => {
                 cellspacing="0"
                 cellpadding="0"
                 border="0"
-                style="margin-bottom:20px;"
+                style="margin-bottom:16px;"
               >
                 <tr>
                   <td
-                    width="58"
+                    width="46"
                     valign="top"
-                    style="width:58px;padding-right:16px;"
+                    style="width:46px;padding-right:12px;"
                   >
                     <table
                       role="presentation"
@@ -299,16 +314,17 @@ const otpTemplate = (otp) => {
                       <tr>
                         <td
                           align="center"
-                          width="46"
-                          height="46"
+                          width="38"
+                          height="38"
+                          bgcolor="#e9f2ff"
                           style="
-                            width:46px;
-                            height:46px;
+                            width:38px;
+                            height:38px;
                             background-color:#e9f2ff;
                             border-radius:50%;
                             color:#0f4f91;
-                            font-size:21px;
-                            line-height:46px;
+                            font-size:17px;
+                            line-height:38px;
                           "
                         >
                           ◷
@@ -322,8 +338,8 @@ const otpTemplate = (otp) => {
                       style="
                         margin:0;
                         color:#1f2937;
-                        font-size:16px;
-                        line-height:1.7;
+                        font-size:14px;
+                        line-height:1.6;
                       "
                     >
                       This OTP is valid for
@@ -340,13 +356,13 @@ const otpTemplate = (otp) => {
                 cellspacing="0"
                 cellpadding="0"
                 border="0"
-                style="margin-bottom:26px;"
+                style="margin-bottom:20px;"
               >
                 <tr>
                   <td
-                    width="58"
+                    width="46"
                     valign="top"
-                    style="width:58px;padding-right:16px;"
+                    style="width:46px;padding-right:12px;"
                   >
                     <table
                       role="presentation"
@@ -357,16 +373,17 @@ const otpTemplate = (otp) => {
                       <tr>
                         <td
                           align="center"
-                          width="46"
-                          height="46"
+                          width="38"
+                          height="38"
+                          bgcolor="#e9f2ff"
                           style="
-                            width:46px;
-                            height:46px;
+                            width:38px;
+                            height:38px;
                             background-color:#e9f2ff;
                             border-radius:50%;
                             color:#0f4f91;
-                            font-size:20px;
-                            line-height:46px;
+                            font-size:16px;
+                            line-height:38px;
                           "
                         >
                           ✓
@@ -380,8 +397,8 @@ const otpTemplate = (otp) => {
                       style="
                         margin:0;
                         color:#1f2937;
-                        font-size:16px;
-                        line-height:1.7;
+                        font-size:14px;
+                        line-height:1.6;
                       "
                     >
                       Do not share this OTP with anyone. Bunndle will never ask
@@ -401,11 +418,12 @@ const otpTemplate = (otp) => {
               >
                 <tr>
                   <td
+                    bgcolor="#fff7ef"
                     style="
                       background-color:#fff7ef;
                       border:1px solid #ffd8b5;
-                      border-radius:14px;
-                      padding:20px;
+                      border-radius:12px;
+                      padding:16px;
                     "
                   >
                     <table
@@ -417,9 +435,9 @@ const otpTemplate = (otp) => {
                     >
                       <tr>
                         <td
-                          width="52"
+                          width="42"
                           valign="top"
-                          style="width:52px;padding-right:14px;"
+                          style="width:42px;padding-right:10px;"
                         >
                           <table
                             role="presentation"
@@ -430,16 +448,17 @@ const otpTemplate = (otp) => {
                             <tr>
                               <td
                                 align="center"
-                                width="42"
-                                height="42"
+                                width="34"
+                                height="34"
+                                bgcolor="#ffead6"
                                 style="
-                                  width:42px;
-                                  height:42px;
+                                  width:34px;
+                                  height:34px;
                                   background-color:#ffead6;
                                   border-radius:50%;
                                   color:#d95f02;
-                                  font-size:22px;
-                                  line-height:42px;
+                                  font-size:17px;
+                                  line-height:34px;
                                 "
                               >
                                 !
@@ -453,8 +472,8 @@ const otpTemplate = (otp) => {
                             style="
                               margin:0;
                               color:#b54708;
-                              font-size:15px;
-                              line-height:1.7;
+                              font-size:13px;
+                              line-height:1.6;
                             "
                           >
                             If you did not request a password reset, you can
@@ -475,22 +494,23 @@ const otpTemplate = (otp) => {
           <tr>
             <td
               align="center"
+              bgcolor="#f5f9fe"
               style="
                 background-color:#f5f9fe;
                 border-top:1px solid #e3edf7;
-                padding:28px 24px;
+                padding:22px 18px;
               "
             >
               <div
                 style="
-                  width:48px;
-                  height:48px;
-                  margin:0 auto 12px;
+                  width:40px;
+                  height:40px;
+                  margin:0 auto 10px;
                   border-radius:50%;
                   background-color:#e6f0fd;
                   color:#0f4f91;
-                  font-size:22px;
-                  line-height:48px;
+                  font-size:18px;
+                  line-height:40px;
                 "
               >
                 ☎
@@ -498,21 +518,31 @@ const otpTemplate = (otp) => {
 
               <p
                 style="
-                  margin:0 0 14px;
+                  margin:0 0 10px;
                   color:#334155;
-                  font-size:14px;
-                  line-height:1.6;
+                  font-size:13px;
+                  line-height:1.5;
                 "
               >
-                Need help? Contact the Bunndle support team.
+                Need help?
+                <a
+                  href="mailto:support@bunndle.in"
+                  style="
+                    color:#0f4f91;
+                    text-decoration:none;
+                    font-weight:600;
+                  "
+                >
+                  Contact Bunndle Support
+                </a>
               </p>
 
               <p
                 style="
                   margin:0;
                   color:#64748b;
-                  font-size:12px;
-                  line-height:1.6;
+                  font-size:11px;
+                  line-height:1.5;
                 "
               >
                 © ${new Date().getFullYear()} Agent Alliance Private Limited.
