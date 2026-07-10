@@ -46,15 +46,22 @@ const otpTemplate = (otp) => {
                 <tr>
                   <td
                     align="center"
-                    width="100"
-                    height="100"
-                    style="background-color:#ffffff;border-radius:16px;"
+                    width="120"
+                    style="background-color:#ffffff;border-radius:16px;padding:10px;"
                   >
                     <img
-                      src="https://bunndle.in/logo.png"
+                      src="https://ik.imagekit.io/bunndle/logo/WhatsApp%20Image%202026-07-10%20at%2012.02.32.jpeg"
                       alt="Bunndle"
-                      width="78"
-                      style="display:block;width:78px;max-width:78px;height:auto;border:0;margin:auto;"
+                      width="100"
+                      style="
+                        display:block;
+                        width:100px;
+                        max-width:100px;
+                        height:auto;
+                        border:0;
+                        margin:0 auto;
+                        border-radius:10px;
+                      "
                     />
                   </td>
                 </tr>
