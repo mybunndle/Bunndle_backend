@@ -2,11 +2,22 @@ import mongoose from "mongoose";
 
 const topInDemandSchema = new mongoose.Schema(
   {
+    assetName: {
+      type: String,
+      trim: true,
+    },
     brand: {
       type: String,
       required: true,
       trim: true,
     },
+    category: {
+      type: String,
+      required: true,
+      trim: true,
+
+    },
+
     serialNo:{
       type: Number,
       required: true,
@@ -14,13 +25,14 @@ const topInDemandSchema = new mongoose.Schema(
 
     model: {
       type: String,
-    
+  
       trim: true,
     },
 
     price: {
       type: String,
       required: true,
+      trim: true,
     },
 
     image: {

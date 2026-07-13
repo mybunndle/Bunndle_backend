@@ -113,10 +113,60 @@ export const getHomeList = async (req, res) => {
 
 
 //top in demand images
+// export const saveTopInDemand = async (req, res) => {
+//   try {
+//     const { brand, model, price,serialNo,assetName, category } = req.body;
+//     console.log("Request Body:", req.body);
+//     const file = req.file;
+//     if (!file) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Image is required",
+//       });
+//     }
+
+//     const uploadedImage = await uploadHomePageImage(file);
+
+//     const data = await topInDemandModel.create({
+//       brand,
+//       model,
+//       price,
+//       serialNo,
+//       assetName,
+//       category,
+//       image: uploadedImage.url,
+//     });
+//     // console.log("Top In Demand Created:", data);
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Top In Demand created successfully",
+//       data,
+//     });
+//   } catch (error) {
+//     console.error(error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
 export const saveTopInDemand = async (req, res) => {
   try {
-    const { brand, model, price,serialNo } = req.body;
+    const {
+      brand,
+      model,
+      price,
+      serialNo,
+      assetName,
+      category,
+    } = req.body;
+
+    console.log("Request Body:", req.body);
+
     const file = req.file;
+
     if (!file) {
       return res.status(400).json({
         success: false,
@@ -124,13 +174,23 @@ export const saveTopInDemand = async (req, res) => {
       });
     }
 
+    if (!assetName || !brand || !category || !price || !serialNo) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Asset name, brand, category, price and serial number are required",
+      });
+    }
+
     const uploadedImage = await uploadHomePageImage(file);
 
     const data = await topInDemandModel.create({
-      brand,
-      model,
-      price,
-      serialNo,
+      assetName: assetName.trim(),
+      brand: brand.trim(),
+      model: model?.trim(),
+      price: price.trim(),
+      serialNo: Number(serialNo),
+      category: category.trim(),
       image: uploadedImage.url,
     });
 
@@ -140,11 +200,11 @@ export const saveTopInDemand = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error(error);
+    console.error("SAVE TOP IN DEMAND ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Internal server error",
     });
   }
 };
