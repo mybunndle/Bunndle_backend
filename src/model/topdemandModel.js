@@ -8,7 +8,7 @@ const topInDemandSchema = new mongoose.Schema(
     },
     brand: {
       type: String,
-      required: true,
+      
       trim: true,
     },
     category: {

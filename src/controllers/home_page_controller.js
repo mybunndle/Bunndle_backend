@@ -175,11 +175,11 @@ export const saveTopInDemand = async (req, res) => {
       });
     }
 
-    if ( !brand || !category || !price || !serialNo) {
+    if ( !category || !price || !serialNo) {
       return res.status(400).json({
         success: false,
         message:
-          "Brand, category, price and serial number are required",
+          "Category, price and serial number are required",
       });
     }
 
