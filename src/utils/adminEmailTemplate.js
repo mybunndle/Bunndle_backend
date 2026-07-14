@@ -165,7 +165,7 @@ const adminQuickConnectTemplate = ({ name, email, message }) => {
                   line-height:1.4;
                 "
               >
-                Bunndle Smart Leasing
+                Lease • Co-Own • Earn
               </p>
             </td>
           </tr>
