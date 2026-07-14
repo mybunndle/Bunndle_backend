@@ -174,11 +174,11 @@ export const saveTopInDemand = async (req, res) => {
       });
     }
 
-    if (!assetName || !brand || !category || !price || !serialNo) {
+    if ( !brand || !category || !price || !serialNo) {
       return res.status(400).json({
         success: false,
         message:
-          "Asset name, brand, category, price and serial number are required",
+          "Brand, category, price and serial number are required",
       });
     }
 
