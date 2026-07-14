@@ -17,6 +17,10 @@ const topInDemandSchema = new mongoose.Schema(
       trim: true,
 
     },
+    subCategory: {
+      type: String,
+      trim: true,
+    },
 
     serialNo:{
       type: Number,

@@ -161,6 +161,7 @@ export const saveTopInDemand = async (req, res) => {
       serialNo,
       assetName,
       category,
+      subCategory,
     } = req.body;
 
     console.log("Request Body:", req.body);
@@ -191,6 +192,7 @@ export const saveTopInDemand = async (req, res) => {
       price: price.trim(),
       serialNo: Number(serialNo),
       category: category.trim(),
+      subCategory: subCategory?.trim(),
       image: uploadedImage.url,
     });
 
