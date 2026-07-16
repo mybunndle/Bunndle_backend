@@ -71,12 +71,7 @@ export const add_Asset = async (req, res) => {
     
      const user = req.user; 
     
-    if (!user.isKycVerified) {
-      return res.status(403).json({
-        success: false,
-        message: "Only verified users can add assets"
-      });
-    }
+  
 
     // 🔴 Required field validation
     if (!model || !category || !purchaseYear) {

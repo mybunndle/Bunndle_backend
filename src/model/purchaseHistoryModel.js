@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
 
+
+const getIndianTime = () => {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  return new Date(Date.now() + istOffset);
+};
+
 const purchaseHistorySchema =
   new mongoose.Schema(
     {
@@ -62,7 +68,9 @@ const purchaseHistorySchema =
       },
     },
     {
-      timestamps: true,
+      timestamps: {
+        currentTime: getIndianTime,
+      },
     }
   );
 

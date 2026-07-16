@@ -1,4 +1,8 @@
 import mongoose from "mongoose";
+const getIndianTime = () => {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  return new Date(Date.now() + istOffset);
+};
 
 const ownershipSchema = new mongoose.Schema(
   {
@@ -34,7 +38,9 @@ const ownershipSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: true,
+    timestamps: {
+      currentTime: getIndianTime,
+    },
   }
 );
 

@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
 
+
+const getIndianTime = () => {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  return new Date(Date.now() + istOffset);
+};
+
 const paymentSchema = new mongoose.Schema({
 
    userId:{
@@ -36,6 +42,8 @@ const paymentSchema = new mongoose.Schema({
       default:false
    }
 
-},{timestamps:true});
+},{timestamps:{
+      currentTime: getIndianTime,
+    },});
 
 export default mongoose.model("Payment", paymentSchema);
