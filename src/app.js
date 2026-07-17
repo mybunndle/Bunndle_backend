@@ -10,6 +10,7 @@ import enquiryRouter from "./routes/enquiryRoutes.js"
 import coOwnRouter from "./routes/coOwnRoutes.js"
 import homeListRouter from "./routes/Home_page_routes.js"
 import webAssetRouter from "./routes/web_asset_routes.js"
+import enquiryRoutes from "./routes/web_enquiry_routes.js"
 import "./config/passport.js";
 import cookieParser from 'cookie-parser';
 import cors from "cors"
@@ -63,6 +64,7 @@ app.use("/api/enquiry", enquiryRouter)
 app.use("/api/co-ownership", coOwnRouter)
 app.use("/api/home", homeListRouter);
 app.use("/api/web_asset", webAssetRouter);
+app.use("/api/web_enquiry", enquiryRoutes);
 
 
 
