@@ -28,13 +28,7 @@ export const addWebAsset = async (req, res) => {
       purchaseYear,
     } = req.body;
 
-    if (!model || !brand || !category || !purchaseYear) {
-      return res.status(400).json({
-        success: false,
-        message: "Model, brand, category and purchase year are required.",
-      });
-    }
-
+   
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
         success: false,

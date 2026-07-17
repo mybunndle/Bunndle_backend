@@ -11,14 +11,14 @@ const web_assetSchema = new mongoose.Schema(
 
     model: {
       type: String,
-      required: true,
+
       trim: true,
     },
 
     brand: {
       type: String,
       trim: true,
-      required: true,
+    
     },
 
     price: {
@@ -33,7 +33,7 @@ const web_assetSchema = new mongoose.Schema(
 
     category: {
       type: String,
-      required: true,
+  
       trim: true,
     },
 
@@ -44,7 +44,7 @@ const web_assetSchema = new mongoose.Schema(
 
     purchaseYear: {
       type: String,
-      required: true,
+      
     },
 
     files: [
