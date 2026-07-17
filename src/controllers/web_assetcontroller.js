@@ -1,4 +1,5 @@
-import WebAsset from "../model/webAssetModel.js";
+
+import WebAsset from "../model/web_asset_model.js";
 import {
   uploadAssetFile,
   deleteAssetFile,
@@ -78,15 +79,9 @@ export const addWebAsset = async (req, res) => {
   }
 };
 
-
-
-
-
 export const getAllWebAssets = async (req, res) => {
   try {
-    const assets = await WebAsset.find()
-      .populate("userId", "name email phone")
-      .sort({ createdAt: -1 });
+    const assets = await WebAsset.find().sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -103,4 +98,3 @@ export const getAllWebAssets = async (req, res) => {
     });
   }
 };
-

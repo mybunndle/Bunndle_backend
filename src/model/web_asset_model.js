@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+
 const web_assetSchema = new mongoose.Schema(
   {
     userId: {
@@ -7,38 +8,44 @@ const web_assetSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+
     model: {
       type: String,
       required: true,
       trim: true,
     },
+
     brand: {
       type: String,
       trim: true,
       required: true,
     },
+
     price: {
       type: String,
     },
+
     assetName: {
-      //can be null
       type: String,
       trim: true,
+      default: null,
     },
+
     category: {
       type: String,
       required: true,
       trim: true,
     },
+
     subCategory: {
       type: String,
       trim: true,
     },
+
     purchaseYear: {
       type: String,
       required: true,
     },
-  
 
     files: [
       {
@@ -57,7 +64,12 @@ const web_assetSchema = new mongoose.Schema(
       },
     ],
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  }
 );
 
-export default mongoose.model("WebAsset", web_assetSchema);
+const WebAsset =
+  mongoose.models.WebAsset || mongoose.model("WebAsset", web_assetSchema);
+
+export default WebAsset;
