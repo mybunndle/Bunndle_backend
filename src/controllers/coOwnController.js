@@ -114,7 +114,7 @@ export const getCoAssets = async (req, res) => {
     const assets = await Asset.find({
       status: "ACTIVE",
     }).sort({
-      createdAt: -1,
+       amountPerFraction: 1,
     });
 
     return res.status(200).json({
