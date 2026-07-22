@@ -2,6 +2,8 @@ import express from "express";
 import {
   addWebAsset,
   getAllWebAssets,
+  updateWebAsset,
+  deleteWebAsset,
 } from "../controllers/web_assetcontroller.js";
 
 import authMiddleware from "../middleware/auth_validate.js";
@@ -32,5 +34,9 @@ router.post(
 
 // Get all web assets: no token required
 router.get("/get_web_assets", getAllWebAssets);
+
+router.put("/update_web_asset/:id", authMiddleware, handleWebAssetUpload, updateWebAsset);
+
+router.delete("/delete_web_asset/:id", authMiddleware, deleteWebAsset);
 
 export default router;
