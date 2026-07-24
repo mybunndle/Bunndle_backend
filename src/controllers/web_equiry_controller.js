@@ -1,5 +1,7 @@
 import  CorporateEnquiry from "../model/corporate_enquiryModel.js";
 import IndividualEnquiry from "../model/Individual_enquiryModel.js";
+import { adminEnquiryTemplate } from "../utils/web_adminEmailTemplate.js";
+import { userEnquiryTemplate } from "../utils/web_userEmailTemplate.js"
 import sendEmail from "../utils/email.js";
 
 export const submitEnquiry = async (req, res) => {
@@ -20,12 +22,6 @@ export const submitEnquiry = async (req, res) => {
       });
     }
 
-    let savedData;
-    let userEmail;
-    let adminSubject;
-    let adminHtml;
-    let userHtml;
-
     const adminEmail = process.env.EMAIL_FROM;
 
     if (!adminEmail) {
@@ -34,6 +30,11 @@ export const submitEnquiry = async (req, res) => {
         message: "Admin email is missing in EMAIL_FROM.",
       });
     }
+
+    let savedData;
+    let userEmail;
+    let adminSubject;
+    let templateData;
 
     if (userType === "corporate") {
       const {
@@ -75,40 +76,17 @@ export const submitEnquiry = async (req, res) => {
       userEmail = email;
       adminSubject = "New Corporate Enquiry - Bunndle";
 
-      adminHtml = `
-        <h2>New Corporate Enquiry</h2>
-
-        <p><strong>Company Name:</strong> ${companyName}</p>
-        <p><strong>Point of Contact:</strong> ${pointOfContact}</p>
-        <p><strong>Mobile:</strong> ${mobile}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>City:</strong> ${city}</p>
-        <p><strong>Address:</strong> ${address}</p>
-        <p><strong>Message:</strong> ${message}</p>
-      `;
-
-      userHtml = `
-        <h2>Thank you for contacting Bunndle</h2>
-
-        <p>Hello ${pointOfContact},</p>
-
-        <p>
-          We have received your corporate enquiry for 
-          <strong>${companyName}</strong>.
-        </p>
-
-        <p>Our team will contact you soon.</p>
-
-        <p><strong>Your Message:</strong></p>
-        <p>${message}</p>
-
-        <br />
-
-        <p>Regards,<br />Bunndle Team</p>
-      `;
-    }
-
-    if (userType === "individual") {
+      templateData = {
+        userType,
+        companyName,
+        pointOfContact,
+        mobile,
+        email,
+        city,
+        address,
+        message,
+      };
+    } else {
       const { name, mobile, email, city, address, message } = req.body;
 
       if (!name || !mobile || !email || !city || !address || !message) {
@@ -131,33 +109,19 @@ export const submitEnquiry = async (req, res) => {
       userEmail = email;
       adminSubject = "New Individual Enquiry - Bunndle";
 
-      adminHtml = `
-        <h2>New Individual Enquiry</h2>
-
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Mobile:</strong> ${mobile}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>City:</strong> ${city}</p>
-        <p><strong>Address:</strong> ${address}</p>
-        <p><strong>Message:</strong> ${message}</p>
-      `;
-
-      userHtml = `
-        <h2>Thank you for contacting Bunndle</h2>
-
-        <p>Hello ${name},</p>
-
-        <p>We have received your enquiry.</p>
-        <p>Our team will contact you soon.</p>
-
-        <p><strong>Your Message:</strong></p>
-        <p>${message}</p>
-
-        <br />
-
-        <p>Regards,<br />Bunndle Team</p>
-      `;
+      templateData = {
+        userType,
+        name,
+        mobile,
+        email,
+        city,
+        address,
+        message,
+      };
     }
+
+    const adminHtml = adminEnquiryTemplate(templateData);
+    const userHtml = userEnquiryTemplate(templateData);
 
     const [adminEmailSent, userEmailSent] = await Promise.all([
       sendEmail({
@@ -168,7 +132,7 @@ export const submitEnquiry = async (req, res) => {
 
       sendEmail({
         to: userEmail,
-        subject: "Thank you for contacting Bunndle",
+        subject: "Thank You for Contacting Bunndle",
         html: userHtml,
       }),
     ]);

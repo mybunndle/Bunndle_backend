@@ -1,4 +1,3 @@
-
 import WebAsset from "../model/web_asset_model.js";
 import {
   uploadAssetFile,
