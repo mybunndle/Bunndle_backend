@@ -1,7 +1,7 @@
 import  CorporateEnquiry from "../model/corporate_enquiryModel.js";
 import IndividualEnquiry from "../model/Individual_enquiryModel.js";
-import { adminEnquiryTemplate } from "../utils/web_adminEmailTemplate.js";
-import { userEnquiryTemplate } from "../utils/web_userEmailTemplate.js"
+import  adminEnquiryTemplate  from "../utils/web_adminEmailTemplate.js";
+import userEnquiryTemplate  from "../utils/web_userEmailTemplate.js"
 import sendEmail from "../utils/email.js";
 
 export const submitEnquiry = async (req, res) => {
