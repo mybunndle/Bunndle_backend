@@ -1,12 +1,15 @@
-import  CorporateEnquiry from "../model/corporate_enquiryModel.js";
+import mongoose from "mongoose";
+import CorporateEnquiry from "../model/corporate_enquiryModel.js";
 import IndividualEnquiry from "../model/Individual_enquiryModel.js";
-import  adminEnquiryTemplate  from "../utils/web_adminEmailTemplate.js";
-import userEnquiryTemplate  from "../utils/web_userEmailTemplate.js"
+import adminEnquiryTemplate from "../utils/web_adminEmailTemplate.js";
+import userEnquiryTemplate from "../utils/web_userEmailTemplate.js";
+import WebAsset from "../model/web_asset_model.js";
 import sendEmail from "../utils/email.js";
 
 export const submitEnquiry = async (req, res) => {
   try {
     const { userType } = req.body;
+    const { assetId } = req.params;
 
     if (!userType) {
       return res.status(400).json({
@@ -19,6 +22,29 @@ export const submitEnquiry = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Invalid user type. Use corporate or individual.",
+      });
+    }
+
+    if (!assetId) {
+      return res.status(400).json({
+        success: false,
+        message: "Asset ID is required.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(assetId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid asset ID.",
+      });
+    }
+
+    const asset = await WebAsset.findById(assetId).lean();
+
+    if (!asset) {
+      return res.status(404).json({
+        success: false,
+        message: "Asset not found.",
       });
     }
 
@@ -35,6 +61,18 @@ export const submitEnquiry = async (req, res) => {
     let userEmail;
     let adminSubject;
     let templateData;
+
+    const assetDetails = {
+      id: asset._id.toString(),
+      assetName: asset.assetName,
+      brand: asset.brand,
+      model: asset.model,
+      category: asset.category,
+      subCategory: asset.subCategory,
+      price: asset.price,
+      purchaseYear: asset.purchaseYear,
+      imageUrl: asset.files?.[0]?.url || null,
+    };
 
     if (userType === "corporate") {
       const {
@@ -64,6 +102,7 @@ export const submitEnquiry = async (req, res) => {
       }
 
       savedData = await CorporateEnquiry.create({
+        assetId: asset._id,
         companyName,
         pointOfContact,
         mobile,
@@ -74,7 +113,9 @@ export const submitEnquiry = async (req, res) => {
       });
 
       userEmail = email;
-      adminSubject = "New Corporate Enquiry - Bunndle";
+      adminSubject = `New Corporate Enquiry - ${
+        asset.assetName || `${asset.brand || ""} ${asset.model || ""}`.trim()
+      }`;
 
       templateData = {
         userType,
@@ -85,6 +126,7 @@ export const submitEnquiry = async (req, res) => {
         city,
         address,
         message,
+        asset: assetDetails,
       };
     } else {
       const { name, mobile, email, city, address, message } = req.body;
@@ -98,6 +140,7 @@ export const submitEnquiry = async (req, res) => {
       }
 
       savedData = await IndividualEnquiry.create({
+        assetId: asset._id,
         name,
         mobile,
         email,
@@ -107,7 +150,9 @@ export const submitEnquiry = async (req, res) => {
       });
 
       userEmail = email;
-      adminSubject = "New Individual Enquiry - Bunndle";
+      adminSubject = `New Individual Enquiry - ${
+        asset.assetName || `${asset.brand || ""} ${asset.model || ""}`.trim()
+      }`;
 
       templateData = {
         userType,
@@ -117,6 +162,7 @@ export const submitEnquiry = async (req, res) => {
         city,
         address,
         message,
+        asset: assetDetails,
       };
     }
 
@@ -132,7 +178,7 @@ export const submitEnquiry = async (req, res) => {
 
       sendEmail({
         to: userEmail,
-        subject: "Thank You for Contacting Bunndle",
+        subject: "Your Bunndle Asset Enquiry Has Been Received",
         html: userHtml,
       }),
     ]);
@@ -144,6 +190,7 @@ export const submitEnquiry = async (req, res) => {
         adminEmailSent,
         userEmailSent,
       },
+      asset: assetDetails,
       data: savedData,
     });
   } catch (error) {

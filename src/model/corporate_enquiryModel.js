@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const corporateEnquirySchema = new mongoose.Schema(
   {
+      assetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "WebAsset",
+      required: true,
+      index: true,
+    },
     companyName: {
       type: String,
       trim: true,

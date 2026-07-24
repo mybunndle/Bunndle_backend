@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const individualEnquirySchema = new mongoose.Schema(
   {
+    assetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "WebAsset",
+      required: true,
+      index: true,
+    },
     name: {
       type: String,
       trim: true,
@@ -14,7 +20,7 @@ const individualEnquirySchema = new mongoose.Schema(
 
     email: {
       type: String,
-  
+
       trim: true,
       lowercase: true,
     },
@@ -34,7 +40,7 @@ const individualEnquirySchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const IndividualEnquiry =

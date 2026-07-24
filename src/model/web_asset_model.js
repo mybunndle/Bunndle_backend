@@ -8,7 +8,7 @@ const web_assetSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-
+   
     model: {
       type: String,
 

@@ -1,12 +1,13 @@
+
+
 const escapeHtml = (value = "") => {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 };
-
 
 const userEnquiryTemplate = ({
   userType,
@@ -18,6 +19,7 @@ const userEnquiryTemplate = ({
   city,
   address,
   message,
+  asset,
 }) => {
   const isCorporate = userType === "corporate";
 
@@ -31,6 +33,20 @@ const userEnquiryTemplate = ({
   const safeAddress = escapeHtml(address);
   const safeMessage = escapeHtml(message);
 
+  const safeAssetName = escapeHtml(asset?.assetName);
+  const safeBrand = escapeHtml(asset?.brand);
+  const safeModel = escapeHtml(asset?.model);
+  const safeCategory = escapeHtml(asset?.category);
+  const safeSubCategory = escapeHtml(asset?.subCategory);
+  const safePrice = escapeHtml(asset?.price);
+  const safePurchaseYear = escapeHtml(asset?.purchaseYear);
+  const safeImageUrl = escapeHtml(asset?.imageUrl);
+
+  const assetTitle =
+    safeAssetName ||
+    `${safeBrand || ""} ${safeModel || ""}`.trim() ||
+    "Selected Asset";
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -42,7 +58,7 @@ const userEnquiryTemplate = ({
     content="width=device-width, initial-scale=1.0"
   />
 
-  <title>Enquiry Received - Bunndle</title>
+  <title>Asset Enquiry Received - Bunndle</title>
 </head>
 
 <body
@@ -244,11 +260,13 @@ const userEnquiryTemplate = ({
               >
                 ${
                   isCorporate
-                    ? `We have successfully received your corporate enquiry for
-                       <strong>${safeCompanyName}</strong>.`
-                    : "We have successfully received your individual enquiry."
+                    ? `We have successfully received the asset enquiry submitted
+                       on behalf of <strong>${safeCompanyName}</strong>.`
+                    : `We have successfully received your enquiry for
+                       <strong>${assetTitle}</strong>.`
                 }
-                Our team will review your request and contact you shortly.
+
+                Our leasing team will review your request and contact you shortly.
               </p>
 
               <!-- Status -->
@@ -279,7 +297,7 @@ const userEnquiryTemplate = ({
                         font-weight:700;
                       "
                     >
-                      ✓ Your enquiry has been submitted
+                      ✓ Your asset enquiry has been submitted
                     </p>
 
                     <p
@@ -290,9 +308,114 @@ const userEnquiryTemplate = ({
                         line-height:1.6;
                       "
                     >
-                      Our leasing team will get in touch with you as soon as
-                      possible.
+                      Our team will get in touch with you as soon as possible.
                     </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Asset Details -->
+              <table
+                role="presentation"
+                width="100%"
+                cellspacing="0"
+                cellpadding="0"
+                border="0"
+                bgcolor="#fff8f1"
+                style="
+                  width:100%;
+                  background-color:#fff8f1;
+                  border-left:4px solid #f58220;
+                  border-radius:12px;
+                  margin-bottom:20px;
+                "
+              >
+                <tr>
+                  <td style="padding:18px 16px;">
+
+                    <p
+                      style="
+                        margin:0 0 16px;
+                        color:#9a4f0a;
+                        font-size:15px;
+                        font-weight:700;
+                      "
+                    >
+                      Asset You Enquired About
+                    </p>
+
+                    ${
+                      safeImageUrl
+                        ? `
+                          <img
+                            src="${safeImageUrl}"
+                            alt="${assetTitle}"
+                            width="100%"
+                            style="
+                              display:block;
+                              width:100%;
+                              max-width:500px;
+                              max-height:280px;
+                              height:auto;
+                              object-fit:cover;
+                              border-radius:12px;
+                              margin:0 0 18px;
+                              border:0;
+                            "
+                          />
+                        `
+                        : ""
+                    }
+
+                    <p
+                      style="
+                        margin:0 0 14px;
+                        color:#111827;
+                        font-size:18px;
+                        line-height:1.4;
+                        font-weight:700;
+                      "
+                    >
+                      ${assetTitle}
+                    </p>
+
+                    ${detailRow(
+                      "📂",
+                      "Category",
+                      safeCategory || "Not provided"
+                    )}
+
+                    ${detailRow(
+                      "📁",
+                      "Subcategory",
+                      safeSubCategory || "Not provided"
+                    )}
+
+                    ${detailRow(
+                      "🏷️",
+                      "Brand",
+                      safeBrand || "Not provided"
+                    )}
+
+                    ${detailRow(
+                      "⚙️",
+                      "Model",
+                      safeModel || "Not provided"
+                    )}
+
+                    ${detailRow(
+                      "📅",
+                      "Purchase Year",
+                      safePurchaseYear || "Not provided"
+                    )}
+
+                    ${detailRow(
+                      "₹",
+                      "Price",
+                      safePrice || "Contact for price",
+                      true
+                    )}
+
                   </td>
                 </tr>
               </table>
@@ -308,7 +431,7 @@ const userEnquiryTemplate = ({
                 style="
                   width:100%;
                   background-color:#f6f9fd;
-                  border-left:4px solid #f58220;
+                  border-left:4px solid #0f4f91;
                   border-radius:12px;
                   margin-bottom:20px;
                 "
@@ -342,7 +465,11 @@ const userEnquiryTemplate = ({
                             safeName
                           )}
                         `
-                        : detailRow("👤", "Name", safeName)
+                        : detailRow(
+                            "👤",
+                            "Name",
+                            safeName
+                          )
                     }
 
                     ${detailRow(
@@ -431,6 +558,40 @@ const userEnquiryTemplate = ({
                 </tr>
               </table>
 
+              <!-- Information -->
+              <table
+                role="presentation"
+                width="100%"
+                cellspacing="0"
+                cellpadding="0"
+                border="0"
+                style="margin-bottom:22px;"
+              >
+                <tr>
+                  <td
+                    bgcolor="#fff5eb"
+                    style="
+                      background-color:#fff5eb;
+                      border:1px solid #fed7aa;
+                      border-radius:12px;
+                      padding:16px;
+                    "
+                  >
+                    <p
+                      style="
+                        margin:0;
+                        color:#9a4f0a;
+                        font-size:13px;
+                        line-height:1.6;
+                      "
+                    >
+                      Please note that asset availability, price and lease terms
+                      may be confirmed by our team during the follow-up call.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
               <p
                 style="
                   margin:0 0 8px;
@@ -451,6 +612,7 @@ const userEnquiryTemplate = ({
                 "
               >
                 Regards,<br />
+
                 <strong style="color:#0f4f91;">
                   Bunndle Support Team
                 </strong>
@@ -458,7 +620,6 @@ const userEnquiryTemplate = ({
             </td>
           </tr>
 
-          <!-- Footer -->
           ${footerTemplate()}
 
         </table>
