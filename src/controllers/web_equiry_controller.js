@@ -10,6 +10,7 @@ export const submitEnquiry = async (req, res) => {
   try {
     const { userType } = req.body;
     const { assetId } = req.params;
+    console.log(assetId)
 
     if (!userType) {
       return res.status(400).json({
