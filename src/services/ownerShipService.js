@@ -10,6 +10,7 @@ export const allocateFractions = async ({
   fractions,
   razorpayOrderId = null,
   razorpayPaymentId = null,
+
 }) => {
   const session = await mongoose.startSession();
 

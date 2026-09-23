@@ -1,4 +1,4 @@
-import crypto from "crypto";
+
 import Order from "../model/OrderModel.js";
 import Payment from "../model/PaymentModel.js";
 import Asset from "../model/coAssetModel.js";
@@ -7,155 +7,14 @@ import { allocateFractions } from "../services/ownerShipService.js";
 import User from "../model/userModel.js";
 import mongoose from "mongoose";
 
-// export const createOrder = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const { assetId, fractions } = req.body;
+import {
+  verifyRazorpayPaymentSignature,
+  verifyRazorpayWebhookSignature,
+} from "../utils/razorpaySignature.js";
 
-//     // =========================
-//     // VALIDATION
-//     // =========================
-//     if (!assetId || !fractions) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "assetId and fractions are required",
-//       });
-//     }
-
-//     const fractionCount = Number(fractions);
-
-//     if (isNaN(fractionCount) || fractionCount <= 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid fraction count",
-//       });
-//     }
-
-//     // =========================
-//     // KYC CHECK
-//     // =========================
-//     const user = await User.findById(userId).select(
-//       "kycStatus isKycVerified"
-//     );
-
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "User not found",
-//       });
-//     }
-
-//     if (
-//       user.kycStatus !== "VERIFIED" ||
-//       !user.isKycVerified
-//     ) {
-//       return res.status(403).json({
-//         success: false,
-//         message:
-//           "KYC verification is required before making an investment.",
-      
-//       });
-//     }
-
-//     // =========================
-//     // RESERVE FRACTIONS
-//     // =========================
-//     const asset = await Asset.findOneAndUpdate(
-//       {
-//         _id: assetId,
-//         availableFractions: {
-//           $gte: fractionCount,
-//         },
-//         status: "ACTIVE",
-//       },
-//       {
-//         $inc: {
-//           availableFractions: -fractionCount,
-//           reservedFractions: fractionCount,
-//         },
-//       },
-//       {
-//         new: true,
-//       }
-//     );
-
-//     if (!asset) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Not enough fractions available or asset is inactive",
-//       });
-//     }
-
-//     // =========================
-//     // CALCULATE AMOUNT
-//     // =========================
-//     const amount =
-//       fractionCount * asset.amountPerFraction;
-
-//     // =========================
-//     // CREATE ORDER
-//     // =========================
-//     const order = await Order.create({
-//       userId,
-//       assetId,
-//       fractions: fractionCount,
-//       amountPerFraction:
-//         asset.amountPerFraction,
-//       totalAmount: amount,
-//       status: "PENDING_PAYMENT",
-
-//       // Reservation valid for 5 minutes
-//       expiresAt: new Date(
-//         Date.now() + 5 * 60 * 1000
-//       ),
-//     });
-
-//     // =========================
-//     // CREATE RAZORPAY ORDER
-//     // =========================
-//     const razorpayOrder =
-//       await razorpay.orders.create({
-//         amount: amount * 100, // paise
-//         currency: "INR",
-//         receipt: `receipt_${order._id}`,
-//       });
-
-//     // =========================
-//     // CREATE PAYMENT RECORD
-//     // =========================
-//     await Payment.create({
-//       userId,
-//       orderId: order._id,
-//       razorpayOrderId:
-//         razorpayOrder.id,
-//       amount,
-//       status: "PENDING",
-//     });
-
-//     // =========================
-//     // RESPONSE
-//     // =========================
-//     return res.status(200).json({
-//       success: true,
-//       message: "Order created successfully",
-//       order,
-//       razorpayOrder,
-//     });
-//   } catch (error) {
-//     console.error(
-//       "Create Order Error:",
-//       error
-//     );
-
-//     return res.status(500).json({
-//       success: false,
-//       message: error.message,
-//     });
-//   }
-// };
-
-
+import {
+  finalizeSuccessfulPayment,
+} from "../services/finalizeSuccessfulPaymentService.js";
 
 
 // Helper: safely expire order and release reserved fractions
@@ -545,7 +404,165 @@ export const createOrder = async (req, res) => {
 };
 
 
-export const verifyPayment = async (req, res) => {
+// export const verifyPayment = async (req, res) => {
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//     } = req.body;
+
+//     // Verify Razorpay Signature
+//     const generatedSignature = crypto
+//       .createHmac(
+//         "sha256",
+//         process.env.RAZORPAY_KEY_SECRET
+//       )
+//       .update(
+//         `${razorpay_order_id}|${razorpay_payment_id}`
+//       )
+//       .digest("hex");
+
+//     if (
+//       generatedSignature !==
+//       razorpay_signature
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "Payment verification failed",
+//       });
+//     }
+
+//     // Find Payment Record
+//     const payment =
+//       await Payment.findOne({
+//         razorpayOrderId:
+//           razorpay_order_id,
+//       });
+
+//     if (!payment) {
+//       return res.status(404).json({
+//         success: false,
+//         message:
+//           "Payment record not found",
+//       });
+//     }
+
+//     // Duplicate Verification Protection
+//     if (payment.status === "SUCCESS") {
+//       return res.status(200).json({
+//         success: true,
+//         message:
+//           "Payment already verified",
+//       });
+//     }
+
+//     // Find Order
+//     const order =
+//       await Order.findById(
+//         payment.orderId
+//       );
+
+//     if (!order) {
+//       return res.status(404).json({
+//         success: false,
+//         message:
+//           "Order not found",
+//       });
+//     }
+
+//     // Allow only pending orders
+//     if (
+//       order.status !==
+//       "PENDING_PAYMENT"
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Order status is ${order.status}. Payment cannot be processed.`,
+//       });
+//     }
+
+//     // Extra protection if cron hasn't run yet
+//     if (
+//       order.expiresAt &&
+//       order.expiresAt < new Date()
+//     ) {
+//       order.status = "EXPIRED";
+//       await order.save();
+
+//       payment.status = "EXPIRED";
+//       await payment.save();
+
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "Order has expired.",
+//       });
+//     }
+
+//     // Allocate Ownership First
+//     await allocateFractions({
+//       assetId: order.assetId,
+//       userId: order.userId,
+//       fractions: order.fractions,
+//       razorpayOrderId:
+//         razorpay_order_id,
+//       razorpayPaymentId:
+//         razorpay_payment_id,
+//     });
+
+//     // Update Payment
+//     payment.razorpayPaymentId =
+//       razorpay_payment_id;
+
+//     payment.razorpaySignature =
+//       razorpay_signature;
+
+//     payment.status = "SUCCESS";
+
+//     await payment.save();
+
+//     // Release Reserved Fractions
+//     await Asset.findByIdAndUpdate(
+//       order.assetId,
+//       {
+//         $inc: {
+//           reservedFractions:
+//             -order.fractions,
+//         },
+//       }
+//     );
+
+//     // Complete Order
+//     order.status = "COMPLETED";
+
+//     await order.save();
+
+//     return res.status(200).json({
+//       success: true,
+//       message:
+//         "Payment verified and fractions allocated successfully",
+//       orderId: order._id,
+//     });
+//   } catch (error) {
+//     console.log(
+//       "VERIFY PAYMENT ERROR:",
+//       error
+//     );
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
+
+export const verifyPayment = async (
+  req,
+  res
+) => {
   try {
     const {
       razorpay_order_id,
@@ -553,200 +570,352 @@ export const verifyPayment = async (req, res) => {
       razorpay_signature,
     } = req.body;
 
-    // Verify Razorpay Signature
-    const generatedSignature = crypto
-      .createHmac(
-        "sha256",
-        process.env.RAZORPAY_KEY_SECRET
-      )
-      .update(
-        `${razorpay_order_id}|${razorpay_payment_id}`
-      )
-      .digest("hex");
+
+    // =====================================
+    // 1. VALIDATION
+    // =====================================
 
     if (
-      generatedSignature !==
-      razorpay_signature
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature
     ) {
       return res.status(400).json({
         success: false,
+
+        message:
+          "Payment verification details are required",
+      });
+    }
+
+
+    // =====================================
+    // 2. VERIFY SIGNATURE
+    // =====================================
+
+    const validSignature =
+      verifyRazorpayPaymentSignature({
+        razorpayOrderId:
+          razorpay_order_id,
+
+        razorpayPaymentId:
+          razorpay_payment_id,
+
+        razorpaySignature:
+          razorpay_signature,
+      });
+
+
+    if (!validSignature) {
+      return res.status(400).json({
+        success: false,
+
         message:
           "Payment verification failed",
       });
     }
 
-    // Find Payment Record
+
+    // =====================================
+    // 3. FIND PAYMENT RECORD
+    // =====================================
+
     const payment =
       await Payment.findOne({
         razorpayOrderId:
           razorpay_order_id,
       });
 
+
     if (!payment) {
       return res.status(404).json({
         success: false,
+
         message:
           "Payment record not found",
       });
     }
 
-    // Duplicate Verification Protection
-    if (payment.status === "SUCCESS") {
-      return res.status(200).json({
-        success: true,
-        message:
-          "Payment already verified",
-      });
-    }
 
-    // Find Order
-    const order =
-      await Order.findById(
-        payment.orderId
+    // =====================================
+    // 4. FETCH ACTUAL RAZORPAY PAYMENT
+    // =====================================
+
+    const razorpayPayment =
+      await razorpay.payments.fetch(
+        razorpay_payment_id
       );
 
-    if (!order) {
-      return res.status(404).json({
+
+    if (!razorpayPayment) {
+      return res.status(400).json({
         success: false,
+
         message:
-          "Order not found",
+          "Unable to verify payment with Razorpay",
       });
     }
 
-    // Allow only pending orders
+
+    // =====================================
+    // 5. VERIFY RAZORPAY ORDER
+    // =====================================
+
     if (
-      order.status !==
-      "PENDING_PAYMENT"
+      razorpayPayment.order_id !==
+      razorpay_order_id
     ) {
       return res.status(400).json({
         success: false,
-        message: `Order status is ${order.status}. Payment cannot be processed.`,
+
+        message:
+          "Payment does not belong to this order",
       });
     }
 
-    // Extra protection if cron hasn't run yet
+
+    // =====================================
+    // 6. VERIFY AMOUNT
+    // =====================================
+
+    const expectedAmount =
+      Math.round(
+        Number(payment.amount) *
+          100
+      );
+
+
     if (
-      order.expiresAt &&
-      order.expiresAt < new Date()
+      Number(
+        razorpayPayment.amount
+      ) !== expectedAmount
     ) {
-      order.status = "EXPIRED";
-      await order.save();
-
-      payment.status = "EXPIRED";
-      await payment.save();
-
       return res.status(400).json({
         success: false,
+
         message:
-          "Order has expired.",
+          "Payment amount mismatch",
       });
     }
 
-    // Allocate Ownership First
-    await allocateFractions({
-      assetId: order.assetId,
-      userId: order.userId,
-      fractions: order.fractions,
-      razorpayOrderId:
-        razorpay_order_id,
-      razorpayPaymentId:
-        razorpay_payment_id,
-    });
 
-    // Update Payment
-    payment.razorpayPaymentId =
-      razorpay_payment_id;
+    // =====================================
+    // 7. PAYMENT MUST BE CAPTURED
+    // =====================================
 
-    payment.razorpaySignature =
-      razorpay_signature;
+    if (
+      razorpayPayment.status !==
+      "captured"
+    ) {
+      return res.status(400).json({
+        success: false,
 
-    payment.status = "SUCCESS";
+        message:
+          `Payment is not captured. Current status: ${razorpayPayment.status}`,
+      });
+    }
 
-    await payment.save();
 
-    // Release Reserved Fractions
-    await Asset.findByIdAndUpdate(
-      order.assetId,
-      {
-        $inc: {
-          reservedFractions:
-            -order.fractions,
-        },
-      }
-    );
+    // =====================================
+    // 8. FINALIZE PURCHASE
+    // =====================================
 
-    // Complete Order
-    order.status = "COMPLETED";
+    const result =
+      await finalizeSuccessfulPayment({
+        razorpayOrderId:
+          razorpay_order_id,
 
-    await order.save();
+        razorpayPaymentId:
+          razorpay_payment_id,
+
+        razorpaySignature:
+          razorpay_signature,
+
+        paymentMethod:
+          razorpayPayment.method ||
+          null,
+
+        webhookVerified:
+          false,
+      });
+
 
     return res.status(200).json({
       success: true,
+
       message:
-        "Payment verified and fractions allocated successfully",
-      orderId: order._id,
+        "Payment verified and purchase completed successfully",
+
+      data: {
+        purchaseHistoryId:
+          result.purchaseHistoryId,
+
+        paymentStatus:
+          "SUCCESS",
+      },
     });
+
   } catch (error) {
-    console.log(
+    console.error(
       "VERIFY PAYMENT ERROR:",
       error
     );
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    return res
+      .status(
+        error.statusCode ||
+          500
+      )
+      .json({
+        success: false,
+
+        message:
+          error.message ||
+          "Unable to verify payment",
+      });
   }
 };
 
-export const razorpayWebhook = async (req, res) => {
-  try {
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+// export const razorpayWebhook = async (req, res) => {
+//   try {
+//     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-    const generatedSignature = crypto
-      .createHmac("sha256", secret)
-      .update(req.body)
-      .digest("hex");
+//     const generatedSignature = crypto
+//       .createHmac("sha256", secret)
+//       .update(req.body)
+//       .digest("hex");
 
-    const receivedSignature = req.headers["x-razorpay-signature"];
+//     const receivedSignature = req.headers["x-razorpay-signature"];
 
-    if (generatedSignature !== receivedSignature) {
-      return res.status(400).json({
+//     if (generatedSignature !== receivedSignature) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid webhook signature",
+//       });
+//     }
+
+//     const eventData = JSON.parse(req.body.toString());
+
+//     const event = eventData.event;
+
+//     if (event === "payment.captured") {
+//       const paymentEntity = eventData.payload.payment.entity;
+
+//       await Payment.findOneAndUpdate(
+//         {
+//           razorpayPaymentId: paymentEntity.id,
+//         },
+//         {
+//           webhookVerified: true,
+
+//           status: "SUCCESS",
+//         },
+//       );
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//     });
+//   } catch (error) {
+//     console.log(error);
+
+//     return res.status(500).json({
+//       success: false,
+//     });
+//   }
+// };
+
+
+export const razorpayWebhook =
+  async (req, res) => {
+    try {
+      const receivedSignature =
+        req.headers[
+          "x-razorpay-signature"
+        ];
+
+
+      const validSignature =
+        verifyRazorpayWebhookSignature({
+          rawBody:
+            req.body,
+
+          signature:
+            receivedSignature,
+        });
+
+
+      if (!validSignature) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Invalid webhook signature",
+        });
+      }
+
+
+      const eventData =
+        JSON.parse(
+          req.body.toString()
+        );
+
+
+      const event =
+        eventData.event;
+
+
+      if (
+        event ===
+        "payment.captured"
+      ) {
+        const paymentEntity =
+          eventData.payload.payment
+            .entity;
+
+
+        const result =
+          await finalizeSuccessfulPayment({
+            razorpayOrderId:
+              paymentEntity.order_id,
+
+            razorpayPaymentId:
+              paymentEntity.id,
+
+            paymentMethod:
+              paymentEntity.method ||
+              null,
+
+            webhookVerified:
+              true,
+          });
+
+
+        // PDF will be added here shortly.
+      }
+
+
+      return res.status(200).json({
+        success: true,
+      });
+
+    } catch (error) {
+      console.error(
+        "RAZORPAY WEBHOOK ERROR:",
+        error
+      );
+
+
+      return res.status(500).json({
         success: false,
-        message: "Invalid webhook signature",
       });
     }
+  };
 
-    const eventData = JSON.parse(req.body.toString());
 
-    const event = eventData.event;
 
-    if (event === "payment.captured") {
-      const paymentEntity = eventData.payload.payment.entity;
 
-      await Payment.findOneAndUpdate(
-        {
-          razorpayPaymentId: paymentEntity.id,
-        },
-        {
-          webhookVerified: true,
 
-          status: "SUCCESS",
-        },
-      );
-    }
-
-    return res.status(200).json({
-      success: true,
-    });
-  } catch (error) {
-    console.log(error);
-
-    return res.status(500).json({
-      success: false,
-    });
-  }
-};
 
 // import crypto from "crypto";
 // import Order from "../model/OrderModel.js";
