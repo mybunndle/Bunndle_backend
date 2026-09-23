@@ -1,105 +1,16 @@
-// import mongoose from "mongoose";
-
-
-// const getIndianTime = () => {
-//   const istOffset = 5.5 * 60 * 60 * 1000;
-//   return new Date(Date.now() + istOffset);
-// };
-
-// const purchaseHistorySchema =
-//   new mongoose.Schema(
-//     {
-//       assetId: {
-//         type: mongoose.Schema.Types.ObjectId,
-//          ref: "CoAsset",
-//         required: true,
-//       },
-
-//       userId: {
-//         type: mongoose.Schema.Types.ObjectId,
-//         ref: "User",
-//         required: true,
-//       },
-
-//       fractionsPurchased: {
-//         type: Number,
-//         required: true,
-//       },
-
-//       amountPerFraction: {
-//         type: Number,
-//         required: true,
-//       },
-
-//       totalAmount: {
-//         type: Number,
-//         required: true,
-//       },
-
-//       paymentStatus: {
-//         type: String,
-//         enum: [
-//           "PENDING",
-//           "SUCCESS",
-//           "FAILED",
-//           "REFUNDED",
-//         ],
-//         default: "PENDING",
-//       },
-
-//       // Razorpay Details
-//       razorpayOrderId: {
-//         type: String,
-//         default: null,
-//       },
-
-//       razorpayPaymentId: {
-//         type: String,
-//         default: null,
-//       },
-
-//       razorpaySignature: {
-//         type: String,
-//         default: null,
-//       },
-
-//       transactionReference: {
-//         type: String,
-//       },
-//     },
-//     {
-//       timestamps: {
-//         currentTime: getIndianTime,
-//       },
-//     }
-//   );
-
-// // Useful indexes
-// purchaseHistorySchema.index({
-//   userId: 1,
-//   createdAt: -1,
-// });
-
-// purchaseHistorySchema.index({
-//   assetId: 1,
-// });
-
-// purchaseHistorySchema.index({
-//   razorpayPaymentId: 1,
-// });
-
-// export default mongoose.model(
-//   "PurchaseHistory",
-//   purchaseHistorySchema
-// );
-
-
 import mongoose from "mongoose";
 
 const getIndianTime = () => {
   const istOffset = 5.5 * 60 * 60 * 1000;
   return new Date(Date.now() + istOffset);
 };
+
+
+// ==================================================
+// DOCUMENT SCHEMA
+// Actual PDF -> ImageKit
+// URL -> MongoDB
+// ==================================================
 
 const documentSchema = new mongoose.Schema(
   {
@@ -113,6 +24,7 @@ const documentSchema = new mongoose.Schema(
       default: null,
     },
 
+    // PDF URL WILL BE STORED HERE
     url: {
       type: String,
       default: null,
@@ -132,6 +44,11 @@ const documentSchema = new mongoose.Schema(
     _id: false,
   }
 );
+
+
+// ==================================================
+// PURCHASE HISTORY SCHEMA
+// ==================================================
 
 const purchaseHistorySchema = new mongoose.Schema(
   {
@@ -164,6 +81,13 @@ const purchaseHistorySchema = new mongoose.Schema(
       required: true,
     },
 
+    bankAccountId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BankAccount",
+      default: null,
+    },
+
+
     // ==================================================
     // PURCHASE DETAILS
     // ==================================================
@@ -182,6 +106,7 @@ const purchaseHistorySchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+
 
     // ==================================================
     // USER SNAPSHOT
@@ -203,6 +128,7 @@ const purchaseHistorySchema = new mongoose.Schema(
         default: null,
       },
     },
+
 
     // ==================================================
     // ASSET SNAPSHOT
@@ -249,6 +175,7 @@ const purchaseHistorySchema = new mongoose.Schema(
         default: null,
       },
     },
+
 
     // ==================================================
     // PAYMENT DETAILS
@@ -301,30 +228,53 @@ const purchaseHistorySchema = new mongoose.Schema(
       default: null,
     },
 
+
     // ==================================================
     // GENERATED PDF DOCUMENTS
     // ==================================================
 
     documents: {
+      /*
+       * Agreement PDF:
+       *
+       * Actual file -> ImageKit
+       * URL -> MongoDB
+       *
+       * Example:
+       *
+       * documents.digitalAgreement.url
+       * =
+       * https://ik.imagekit.io/....pdf
+       */
       digitalAgreement: {
         type: documentSchema,
         default: null,
       },
 
+      /*
+       * Payment Receipt PDF
+       */
       paymentReceipt: {
         type: documentSchema,
         default: null,
       },
     },
 
+
+    // ==================================================
+    // DOCUMENT GENERATION STATUS
+    // ==================================================
+
     documentGenerationStatus: {
       type: String,
+
       enum: [
         "NOT_STARTED",
         "PROCESSING",
         "COMPLETED",
         "FAILED",
       ],
+
       default: "NOT_STARTED",
     },
 
@@ -334,12 +284,14 @@ const purchaseHistorySchema = new mongoose.Schema(
       select: false,
     },
   },
+
   {
     timestamps: {
       currentTime: getIndianTime,
     },
   }
 );
+
 
 // ==================================================
 // INDEXES
@@ -350,9 +302,11 @@ purchaseHistorySchema.index({
   createdAt: -1,
 });
 
+
 purchaseHistorySchema.index({
   assetId: 1,
 });
+
 
 purchaseHistorySchema.index(
   {
@@ -360,6 +314,7 @@ purchaseHistorySchema.index(
   },
   {
     unique: true,
+
     partialFilterExpression: {
       razorpayPaymentId: {
         $type: "string",
@@ -367,6 +322,11 @@ purchaseHistorySchema.index(
     },
   }
 );
+
+
+// ==================================================
+// MODEL
+// ==================================================
 
 export default mongoose.model(
   "PurchaseHistory",
