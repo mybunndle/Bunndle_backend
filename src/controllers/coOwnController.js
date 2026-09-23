@@ -443,10 +443,10 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
       userId: userId,
     })
       .select(
-        "userId assetId totalAmount createdAt paymentStatus fractionsPurchased razorpayOrderId razorpayPaymentId transactionReference"
+        "userId assetId totalAmount createdAt paymentStatus fractionsPurchased razorpayOrderId razorpayPaymentId  transactionReference"
       )
       .populate("userId", "name")
-      .populate("assetId", "assetName assetCode model specification assetCode")
+      .populate("assetId", "assetName assetCode model specification assetCode documents.url")
       .sort({ createdAt: -1 })
       .lean();
 
