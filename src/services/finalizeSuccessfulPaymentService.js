@@ -10,8 +10,6 @@ import {
   allocateFractions,
 } from "./ownerShipService.js";
 
-
-// KEEPING YOUR EXISTING INDIAN TIME APPROACH
 const getIndianTime = () => {
   const istOffset =
     5.5 * 60 * 60 * 1000;
@@ -22,16 +20,16 @@ const getIndianTime = () => {
 };
 
 
-const generateTransactionReference = (
-  purchaseId
-) => {
-  const shortId = purchaseId
-    .toString()
-    .slice(-10)
-    .toUpperCase();
+const generateTransactionReference =
+  (purchaseId) => {
+    const suffix =
+      purchaseId
+        .toString()
+        .slice(-10)
+        .toUpperCase();
 
-  return `BND-TXN-${shortId}`;
-};
+    return `BND-TXN-${suffix}`;
+  };
 
 
 export const finalizeSuccessfulPayment =
@@ -45,19 +43,25 @@ export const finalizeSuccessfulPayment =
     const session =
       await mongoose.startSession();
 
-    let purchaseHistoryId = null;
+    let purchaseHistoryId =
+      null;
 
     try {
       await session.withTransaction(
         async () => {
-          // ======================================
+          // ==================================
           // 1. FIND PAYMENT
-          // ======================================
+          // ==================================
 
           const payment =
             await Payment.findOne({
               razorpayOrderId,
-            }).session(session);
+            })
+              .select(
+                "+razorpaySignature"
+              )
+              .session(session);
+
 
           if (!payment) {
             const error =
@@ -71,27 +75,18 @@ export const finalizeSuccessfulPayment =
           }
 
 
-          // ======================================
-          // 2. ALREADY PROCESSED
-          // ======================================
+          // ==================================
+          // 2. IDEMPOTENCY
+          // ==================================
 
           if (
             payment.status ===
               "SUCCESS" &&
             payment.purchaseHistoryId
           ) {
-            // Webhook may come after Flutter.
-            // Update remaining metadata only.
-
             if (
-              razorpayPaymentId &&
-              !payment.razorpayPaymentId
+              razorpaySignature
             ) {
-              payment.razorpayPaymentId =
-                razorpayPaymentId;
-            }
-
-            if (razorpaySignature) {
               payment.razorpaySignature =
                 razorpaySignature;
 
@@ -99,14 +94,25 @@ export const finalizeSuccessfulPayment =
                 true;
             }
 
-            if (paymentMethod) {
+            if (
+              paymentMethod
+            ) {
               payment.paymentMethod =
                 paymentMethod;
             }
 
-            if (webhookVerified) {
+            if (
+              webhookVerified
+            ) {
               payment.webhookVerified =
                 true;
+            }
+
+            if (
+              !payment.razorpayPaymentId
+            ) {
+              payment.razorpayPaymentId =
+                razorpayPaymentId;
             }
 
             await payment.save({
@@ -120,14 +126,15 @@ export const finalizeSuccessfulPayment =
           }
 
 
-          // ======================================
+          // ==================================
           // 3. FIND ORDER
-          // ======================================
+          // ==================================
 
           const order =
             await Order.findById(
               payment.orderId
             ).session(session);
+
 
           if (!order) {
             const error =
@@ -156,11 +163,14 @@ export const finalizeSuccessfulPayment =
           }
 
 
-          // ======================================
-          // 4. USER + ASSET
-          // ======================================
+          // ==================================
+          // 4. FIND USER + ASSET
+          // ==================================
 
-          const [user, asset] =
+          const [
+            user,
+            asset,
+          ] =
             await Promise.all([
               User.findById(
                 order.userId
@@ -186,41 +196,51 @@ export const finalizeSuccessfulPayment =
           }
 
 
-          // ======================================
+          // ==================================
           // 5. ALLOCATE OWNERSHIP
-          // ======================================
+          // ==================================
 
-          await allocateFractions({
-            assetId:
-              order.assetId,
+          const ownershipResult =
+            await allocateFractions({
+              assetId:
+                order.assetId,
 
-            userId:
-              order.userId,
+              userId:
+                order.userId,
 
-            fractions:
-              order.fractions,
+              fractions:
+                order.fractions,
 
-            razorpayOrderId,
+              razorpayOrderId,
 
-            razorpayPaymentId,
+              razorpayPaymentId,
 
-            session,
-          });
+              session,
+            });
 
 
-          // ======================================
+          if (
+            !ownershipResult?.ownership
+          ) {
+            throw new Error(
+              "Unable to allocate ownership"
+            );
+          }
+
+
+          // ==================================
           // 6. FINALIZE RESERVED FRACTIONS
-          // ======================================
+          // ==================================
 
           /*
-           * createOrder already reduced:
+           * createOrder already did:
            *
-           * availableFractions
+           * availableFractions -= fractions
+           * reservedFractions += fractions
            *
-           * therefore DO NOT reduce it again.
+           * Successful payment therefore ONLY:
            *
-           * Only reservedFractions should
-           * become lower here.
+           * reservedFractions -= fractions
            */
 
           const assetUpdate =
@@ -258,9 +278,9 @@ export const finalizeSuccessfulPayment =
           }
 
 
-          // ======================================
-          // 7. CREATE PURCHASE HISTORY
-          // ======================================
+          // ==================================
+          // 7. CHECK EXISTING PURCHASE
+          // ==================================
 
           let purchase =
             await PurchaseHistory.findOne({
@@ -268,6 +288,10 @@ export const finalizeSuccessfulPayment =
                 order._id,
             }).session(session);
 
+
+          // ==================================
+          // 8. CREATE PURCHASE HISTORY
+          // ==================================
 
           if (!purchase) {
             const totalMonthlyRental =
@@ -280,12 +304,18 @@ export const finalizeSuccessfulPayment =
               );
 
 
-            const purchases =
+            const createdPurchases =
               await PurchaseHistory.create(
                 [
                   {
+                    // THESE WERE MISSING
+                    // IN YOUR OLD FLOW
                     orderId:
                       order._id,
+
+                    paymentId:
+                      payment._id,
+
 
                     assetId:
                       order.assetId,
@@ -293,13 +323,10 @@ export const finalizeSuccessfulPayment =
                     userId:
                       order.userId,
 
-                    paymentId:
-                      payment._id,
 
-
-                    // ======================
-                    // PURCHASE
-                    // ======================
+                    // =======================
+                    // PURCHASE DETAILS
+                    // =======================
 
                     fractionsPurchased:
                       order.fractions,
@@ -311,9 +338,9 @@ export const finalizeSuccessfulPayment =
                       order.totalAmount,
 
 
-                    // ======================
+                    // =======================
                     // USER SNAPSHOT
-                    // ======================
+                    // =======================
 
                     userSnapshot: {
                       name:
@@ -332,9 +359,9 @@ export const finalizeSuccessfulPayment =
                     },
 
 
-                    // ======================
+                    // =======================
                     // ASSET SNAPSHOT
-                    // ======================
+                    // =======================
 
                     assetSnapshot: {
                       assetName:
@@ -369,9 +396,9 @@ export const finalizeSuccessfulPayment =
                     },
 
 
-                    // ======================
+                    // =======================
                     // PAYMENT SNAPSHOT
-                    // ======================
+                    // =======================
 
                     paymentStatus:
                       "SUCCESS",
@@ -390,6 +417,8 @@ export const finalizeSuccessfulPayment =
                     paidAt:
                       getIndianTime(),
 
+
+                    // PDF later
                     documentGenerationStatus:
                       "NOT_STARTED",
                   },
@@ -402,7 +431,7 @@ export const finalizeSuccessfulPayment =
 
 
             purchase =
-              purchases[0];
+              createdPurchases[0];
 
 
             purchase.transactionReference =
@@ -417,15 +446,17 @@ export const finalizeSuccessfulPayment =
           }
 
 
-          // ======================================
-          // 8. UPDATE PAYMENT
-          // ======================================
+          // ==================================
+          // 9. UPDATE PAYMENT
+          // ==================================
 
           payment.razorpayPaymentId =
             razorpayPaymentId;
 
 
-          if (razorpaySignature) {
+          if (
+            razorpaySignature
+          ) {
             payment.razorpaySignature =
               razorpaySignature;
 
@@ -434,13 +465,17 @@ export const finalizeSuccessfulPayment =
           }
 
 
-          if (paymentMethod) {
+          if (
+            paymentMethod
+          ) {
             payment.paymentMethod =
               paymentMethod;
           }
 
 
-          if (webhookVerified) {
+          if (
+            webhookVerified
+          ) {
             payment.webhookVerified =
               true;
           }
@@ -464,9 +499,9 @@ export const finalizeSuccessfulPayment =
           });
 
 
-          // ======================================
-          // 9. COMPLETE ORDER
-          // ======================================
+          // ==================================
+          // 10. COMPLETE ORDER
+          // ==================================
 
           order.status =
             "COMPLETED";
@@ -484,25 +519,31 @@ export const finalizeSuccessfulPayment =
 
 
       return {
+        success: true,
+
         purchaseHistoryId,
       };
 
     } catch (error) {
 
       /*
-       * If Flutter and Webhook both arrived at
-       * almost the same time, unique indexes
-       * may protect us from duplicates.
+       * Protection for simultaneous
+       * Flutter verify + webhook execution.
        */
-
-      if (error?.code === 11000) {
+      if (
+        error?.code === 11000
+      ) {
         const existingPurchase =
           await PurchaseHistory.findOne({
             razorpayPaymentId,
           });
 
-        if (existingPurchase) {
+        if (
+          existingPurchase
+        ) {
           return {
+            success: true,
+
             purchaseHistoryId:
               existingPurchase._id,
           };
