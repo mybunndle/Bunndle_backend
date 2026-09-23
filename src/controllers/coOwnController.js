@@ -204,84 +204,85 @@ export const getCoAssetById = async (req, res) => {
     });
   }
 };
-export const getPurchaseHistory = async (req, res) => {
-  try {
-    const purchases = await PurchaseHistory.find({
-      userId: req.user._id,
-      paymentStatus: "SUCCESS",
-    })
-      .populate("assetId", "assetName assetCode images specification")
-      .sort({
-        createdAt: -1,
-      })
-      .lean();
+// export const getPurchaseHistory = async (req, res) => {
+//   try {
+//     const purchases = await PurchaseHistory.find({
+//       userId: req.user._id,
+//       paymentStatus: "SUCCESS",
+//     })
+//       .populate("assetId", "assetName assetCode images specification amountPerFraction documents.url")
+//       .sort({
+//         createdAt: -1,
+//       })
+//       .lean();
 
-    const formattedPurchases = purchases.map((purchase) => ({
-      id: purchase._id,
+//     const formattedPurchases = purchases.map((purchase) => ({
+//       id: purchase._id,
 
-      asset: purchase.assetId,
+//       asset: purchase.assetId,
 
-      fractionsPurchased: purchase.fractionsPurchased,
+//       fractionsPurchased: purchase.fractionsPurchased,
 
-      amountPerFraction: purchase.amountPerFraction,
+//       amountPerFraction: purchase.amountPerFraction,
 
-      totalAmount: purchase.totalAmount,
+//       totalAmount: purchase.totalAmount,
+      
+//       paymentStatus: purchase.paymentStatus,
 
-      paymentStatus: purchase.paymentStatus,
+//       purchaseDate: purchase.createdAt.toLocaleDateString("en-IN"),
 
-      purchaseDate: purchase.createdAt.toLocaleDateString("en-IN"),
 
-      purchaseTime: purchase.createdAt.toLocaleTimeString("en-IN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+//       purchaseTime: purchase.createdAt.toLocaleTimeString("en-IN", {
+//         hour: "2-digit",
+//         minute: "2-digit",
+//       }),
 
-      createdAt: purchase.createdAt,
-    }));
+//       createdAt: purchase.createdAt,
+//     }));
 
-    return res.status(200).json({
-      success: true,
-      count: formattedPurchases.length,
-      data: formattedPurchases,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+//     return res.status(200).json({
+//       success: true,
+//       count: formattedPurchases.length,
+//       data: formattedPurchases,
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
 
-export const getMyOwnerships = async (req, res) => {
-  try {
-    const userId = req.user.id;
+// export const getMyOwnerships = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
 
-    const ownerships = await Ownership.find({
-      userId,
-    })
-      .populate({
-        path: "assetId",
-        select:
-          "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction assetCost specification durationMonths lockInMonths",
-      })
-      .sort({
-        createdAt: -1,
-      });
+//     const ownerships = await Ownership.find({
+//       userId,
+//     })
+//       .populate({
+//         path: "assetId",
+//         select:
+//           "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction assetCost specification durationMonths lockInMonths",
+//       })
+//       .sort({
+//         createdAt: -1,
+//       });
 
-    return res.status(200).json({
-      success: true,
-      count: ownerships.length,
-      data: ownerships,
-    });
-  } catch (error) {
-    console.log(error);
+//     return res.status(200).json({
+//       success: true,
+//       count: ownerships.length,
+//       data: ownerships,
+//     });
+//   } catch (error) {
+//     console.log(error);
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
 
 
 //admin controller
@@ -306,6 +307,300 @@ export const getMyOwnerships = async (req, res) => {
 //     });
 //   }
 // };
+
+
+export const getPurchaseHistory = async (req, res) => {
+  try {
+    const purchases = await PurchaseHistory.find({
+      userId: req.user._id,
+      paymentStatus: "SUCCESS",
+    })
+      .populate(
+        "assetId",
+        "assetName assetCode images specification amountPerFraction"
+      )
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
+
+    const formattedPurchases = purchases.map((purchase) => ({
+      id: purchase._id,
+
+      asset: purchase.assetId,
+
+      fractionsPurchased:
+        purchase.fractionsPurchased,
+
+      amountPerFraction:
+        purchase.amountPerFraction,
+
+      totalAmount:
+        purchase.totalAmount,
+
+      paymentStatus:
+        purchase.paymentStatus,
+
+      purchaseDate:
+        new Date(
+          purchase.createdAt
+        ).toLocaleDateString(
+          "en-IN",
+          {
+            timeZone:
+              "Asia/Kolkata",
+          }
+        ),
+
+      purchaseTime:
+        new Date(
+          purchase.createdAt
+        ).toLocaleTimeString(
+          "en-IN",
+          {
+            hour:
+              "2-digit",
+
+            minute:
+              "2-digit",
+
+            hour12:
+              true,
+
+            timeZone:
+              "Asia/Kolkata",
+          }
+        ),
+
+      // =====================================================
+      // DOCUMENT URLS
+      // =====================================================
+
+      agreementUrl:
+        purchase.documents
+          ?.digitalAgreement
+          ?.url ||
+        null,
+
+      paymentReceiptUrl:
+        purchase.documents
+          ?.paymentReceipt
+          ?.url ||
+        null,
+
+      createdAt:
+        purchase.createdAt,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count:
+        formattedPurchases.length,
+      data:
+        formattedPurchases,
+    });
+
+  } catch (error) {
+    console.error(
+      "Get Purchase History Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
+
+
+export const getMyOwnerships = async (req, res) => {
+  try {
+    const userId =
+      req.user._id ||
+      req.user.id;
+
+    // ========================================================
+    // GET USER OWNERSHIPS
+    // ========================================================
+
+    const ownerships =
+      await Ownership.find({
+        userId,
+      })
+        .populate({
+          path:
+            "assetId",
+
+          select:
+            "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction assetCost specification durationMonths lockInMonths",
+        })
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
+
+
+    if (
+      ownerships.length === 0
+    ) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+      });
+    }
+
+
+    // ========================================================
+    // COLLECT ASSET IDS
+    // ========================================================
+
+    const assetIds =
+      ownerships
+        .map(
+          (ownership) =>
+            ownership
+              .assetId
+              ?._id
+        )
+        .filter(Boolean);
+
+
+    // ========================================================
+    // GET PURCHASE HISTORIES IN ONE QUERY
+    //
+    // Avoids N+1 queries.
+    // ========================================================
+
+    const purchases =
+      await PurchaseHistory.find({
+        userId,
+
+        assetId: {
+          $in:
+            assetIds,
+        },
+
+        paymentStatus:
+          "SUCCESS",
+      })
+        .select(
+          `
+          assetId
+          documents.digitalAgreement.url
+          documents.paymentReceipt.url
+          createdAt
+          `
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
+
+
+    // ========================================================
+    // MAP PURCHASE BY ASSET
+    //
+    // Since purchases are sorted newest first,
+    // the first purchase found for an asset is used.
+    // ========================================================
+
+    const purchaseMap =
+      new Map();
+
+
+    for (
+      const purchase
+      of purchases
+    ) {
+      const assetId =
+        purchase.assetId
+          ?.toString();
+
+
+      if (
+        assetId &&
+        !purchaseMap.has(
+          assetId
+        )
+      ) {
+        purchaseMap.set(
+          assetId,
+          purchase
+        );
+      }
+    }
+
+
+    // ========================================================
+    // FORMAT OWNERSHIPS
+    // ========================================================
+
+    const formattedOwnerships =
+      ownerships.map(
+        (ownership) => {
+          const assetId =
+            ownership
+              .assetId
+              ?._id
+              ?.toString();
+
+
+          const purchase =
+            assetId
+              ? purchaseMap.get(
+                  assetId
+                )
+              : null;
+
+
+          return {
+            ...ownership,
+
+            agreementUrl:
+              purchase
+                ?.documents
+                ?.digitalAgreement
+                ?.url ||
+              null,
+
+            paymentReceiptUrl:
+              purchase
+                ?.documents
+                ?.paymentReceipt
+                ?.url ||
+              null,
+          };
+        }
+      );
+
+
+    return res.status(200).json({
+      success: true,
+
+      count:
+        formattedOwnerships.length,
+
+      data:
+        formattedOwnerships,
+    });
+
+  } catch (error) {
+    console.error(
+      "Get My Ownerships Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
+
 
 export const getAssetInvestors = async (req, res) => {
   try {
@@ -421,6 +716,104 @@ export const delete_co_own = async (req, res) => {
 };
 
 
+// export const getPurchaseHistoryByUserId = async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+
+//     if (!userId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "User ID is required",
+//       });
+//     }
+
+//     if (!mongoose.Types.ObjectId.isValid(userId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid user ID",
+//       });
+//     }
+
+//     const purchaseHistory = await PurchaseHistory.find({
+//       userId: userId,
+//     })
+//       .select(
+//         "userId assetId totalAmount createdAt paymentStatus fractionsPurchased razorpayOrderId razorpayPaymentId  transactionReference"
+//       )
+//       .populate("userId", "name")
+//       .populate("assetId", "assetName assetCode model specification assetCode documents.url")
+//       .sort({ createdAt: -1 })
+//       .lean();
+
+//     const formattedHistory = await Promise.all(
+//       purchaseHistory.map(async (purchase) => {
+//         const paymentDateTime = new Date(purchase.createdAt);
+
+//         const paymentData = await paymentModel
+//           .findOne({
+//             userId: userId,
+//             $or: [
+//               { razorpayOrderId: purchase.razorpayOrderId },
+//               { razorpayPaymentId: purchase.razorpayPaymentId },
+//             ],
+//           })
+//           .select("razorpayOrderId  razorpayPaymentId amount status createdAt")
+//           .lean();
+
+//         return {
+//           username: purchase.userId?.name || "N/A",
+
+//           assetName: purchase.assetId?.assetName || "N/A",
+
+//           model:
+//             purchase.assetId?.model ||
+//             purchase.assetId?.specification ||
+//             "N/A",
+
+//           orderId:
+//             paymentData?.razorpayOrderId ||
+//             purchase.razorpayOrderId ||
+//             "N/A",
+
+//           paymentDate: paymentDateTime.toLocaleDateString("en-IN", {
+//             day: "2-digit",
+//             month: "short",
+//             year: "numeric",
+//             timeZone: "Asia/Kolkata",
+//           }),
+
+//           paymentTime: paymentDateTime.toLocaleTimeString("en-IN", {
+//             hour: "2-digit",
+//             minute: "2-digit",
+//             hour12: true,
+//             timeZone: "Asia/Kolkata",
+//           }),
+
+//           amount: purchase.totalAmount || paymentData?.amount || 0,
+
+//           fractionsPurchased: purchase.fractionsPurchased || 0,
+//         };
+//       })
+//     );
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "User purchase history fetched successfully",
+//       count: formattedHistory.length,
+//       data: formattedHistory,
+//     });
+//   } catch (error) {
+//     console.error("Admin Get User Purchase History Error:", error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
+
+
 export const getPurchaseHistoryByUserId = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -443,32 +836,77 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
       userId: userId,
     })
       .select(
-        "userId assetId totalAmount createdAt paymentStatus fractionsPurchased razorpayOrderId razorpayPaymentId  transactionReference"
+        `
+        userId
+        assetId
+        totalAmount
+        createdAt
+        paymentStatus
+        fractionsPurchased
+        razorpayOrderId
+        razorpayPaymentId
+        transactionReference
+        documents.digitalAgreement.url
+        documents.paymentReceipt.url
+        `
       )
-      .populate("userId", "name")
-      .populate("assetId", "assetName assetCode model specification assetCode documents.url")
-      .sort({ createdAt: -1 })
+      .populate(
+        "userId",
+        "name"
+      )
+      .populate(
+        "assetId",
+        "assetName assetCode model specification"
+      )
+      .sort({
+        createdAt: -1,
+      })
       .lean();
 
     const formattedHistory = await Promise.all(
       purchaseHistory.map(async (purchase) => {
-        const paymentDateTime = new Date(purchase.createdAt);
+        const paymentDateTime =
+          new Date(purchase.createdAt);
 
-        const paymentData = await paymentModel
-          .findOne({
-            userId: userId,
-            $or: [
-              { razorpayOrderId: purchase.razorpayOrderId },
-              { razorpayPaymentId: purchase.razorpayPaymentId },
-            ],
-          })
-          .select("razorpayOrderId  razorpayPaymentId amount status createdAt")
-          .lean();
+        const paymentData =
+          await paymentModel
+            .findOne({
+              userId: userId,
+
+              $or: [
+                {
+                  razorpayOrderId:
+                    purchase.razorpayOrderId,
+                },
+                {
+                  razorpayPaymentId:
+                    purchase.razorpayPaymentId,
+                },
+              ],
+            })
+            .select(
+              `
+              razorpayOrderId
+              razorpayPaymentId
+              amount
+              status
+              createdAt
+              `
+            )
+            .lean();
 
         return {
-          username: purchase.userId?.name || "N/A",
+          username:
+            purchase.userId?.name ||
+            "N/A",
 
-          assetName: purchase.assetId?.assetName || "N/A",
+          assetName:
+            purchase.assetId?.assetName ||
+            "N/A",
+
+          assetCode:
+            purchase.assetId?.assetCode ||
+            "N/A",
 
           model:
             purchase.assetId?.model ||
@@ -480,35 +918,68 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
             purchase.razorpayOrderId ||
             "N/A",
 
-          paymentDate: paymentDateTime.toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-            timeZone: "Asia/Kolkata",
-          }),
+          paymentDate:
+            paymentDateTime.toLocaleDateString(
+              "en-IN",
+              {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                timeZone: "Asia/Kolkata",
+              }
+            ),
 
-          paymentTime: paymentDateTime.toLocaleTimeString("en-IN", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-            timeZone: "Asia/Kolkata",
-          }),
+          paymentTime:
+            paymentDateTime.toLocaleTimeString(
+              "en-IN",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+                timeZone: "Asia/Kolkata",
+              }
+            ),
 
-          amount: purchase.totalAmount || paymentData?.amount || 0,
+          amount:
+            purchase.totalAmount ||
+            paymentData?.amount ||
+            0,
 
-          fractionsPurchased: purchase.fractionsPurchased || 0,
+          fractionsPurchased:
+            purchase.fractionsPurchased ||
+            0,
+
+          // Agreement PDF URL
+          agreementUrl:
+            purchase.documents
+              ?.digitalAgreement
+              ?.url ||
+            null,
+
+          // Payment Receipt PDF URL
+          paymentReceiptUrl:
+            purchase.documents
+              ?.paymentReceipt
+              ?.url ||
+            null,
         };
       })
     );
 
     return res.status(200).json({
       success: true,
-      message: "User purchase history fetched successfully",
-      count: formattedHistory.length,
-      data: formattedHistory,
+      message:
+        "User purchase history fetched successfully",
+      count:
+        formattedHistory.length,
+      data:
+        formattedHistory,
     });
   } catch (error) {
-    console.error("Admin Get User Purchase History Error:", error);
+    console.error(
+      "Admin Get User Purchase History Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
