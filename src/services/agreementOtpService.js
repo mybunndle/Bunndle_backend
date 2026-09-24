@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 
 import User from "../model/userModel.js";
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
@@ -27,7 +28,7 @@ const createError = (statusCode, message) => {
 const normalizePhone = (phoneValue) => {
   let phone = String(phoneValue ?? "").replace(/\D/g, "");
 
-  // Remove India country code
+  // Remove +91 / 91
   if (/^91[6-9]\d{9}$/.test(phone)) {
     phone = phone.slice(2);
   }
@@ -43,11 +44,7 @@ const normalizePhone = (phoneValue) => {
 };
 
 // ============================================================
-// FIND AND VALIDATE PURCHASE
-//
-// Common validation for:
-// 1. Send Agreement OTP
-// 2. Verify Agreement OTP
+// VALIDATE PURCHASE
 // ============================================================
 
 const getValidatedPurchase = async ({ userId, purchaseId }) => {
@@ -68,10 +65,7 @@ const getValidatedPurchase = async ({ userId, purchaseId }) => {
   }
 
   // ========================================================
-  // FIND PURCHASE ONLY BY ID FIRST
-  //
-  // This allows us to return the exact error instead of
-  // generic "Successful purchase not found".
+  // FIND PURCHASE
   // ========================================================
 
   const purchase = await PurchaseHistory.findById(purchaseId).lean();
@@ -81,7 +75,7 @@ const getValidatedPurchase = async ({ userId, purchaseId }) => {
   }
 
   // ========================================================
-  // PURCHASE MUST BELONG TO LOGGED-IN USER
+  // PURCHASE OWNER CHECK
   // ========================================================
 
   if (String(purchase.userId) !== String(userId)) {
@@ -92,7 +86,7 @@ const getValidatedPurchase = async ({ userId, purchaseId }) => {
   }
 
   // ========================================================
-  // PAYMENT MUST BE SUCCESSFUL
+  // PAYMENT STATUS
   // ========================================================
 
   if (purchase.paymentStatus !== "SUCCESS") {
@@ -103,7 +97,7 @@ const getValidatedPurchase = async ({ userId, purchaseId }) => {
   }
 
   // ========================================================
-  // AGREEMENT MUST NOT ALREADY BE GENERATED
+  // AGREEMENT ALREADY GENERATED
   // ========================================================
 
   const agreementUrl = purchase.documents?.digitalAgreement?.url;
@@ -113,7 +107,7 @@ const getValidatedPurchase = async ({ userId, purchaseId }) => {
   }
 
   // ========================================================
-  // GENERATION MUST NOT CURRENTLY BE RUNNING
+  // AGREEMENT GENERATION PROCESSING
   // ========================================================
 
   if (purchase.documentGenerationStatus === "PROCESSING") {
@@ -129,7 +123,7 @@ const getValidatedPurchase = async ({ userId, purchaseId }) => {
 
 export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
   // ========================================================
-  // PURCHASE VALIDATION
+  // VALIDATE PURCHASE
   // ========================================================
 
   await getValidatedPurchase({
@@ -138,7 +132,7 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
   });
 
   // ========================================================
-  // GET USER
+  // FIND USER
   // ========================================================
 
   const user = await User.findById(userId);
@@ -152,7 +146,7 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
   }
 
   // ========================================================
-  // NORMALIZE REGISTERED PHONE
+  // NORMALIZE PHONE
   // ========================================================
 
   const phone = normalizePhone(user.phone);
@@ -184,10 +178,7 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
   }
 
   // ========================================================
-  // INVALIDATE PREVIOUS ACTIVE OTP
-  //
-  // If user requests another OTP:
-  // old OTP should no longer work.
+  // INVALIDATE PREVIOUS UNUSED OTP
   // ========================================================
 
   await AgreementOtp.updateMany(
@@ -206,7 +197,7 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
   );
 
   // ========================================================
-  // GENERATE 6 DIGIT OTP
+  // GENERATE OTP
   // ========================================================
 
   const otp = crypto.randomInt(100000, 1000000).toString();
@@ -226,15 +217,13 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
 
   // ========================================================
-  // TTL DELETE TIME
-  //
-  // Old OTP record will be removed after 24 hours.
+  // TTL DELETE
   // ========================================================
 
   const deleteAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   // ========================================================
-  // SAVE OTP
+  // CREATE OTP RECORD
   // ========================================================
 
   const otpRecord = await AgreementOtp.create({
@@ -258,7 +247,7 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
   });
 
   // ========================================================
-  // SEND OTP TO MOBILE
+  // SEND OTP SMS
   // ========================================================
 
   try {
@@ -267,7 +256,7 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
       otp,
     });
   } catch (error) {
-    // SMS failed, so delete unusable OTP record.
+    // SMS failed -> remove OTP
     await AgreementOtp.deleteOne({
       _id: otpRecord._id,
     });
@@ -277,6 +266,11 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
 
   // ========================================================
   // RESPONSE
+  //
+  // IMPORTANT:
+  // No agreement verification token is generated here.
+  //
+  // Token will only be generated after OTP verification.
   // ========================================================
 
   return {
@@ -284,14 +278,6 @@ export const sendAgreementOtpService = async ({ userId, purchaseId }) => {
 
     expiresInMinutes: expiryMinutes,
 
-    /*
-     * Only development/testing.
-     *
-     * When:
-     * USE_REAL_SMS=true
-     *
-     * OTP will NOT be returned in API response.
-     */
     ...(process.env.USE_REAL_SMS !== "true"
       ? {
           developmentOtp: otp,
@@ -321,7 +307,7 @@ export const verifyAgreementOtpService = async ({
   }
 
   // ========================================================
-  // PURCHASE VALIDATION
+  // VALIDATE PURCHASE
   // ========================================================
 
   await getValidatedPurchase({
@@ -350,7 +336,7 @@ export const verifyAgreementOtpService = async ({
   }
 
   // ========================================================
-  // OTP EXPIRY
+  // CHECK OTP EXPIRY
   // ========================================================
 
   if (otpRecord.expiresAt.getTime() <= Date.now()) {
@@ -362,7 +348,7 @@ export const verifyAgreementOtpService = async ({
   }
 
   // ========================================================
-  // MAXIMUM ATTEMPTS
+  // MAX ATTEMPTS
   // ========================================================
 
   const maximumAttempts = Number(process.env.OTP_MAX_ATTEMPTS) || 5;
@@ -381,7 +367,6 @@ export const verifyAgreementOtpService = async ({
 
   const isOtpCorrect = await bcrypt.compare(otp, otpRecord.otpHash);
 
-  // Count every verification attempt.
   otpRecord.attempts += 1;
 
   // ========================================================
@@ -397,19 +382,21 @@ export const verifyAgreementOtpService = async ({
 
     const attemptsRemaining = Math.max(maximumAttempts - otpRecord.attempts, 0);
 
+    if (attemptsRemaining <= 0) {
+      throw createError(
+        429,
+        "Maximum OTP attempts exceeded. Request a new OTP",
+      );
+    }
+
     throw createError(
       400,
-      attemptsRemaining > 0
-        ? `Invalid OTP. ${attemptsRemaining} attempts remaining`
-        : "Maximum OTP attempts exceeded. Request a new OTP",
+      `Invalid OTP. ${attemptsRemaining} attempts remaining`,
     );
   }
 
   // ========================================================
-  // OTP VERIFIED SUCCESSFULLY
-  //
-  // This is what verifyAgreementOtpCompleted middleware
-  // will later check.
+  // OTP VERIFIED
   // ========================================================
 
   otpRecord.isUsed = true;
@@ -419,17 +406,59 @@ export const verifyAgreementOtpService = async ({
   await otpRecord.save();
 
   // ========================================================
-  // RESPONSE
+  // CHECK JWT SECRET
+  // ========================================================
+
+  if (!process.env.JWT_SECRET) {
+    throw createError(500, "JWT_SECRET is not configured");
+  }
+
+  // ========================================================
+  // GENERATE AGREEMENT VERIFICATION TOKEN
   //
-  // NO NEW JWT/token is generated here.
+  // This token is NOT a login token.
   //
-  // Frontend simply navigates to Agreement Form page
-  // after success=true.
+  // It proves:
+  // - OTP was verified
+  // - For this user
+  // - For this exact purchase
+  //
+  // Valid for 10 minutes.
+  // ========================================================
+
+  const agreementVerificationToken = jwt.sign(
+    {
+      userId: String(userId),
+
+      purchaseId: String(purchaseId),
+
+      otpId: String(otpRecord._id),
+
+      purpose: "AGREEMENT_VERIFICATION",
+    },
+
+    process.env.JWT_SECRET,
+
+    {
+      expiresIn: "10m",
+
+      issuer: "bunndle-api",
+
+      audience: "bunndle-agreement",
+    },
+  );
+
+  // ========================================================
+  // VERIFY RESPONSE
   // ========================================================
 
   return {
     verified: true,
 
     verifiedAt: otpRecord.verifiedAt,
+
+    agreementVerificationToken,
+
+    expiresInSeconds: 600,
   };
 };

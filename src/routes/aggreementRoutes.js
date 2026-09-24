@@ -46,7 +46,8 @@ router.post(
 
 router.post(
   "/purchase/agreement-details/:purchaseId",
-  verifyAgreementOtpCompleted ,
+  authMiddleware,
+  
   submitAgreementDetails
 );
 
