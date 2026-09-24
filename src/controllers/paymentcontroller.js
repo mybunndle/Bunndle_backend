@@ -404,6 +404,383 @@ export const createOrder = async (req, res) => {
 };
 
 
+
+
+
+
+// ============================================================
+// VERIFY PAYMENT
+//
+// MongoDB stores the actual Date timestamp.
+// India time is only applied while formatting the response.
+// ============================================================
+
+export const verifyPayment = async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+    } = req.body;
+
+
+    // ========================================================
+    // 1. VALIDATION
+    // ========================================================
+
+    if (
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment verification details are required",
+      });
+    }
+
+
+    // ========================================================
+    // 2. VERIFY CHECKOUT SIGNATURE
+    // ========================================================
+
+    const validSignature =
+      verifyRazorpayPaymentSignature({
+        razorpayOrderId:
+          razorpay_order_id,
+
+        razorpayPaymentId:
+          razorpay_payment_id,
+
+        razorpaySignature:
+          razorpay_signature,
+      });
+
+
+    if (!validSignature) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment verification failed",
+      });
+    }
+
+
+    // ========================================================
+    // 3. FIND INTERNAL PAYMENT RECORD
+    // ========================================================
+
+    const payment =
+      await Payment.findOne({
+        razorpayOrderId:
+          razorpay_order_id,
+      });
+
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Payment record not found",
+      });
+    }
+
+
+    // ========================================================
+    // 4. FETCH PAYMENT DIRECTLY FROM RAZORPAY
+    // ========================================================
+
+    let razorpayPayment;
+
+    try {
+      razorpayPayment =
+        await razorpay.payments.fetch(
+          razorpay_payment_id
+        );
+    } catch (error) {
+      console.error(
+        "RAZORPAY PAYMENT FETCH ERROR:",
+        error
+      );
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "Unable to verify payment with Razorpay",
+      });
+    }
+
+
+    if (!razorpayPayment) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Unable to verify payment with Razorpay",
+      });
+    }
+
+
+    // ========================================================
+    // 5. VERIFY PAYMENT ID
+    // ========================================================
+
+    if (
+      razorpayPayment.id &&
+      razorpayPayment.id !==
+        razorpay_payment_id
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Razorpay payment ID mismatch",
+      });
+    }
+
+
+    // ========================================================
+    // 6. VERIFY ORDER RELATION
+    // ========================================================
+
+    if (
+      razorpayPayment.order_id !==
+      razorpay_order_id
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment does not belong to this order",
+      });
+    }
+
+
+    // ========================================================
+    // 7. VERIFY AMOUNT
+    //
+    // Payment.amount = INR
+    // Razorpay amount = paise
+    // ========================================================
+
+    const expectedAmount =
+      Math.round(
+        Number(
+          payment.amount
+        ) * 100
+      );
+
+
+    if (
+      Number(
+        razorpayPayment.amount
+      ) !== expectedAmount
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment amount mismatch",
+      });
+    }
+
+
+    // ========================================================
+    // 8. VERIFY CURRENCY
+    // ========================================================
+
+    const expectedCurrency =
+      payment.currency ||
+      "INR";
+
+
+    if (
+      razorpayPayment.currency &&
+      String(
+        razorpayPayment.currency
+      ).toUpperCase() !==
+        String(
+          expectedCurrency
+        ).toUpperCase()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment currency mismatch",
+      });
+    }
+
+
+    // ========================================================
+    // 9. PAYMENT MUST BE CAPTURED
+    // ========================================================
+
+    if (
+      razorpayPayment.status !==
+      "captured"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Payment is not captured. Current status: ${razorpayPayment.status}`,
+      });
+    }
+
+
+    // ========================================================
+    // 10. PAYMENT SUCCESS TIMESTAMP
+    //
+    // IMPORTANT:
+    //
+    // Do not manually add +5:30 here.
+    //
+    // MongoDB Date represents the actual instant.
+    // Asia/Kolkata is used only for display formatting.
+    // ========================================================
+
+    const paidAt =
+      new Date();
+
+
+    // ========================================================
+    // 11. FINALIZE SUCCESSFUL PAYMENT
+    //
+    // SAME paidAt will go into:
+    //
+    // Payment.paidAt
+    // PurchaseHistory.paidAt
+    // ========================================================
+
+    const result =
+      await finalizeSuccessfulPayment({
+        razorpayOrderId:
+          razorpay_order_id,
+
+        razorpayPaymentId:
+          razorpay_payment_id,
+
+        razorpaySignature:
+          razorpay_signature,
+
+        paymentMethod:
+          razorpayPayment.method ||
+          null,
+
+        webhookVerified:
+          false,
+
+        paidAt,
+      });
+
+
+    // ========================================================
+    // 12. INDIA DATE
+    // ========================================================
+
+    const finalPaidAt =
+      result.paidAt ||
+      paidAt;
+
+
+    const purchaseDate =
+      new Intl.DateTimeFormat(
+        "en-IN",
+        {
+          day:
+            "2-digit",
+
+          month:
+            "2-digit",
+
+          year:
+            "numeric",
+
+          timeZone:
+            "Asia/Kolkata",
+        }
+      ).format(
+        finalPaidAt
+      );
+
+
+    // ========================================================
+    // 13. INDIA TIME
+    // ========================================================
+
+    const purchaseTime =
+      new Intl.DateTimeFormat(
+        "en-IN",
+        {
+          hour:
+            "2-digit",
+
+          minute:
+            "2-digit",
+
+          second:
+            "2-digit",
+
+          hour12:
+            true,
+
+          timeZone:
+            "Asia/Kolkata",
+        }
+      )
+        .format(
+          finalPaidAt
+        )
+        .toLowerCase();
+
+
+    // ========================================================
+    // 14. RESPONSE
+    // ========================================================
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        result.alreadyProcessed
+          ? "Payment already verified and purchase already completed"
+          : "Payment verified and purchase completed successfully",
+
+      data: {
+        purchaseHistoryId:
+          result.purchaseHistoryId,
+
+        paymentStatus:
+          "SUCCESS",
+
+        paidAt:
+          finalPaidAt,
+
+        purchaseDate,
+
+        purchaseTime,
+      },
+    });
+
+  } catch (error) {
+    console.error(
+      "VERIFY PAYMENT ERROR:",
+      error
+    );
+
+
+    return res
+      .status(
+        error.statusCode ||
+        500
+      )
+      .json({
+        success: false,
+
+        message:
+          error.message ||
+          "Unable to verify payment",
+      });
+  }
+};
+
+
 // export const verifyPayment = async (req, res) => {
 //   try {
 //     const {
@@ -559,222 +936,229 @@ export const createOrder = async (req, res) => {
 // };
 
 
-export const verifyPayment = async (
-  req,
-  res
-) => {
-  try {
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-    } = req.body;
 
 
-    // =====================================
-    // 1. VALIDATION
-    // =====================================
-
-    if (
-      !razorpay_order_id ||
-      !razorpay_payment_id ||
-      !razorpay_signature
-    ) {
-      return res.status(400).json({
-        success: false,
-
-        message:
-          "Payment verification details are required",
-      });
-    }
 
 
-    // =====================================
-    // 2. VERIFY SIGNATURE
-    // =====================================
-
-    const validSignature =
-      verifyRazorpayPaymentSignature({
-        razorpayOrderId:
-          razorpay_order_id,
-
-        razorpayPaymentId:
-          razorpay_payment_id,
-
-        razorpaySignature:
-          razorpay_signature,
-      });
 
 
-    if (!validSignature) {
-      return res.status(400).json({
-        success: false,
 
-        message:
-          "Payment verification failed",
-      });
-    }
-
-
-    // =====================================
-    // 3. FIND PAYMENT RECORD
-    // =====================================
-
-    const payment =
-      await Payment.findOne({
-        razorpayOrderId:
-          razorpay_order_id,
-      });
+// export const verifyPayment = async (
+//   req,
+//   res
+// ) => {
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//     } = req.body;
 
 
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
+//     // =====================================
+//     // 1. VALIDATION
+//     // =====================================
 
-        message:
-          "Payment record not found",
-      });
-    }
+//     if (
+//       !razorpay_order_id ||
+//       !razorpay_payment_id ||
+//       !razorpay_signature
+//     ) {
+//       return res.status(400).json({
+//         success: false,
 
-
-    // =====================================
-    // 4. FETCH ACTUAL RAZORPAY PAYMENT
-    // =====================================
-
-    const razorpayPayment =
-      await razorpay.payments.fetch(
-        razorpay_payment_id
-      );
+//         message:
+//           "Payment verification details are required",
+//       });
+//     }
 
 
-    if (!razorpayPayment) {
-      return res.status(400).json({
-        success: false,
+//     // =====================================
+//     // 2. VERIFY SIGNATURE
+//     // =====================================
 
-        message:
-          "Unable to verify payment with Razorpay",
-      });
-    }
+//     const validSignature =
+//       verifyRazorpayPaymentSignature({
+//         razorpayOrderId:
+//           razorpay_order_id,
 
+//         razorpayPaymentId:
+//           razorpay_payment_id,
 
-    // =====================================
-    // 5. VERIFY RAZORPAY ORDER
-    // =====================================
-
-    if (
-      razorpayPayment.order_id !==
-      razorpay_order_id
-    ) {
-      return res.status(400).json({
-        success: false,
-
-        message:
-          "Payment does not belong to this order",
-      });
-    }
+//         razorpaySignature:
+//           razorpay_signature,
+//       });
 
 
-    // =====================================
-    // 6. VERIFY AMOUNT
-    // =====================================
+//     if (!validSignature) {
+//       return res.status(400).json({
+//         success: false,
 
-    const expectedAmount =
-      Math.round(
-        Number(payment.amount) *
-          100
-      );
-
-
-    if (
-      Number(
-        razorpayPayment.amount
-      ) !== expectedAmount
-    ) {
-      return res.status(400).json({
-        success: false,
-
-        message:
-          "Payment amount mismatch",
-      });
-    }
+//         message:
+//           "Payment verification failed",
+//       });
+//     }
 
 
-    // =====================================
-    // 7. PAYMENT MUST BE CAPTURED
-    // =====================================
+//     // =====================================
+//     // 3. FIND PAYMENT RECORD
+//     // =====================================
 
-    if (
-      razorpayPayment.status !==
-      "captured"
-    ) {
-      return res.status(400).json({
-        success: false,
-
-        message:
-          `Payment is not captured. Current status: ${razorpayPayment.status}`,
-      });
-    }
+//     const payment =
+//       await Payment.findOne({
+//         razorpayOrderId:
+//           razorpay_order_id,
+//       });
 
 
-    // =====================================
-    // 8. FINALIZE PURCHASE
-    // =====================================
+//     if (!payment) {
+//       return res.status(404).json({
+//         success: false,
 
-    const result =
-      await finalizeSuccessfulPayment({
-        razorpayOrderId:
-          razorpay_order_id,
-
-        razorpayPaymentId:
-          razorpay_payment_id,
-
-        razorpaySignature:
-          razorpay_signature,
-
-        paymentMethod:
-          razorpayPayment.method ||
-          null,
-
-        webhookVerified:
-          false,
-      });
+//         message:
+//           "Payment record not found",
+//       });
+//     }
 
 
-    return res.status(200).json({
-      success: true,
+//     // =====================================
+//     // 4. FETCH ACTUAL RAZORPAY PAYMENT
+//     // =====================================
 
-      message:
-        "Payment verified and purchase completed successfully",
+//     const razorpayPayment =
+//       await razorpay.payments.fetch(
+//         razorpay_payment_id
+//       );
 
-      data: {
-        purchaseHistoryId:
-          result.purchaseHistoryId,
 
-        paymentStatus:
-          "SUCCESS",
-      },
-    });
+//     if (!razorpayPayment) {
+//       return res.status(400).json({
+//         success: false,
 
-  } catch (error) {
-    console.error(
-      "VERIFY PAYMENT ERROR:",
-      error
-    );
+//         message:
+//           "Unable to verify payment with Razorpay",
+//       });
+//     }
 
-    return res
-      .status(
-        error.statusCode ||
-          500
-      )
-      .json({
-        success: false,
 
-        message:
-          error.message ||
-          "Unable to verify payment",
-      });
-  }
-};
+//     // =====================================
+//     // 5. VERIFY RAZORPAY ORDER
+//     // =====================================
+
+//     if (
+//       razorpayPayment.order_id !==
+//       razorpay_order_id
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+
+//         message:
+//           "Payment does not belong to this order",
+//       });
+//     }
+
+
+//     // =====================================
+//     // 6. VERIFY AMOUNT
+//     // =====================================
+
+//     const expectedAmount =
+//       Math.round(
+//         Number(payment.amount) *
+//           100
+//       );
+
+
+//     if (
+//       Number(
+//         razorpayPayment.amount
+//       ) !== expectedAmount
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+
+//         message:
+//           "Payment amount mismatch",
+//       });
+//     }
+
+
+//     // =====================================
+//     // 7. PAYMENT MUST BE CAPTURED
+//     // =====================================
+
+//     if (
+//       razorpayPayment.status !==
+//       "captured"
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+
+//         message:
+//           `Payment is not captured. Current status: ${razorpayPayment.status}`,
+//       });
+//     }
+
+
+//     // =====================================
+//     // 8. FINALIZE PURCHASE
+//     // =====================================
+
+//     const result =
+//       await finalizeSuccessfulPayment({
+//         razorpayOrderId:
+//           razorpay_order_id,
+
+//         razorpayPaymentId:
+//           razorpay_payment_id,
+
+//         razorpaySignature:
+//           razorpay_signature,
+
+//         paymentMethod:
+//           razorpayPayment.method ||
+//           null,
+
+//         webhookVerified:
+//           false,
+//       });
+
+
+//     return res.status(200).json({
+//       success: true,
+
+//       message:
+//         "Payment verified and purchase completed successfully",
+
+//       data: {
+//         purchaseHistoryId:
+//           result.purchaseHistoryId,
+
+//         paymentStatus:
+//           "SUCCESS",
+//       },
+//     });
+
+//   } catch (error) {
+//     console.error(
+//       "VERIFY PAYMENT ERROR:",
+//       error
+//     );
+
+//     return res
+//       .status(
+//         error.statusCode ||
+//           500
+//       )
+//       .json({
+//         success: false,
+
+//         message:
+//           error.message ||
+//           "Unable to verify payment",
+//       });
+//   }
+// };
 
 // export const razorpayWebhook = async (req, res) => {
 //   try {
