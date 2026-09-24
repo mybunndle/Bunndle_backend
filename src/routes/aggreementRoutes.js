@@ -5,13 +5,35 @@ import {
   getAgreementDetails,
   retryAgreementGeneration,
 } from "../controllers/agreementSubmissionController.js";
+import{
+  sendAgreementOtp,
+  verifyAgreementOtp
+} from "../controllers/agreementOtpcontroller.js";
 
 // CHANGE THIS IMPORT ONLY IF YOUR AUTH MIDDLEWARE
 // FILE/FUNCTION HAS A DIFFERENT NAME.
 import authMiddleware from "../middleware/auth_validate.js";
+import {verifyAgreementOtpCompleted}  from "../middleware/agreementOtp.middleware.js";
 
 
 const router = express.Router();
+
+
+
+// 1. Generate OTP
+router.post(
+  "/agreement-otp/send/:purchaseId",
+  authMiddleware,
+  sendAgreementOtp
+);
+
+
+// 2. Verify OTP
+router.post(
+  "/agreement-otp/verify/:purchaseId",
+  authMiddleware,
+  verifyAgreementOtp
+);
 
 
 // ============================================================
@@ -24,7 +46,7 @@ const router = express.Router();
 
 router.post(
   "/purchase/agreement-details/:purchaseId",
-  authMiddleware,
+  verifyAgreementOtpCompleted ,
   submitAgreementDetails
 );
 
