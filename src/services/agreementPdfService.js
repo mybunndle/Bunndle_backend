@@ -1328,7 +1328,6 @@
 //     throw error;
 //   }
 // };
-
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -1346,7 +1345,6 @@ import { uploadAgreementPdf } from "./imageStorageService.js";
 // ============================================================
 
 const __filename = fileURLToPath(import.meta.url);
-
 const __dirname = path.dirname(__filename);
 
 const AGREEMENT_TEMPLATE_PATH = path.join(
@@ -1356,9 +1354,8 @@ const AGREEMENT_TEMPLATE_PATH = path.join(
 
 // ============================================================
 // INDIAN TIME
-//
-// DO NOT CHANGE.
-// Existing project uses this shifted Date approach.
+// Keep this unchanged because the rest of your project uses
+// the same manually shifted Date approach.
 // ============================================================
 
 const getIndianTime = () => {
@@ -1368,13 +1365,16 @@ const getIndianTime = () => {
 };
 
 // ============================================================
-// DATE FORMAT
-//
-// Since getIndianTime() already adds +5:30,
-// UTC formatting prevents another +5:30.
+// FORMAT HELPERS
 // ============================================================
 
-const formatDate = (value) => {
+/*
+ * generatedAt is created using getIndianTime(),
+ * therefore generated date/time is formatted in UTC.
+ *
+ * This prevents adding +05:30 twice.
+ */
+const formatGeneratedDate = (value) => {
   if (!value) {
     return "-";
   }
@@ -1383,18 +1383,16 @@ const formatDate = (value) => {
 
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
+
     month: "long",
+
     year: "numeric",
 
     timeZone: "UTC",
   }).format(date);
 };
 
-// ============================================================
-// TIME FORMAT
-// ============================================================
-
-const formatTime = (value) => {
+const formatGeneratedTime = (value) => {
   if (!value) {
     return "-";
   }
@@ -1411,22 +1409,85 @@ const formatTime = (value) => {
     hour12: true,
 
     timeZone: "UTC",
+  })
+    .format(date)
+    .toUpperCase();
+};
+
+/*
+ * purchase.paidAt is a normal MongoDB / JavaScript Date.
+ * Always display it using Asia/Kolkata.
+ */
+const formatIndianDate = (value) => {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+
+    month: "long",
+
+    year: "numeric",
+
+    timeZone: "Asia/Kolkata",
   }).format(date);
 };
 
-// ============================================================
-// AMOUNT FORMAT
-// ============================================================
+const formatIndianTime = (value) => {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "2-digit",
+
+    minute: "2-digit",
+
+    second: "2-digit",
+
+    hour12: true,
+
+    timeZone: "Asia/Kolkata",
+  })
+    .format(date)
+    .toUpperCase();
+};
+
+const formatIndianDateTimeCompact = (value) => {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  const datePart = new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+
+    month: "2-digit",
+
+    year: "numeric",
+
+    timeZone: "Asia/Kolkata",
+  }).format(date);
+
+  return `${datePart} ${formatIndianTime(date)} IST`;
+};
 
 const formatAmount = (value) => {
   return Number(value || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
+
     maximumFractionDigits: 2,
   });
 };
 
 // ============================================================
-// NUMBER TO WORDS
+// NUMBER TO INDIAN WORDS
 // ============================================================
 
 const ONES = [
@@ -1486,10 +1547,6 @@ const numberToIndianWords = (value) => {
 
   const parts = [];
 
-  // ==========================================================
-  // CRORE
-  // ==========================================================
-
   const crore = Math.floor(number / 10000000);
 
   if (crore) {
@@ -1497,10 +1554,6 @@ const numberToIndianWords = (value) => {
 
     number %= 10000000;
   }
-
-  // ==========================================================
-  // LAKH
-  // ==========================================================
 
   const lakh = Math.floor(number / 100000);
 
@@ -1510,10 +1563,6 @@ const numberToIndianWords = (value) => {
     number %= 100000;
   }
 
-  // ==========================================================
-  // THOUSAND
-  // ==========================================================
-
   const thousand = Math.floor(number / 1000);
 
   if (thousand) {
@@ -1521,10 +1570,6 @@ const numberToIndianWords = (value) => {
 
     number %= 1000;
   }
-
-  // ==========================================================
-  // HUNDRED
-  // ==========================================================
 
   const hundred = Math.floor(number / 100);
 
@@ -1542,7 +1587,7 @@ const numberToIndianWords = (value) => {
 };
 
 // ============================================================
-// ADD MONTHS
+// GENERAL HELPERS
 // ============================================================
 
 const addMonths = (value, months) => {
@@ -1559,10 +1604,6 @@ const addMonths = (value, months) => {
   return result;
 };
 
-// ============================================================
-// HELPERS
-// ============================================================
-
 const firstValue = (...values) => {
   return values.find(
     (value) => value !== undefined && value !== null && value !== "",
@@ -1577,10 +1618,18 @@ const requiredValue = (value, fieldName) => {
   return value;
 };
 
+// ============================================================
+// CLEAN TEXT
+// Removes extra spaces and unwanted spaces before punctuation.
+// ============================================================
+
 const cleanText = (value) => {
   return String(value ?? "")
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
+    .replace(/\s+,/g, ",")
+    .replace(/\s+\./g, ".")
+    .replace(/\s+:/g, ":")
     .trim();
 };
 
@@ -1619,7 +1668,7 @@ const splitTextIntoLines = ({ text, font, fontSize, maxWidth }) => {
 };
 
 // ============================================================
-// CLEAR EXISTING PDF PLACEHOLDER AREA
+// PDF DRAW HELPERS
 // ============================================================
 
 const clearPdfArea = ({ page, x, top, width, height }) => {
@@ -1627,31 +1676,29 @@ const clearPdfArea = ({ page, x, top, width, height }) => {
 
   page.drawRectangle({
     x,
+
     y,
 
     width,
+
     height,
 
     color: rgb(1, 1, 1),
   });
 };
 
-// ============================================================
-// DRAW SINGLE LINE
-// ============================================================
-
 const drawSingleLine = ({
   page,
 
   text,
 
-  x = 54,
+  x = 51.25,
 
   top,
 
-  width = 487,
+  width = 510,
 
-  height = 12,
+  height = 13.5,
 
   font,
 
@@ -1682,38 +1729,31 @@ const drawSingleLine = ({
 
   const y = page.getHeight() - top - fontSize;
 
-  page.drawText(
-    String(text),
+  page.drawText(String(text), {
+    x,
 
-    {
-      x,
-      y,
+    y,
 
-      size: fontSize,
+    size: fontSize,
 
-      font,
+    font,
 
-      color: rgb(0, 0, 0),
-    },
-  );
+    color: rgb(0, 0, 0),
+  });
 };
-
-// ============================================================
-// DRAW WRAPPED TEXT
-// ============================================================
 
 const drawWrappedBlock = ({
   page,
 
   text,
 
-  x = 54,
+  x = 51.25,
 
   top,
 
-  width = 487,
+  width = 510,
 
-  height = 28,
+  height = 29,
 
   font,
 
@@ -1721,9 +1761,9 @@ const drawWrappedBlock = ({
 
   maxFontSize = 9.5,
 
-  minFontSize = 6.5,
+  minFontSize = 6.25,
 
-  lineGap = 4,
+  lineGap = 3.2,
 }) => {
   clearPdfArea({
     page,
@@ -1770,20 +1810,193 @@ const drawWrappedBlock = ({
   lines.forEach((line, index) => {
     const y = page.getHeight() - top - fontSize - index * lineHeight;
 
-    page.drawText(
-      line,
+    page.drawText(line, {
+      x,
 
-      {
-        x,
+      y,
+
+      size: fontSize,
+
+      font,
+
+      color: rgb(0, 0, 0),
+    });
+  });
+};
+
+// ============================================================
+// RICH TEXT WRAPPING
+//
+// Used so:
+// Name
+// Address
+// PAN
+// Mobile
+// Email
+//
+// values can be bold while normal sentence remains regular.
+// ============================================================
+
+const splitRichTextIntoLines = ({
+  segments,
+
+  fontSize,
+
+  maxWidth,
+}) => {
+  const tokens = [];
+
+  for (const segment of segments) {
+    const parts = String(segment.text ?? "")
+      .split(/(\s+)/)
+      .filter((part) => part !== "");
+
+    for (const part of parts) {
+      tokens.push({
+        text: part,
+
+        font: segment.font,
+      });
+    }
+  }
+
+  const lines = [];
+
+  let currentLine = [];
+
+  let currentWidth = 0;
+
+  const pushCurrentLine = () => {
+    while (
+      currentLine.length &&
+      /^\s+$/.test(currentLine[currentLine.length - 1].text)
+    ) {
+      currentLine.pop();
+    }
+
+    if (currentLine.length) {
+      lines.push(currentLine);
+    }
+
+    currentLine = [];
+
+    currentWidth = 0;
+  };
+
+  for (const token of tokens) {
+    const isWhitespace = /^\s+$/.test(token.text);
+
+    if (isWhitespace && currentLine.length === 0) {
+      continue;
+    }
+
+    const tokenWidth = token.font.widthOfTextAtSize(token.text, fontSize);
+
+    if (
+      !isWhitespace &&
+      currentLine.length > 0 &&
+      currentWidth + tokenWidth > maxWidth
+    ) {
+      pushCurrentLine();
+    }
+
+    if (isWhitespace && currentWidth + tokenWidth > maxWidth) {
+      pushCurrentLine();
+
+      continue;
+    }
+
+    currentLine.push(token);
+
+    currentWidth += tokenWidth;
+  }
+
+  pushCurrentLine();
+
+  return lines;
+};
+
+const drawRichWrappedBlock = ({
+  page,
+
+  segments,
+
+  x = 51.25,
+
+  top,
+
+  width = 510,
+
+  height = 29,
+
+  maxLines = 2,
+
+  maxFontSize = 9.5,
+
+  minFontSize = 6.25,
+
+  lineGap = 3.2,
+}) => {
+  clearPdfArea({
+    page,
+
+    x: x - 2,
+
+    top: top - 2,
+
+    width: width + 4,
+
+    height: height + 4,
+  });
+
+  let fontSize = maxFontSize;
+
+  let lines = [];
+
+  while (fontSize >= minFontSize) {
+    lines = splitRichTextIntoLines({
+      segments,
+
+      fontSize,
+
+      maxWidth: width,
+    });
+
+    if (lines.length <= maxLines) {
+      break;
+    }
+
+    fontSize -= 0.25;
+  }
+
+  if (lines.length > maxLines) {
+    throw new Error(
+      "Agreement identity details are too long to fit in the PDF template. Please shorten the address/details.",
+    );
+  }
+
+  const lineHeight = fontSize + lineGap;
+
+  lines.forEach((line, lineIndex) => {
+    let cursorX = x;
+
+    const y = page.getHeight() - top - fontSize - lineIndex * lineHeight;
+
+    for (const token of line) {
+      page.drawText(token.text, {
+        x: cursorX,
+
         y,
 
         size: fontSize,
 
-        font,
+        font: token.font,
 
         color: rgb(0, 0, 0),
-      },
-    );
+      });
+
+      cursorX += token.font.widthOfTextAtSize(token.text, fontSize);
+    }
   });
 };
 
@@ -1806,9 +2019,9 @@ const buildAgreementData = ({
     throw new Error("Agreement form data is required");
   }
 
-  // ==========================================================
+  // =========================================================
   // USER DETAILS
-  // ==========================================================
+  // =========================================================
 
   const fullLegalName = cleanText(
     requiredValue(
@@ -1850,13 +2063,9 @@ const buildAgreementData = ({
     ),
   ).toLowerCase();
 
-  // ==========================================================
+  // =========================================================
   // PAYMENT DATE
-  //
-  // IMPORTANT:
-  // Agreement Date = PurchaseHistory.paidAt
-  // Acquisition Date = PurchaseHistory.paidAt
-  // ==========================================================
+  // =========================================================
 
   const paymentDate = requiredValue(
     purchase.paidAt,
@@ -1864,9 +2073,9 @@ const buildAgreementData = ({
     "PurchaseHistory.paidAt",
   );
 
-  // ==========================================================
+  // =========================================================
   // ASSET DETAILS
-  // ==========================================================
+  // =========================================================
 
   const assetName = cleanText(
     requiredValue(
@@ -1889,18 +2098,6 @@ const buildAgreementData = ({
       ),
 
       "Asset Code",
-    ),
-  );
-
-  const registeredLegalOwner = cleanText(
-    requiredValue(
-      firstValue(
-        asset.registeredLegalOwner,
-
-        process.env.AGREEMENT_REGISTERED_LEGAL_OWNER,
-      ),
-
-      "Registered Legal Owner",
     ),
   );
 
@@ -1928,10 +2125,6 @@ const buildAgreementData = ({
     throw new Error("Asset totalFractions is missing");
   }
 
-  // ==========================================================
-  // PURCHASE DETAILS
-  // ==========================================================
-
   const fractionsAcquired = Number(purchase.fractionsPurchased || 0);
 
   if (!fractionsAcquired || fractionsAcquired <= 0) {
@@ -1952,9 +2145,9 @@ const buildAgreementData = ({
 
   const totalAmountPaid = Number(purchase.totalAmount || 0);
 
-  // ==========================================================
-  // RENTAL DETAILS
-  // ==========================================================
+  // =========================================================
+  // RENTAL
+  // =========================================================
 
   const rentalPerFraction = Number(
     firstValue(
@@ -1996,14 +2189,12 @@ const buildAgreementData = ({
     rentalTermMonths,
   );
 
-  // ==========================================================
+  // =========================================================
   // BANK DETAILS
   //
-  // Prefer bankDetails coming from controller.
-  //
-  // On retry, if plain account number is unavailable,
-  // linked bank account falls back to masked last 4 digits.
-  // ==========================================================
+  // Prefer current form request bank details.
+  // Otherwise use linked BankAccount data.
+  // =========================================================
 
   const requestBank = formData.bankDetails || {};
 
@@ -2065,21 +2256,27 @@ const buildAgreementData = ({
     ),
   ).toUpperCase();
 
-  // ==========================================================
+  // =========================================================
   // FINAL DATA
-  // ==========================================================
+  // =========================================================
 
   return {
-    // Payment History Date
+    // Agreement date =
+    // successful payment date.
     agreementDate: paymentDate,
 
-    // Payment History Date
+    // Acquisition date =
+    // successful payment date.
     acquisitionDate: paymentDate,
 
-    // Actual PDF generation time
+    // Used for last-page
+    // Date & Time fields.
+    paymentDate,
+
+    // Actual agreement PDF generation time.
     generatedAt,
 
-    // USER
+    // Customer
     fullLegalName,
 
     fullAddress,
@@ -2090,25 +2287,22 @@ const buildAgreementData = ({
 
     email,
 
-    // ASSET
+    // Asset
     assetName,
 
     assetCode,
-
-    registeredLegalOwner,
 
     totalAssetValue,
 
     totalFractions,
 
-    // PURCHASE
     amountPerFraction,
 
     fractionsAcquired,
 
     totalAmountPaid,
 
-    // RENTAL
+    // Rental
     rentalPerFraction,
 
     totalMonthlyRental,
@@ -2119,7 +2313,7 @@ const buildAgreementData = ({
 
     rentalExpiryDate,
 
-    // BANK
+    // Bank
     accountHolderName,
 
     bankName,
@@ -2142,12 +2336,72 @@ const fillPageOne = ({
   data,
 
   font,
+
+  boldFont,
 }) => {
-  // ==========================================================
-  // AGREEMENT DATE
+  // =========================================================
+  // CLEAR OLD TEMPLATE PLACEHOLDERS
   //
-  // Source: PurchaseHistory.paidAt
-  // ==========================================================
+  // This removes:
+  // [●]
+  // unwanted comma
+  // unwanted dot
+  // stray characters
+  // old values
+  // =========================================================
+
+  clearPdfArea({
+    page,
+
+    x: 49,
+
+    top: 94.5,
+
+    width: 526,
+
+    height: 18,
+  });
+
+  clearPdfArea({
+    page,
+
+    x: 49,
+
+    top: 233.5,
+
+    width: 526,
+
+    height: 33,
+  });
+
+  clearPdfArea({
+    page,
+
+    x: 49,
+
+    top: 324.5,
+
+    width: 526,
+
+    height: 205.5,
+  });
+
+  clearPdfArea({
+    page,
+
+    x: 49,
+
+    top: 597.5,
+
+    width: 526,
+
+    height: 75.5,
+  });
+
+  // =========================================================
+  // AGREEMENT DATE
+  // Uses payment timestamp according to IST.
+  // =========================================================
 
   drawSingleLine({
     page,
@@ -2158,16 +2412,23 @@ const fillPageOne = ({
 
     font,
 
-    text: `This Agreement is electronically executed on ${formatDate(
+    text: `This Agreement is electronically executed on ${formatIndianDate(
       data.agreementDate,
     )} between:`,
   });
 
-  // ==========================================================
-  // FRACTION OWNER
-  // ==========================================================
+  // =========================================================
+  // CUSTOMER DETAILS
+  //
+  // Values are bold:
+  // Name
+  // Address
+  // PAN
+  // Mobile
+  // Email
+  // =========================================================
 
-  drawWrappedBlock({
+  drawRichWrappedBlock({
     page,
 
     top: 235.4,
@@ -2176,14 +2437,72 @@ const fillPageOne = ({
 
     maxLines: 2,
 
-    font,
+    segments: [
+      {
+        text: `${data.fullLegalName},`,
 
-    text: `${data.fullLegalName}, residing at ${data.fullAddress}, bearing PAN ${data.pan}, mobile number ${data.mobile}, and email address ${data.email}, hereinafter referred to as the "Fraction Owner".`,
+        font: boldFont,
+      },
+
+      {
+        text: " residing at ",
+
+        font,
+      },
+
+      {
+        text: `${data.fullAddress},`,
+
+        font: boldFont,
+      },
+
+      {
+        text: " bearing PAN ",
+
+        font,
+      },
+
+      {
+        text: `${data.pan},`,
+
+        font: boldFont,
+      },
+
+      {
+        text: " mobile number ",
+
+        font,
+      },
+
+      {
+        text: `${data.mobile},`,
+
+        font: boldFont,
+      },
+
+      {
+        text: " and email address ",
+
+        font,
+      },
+
+      {
+        text: `${data.email},`,
+
+        font: boldFont,
+      },
+
+      {
+        text: ' hereinafter referred to as the "Fraction Owner".',
+
+        font,
+      },
+    ],
   });
 
-  // ==========================================================
-  // ASSET NAME
-  // ==========================================================
+  // =========================================================
+  // ASSET AND COMMERCIAL PARTICULARS
+  // =========================================================
 
   drawSingleLine({
     page,
@@ -2195,10 +2514,6 @@ const fillPageOne = ({
     text: `Asset Name: ${data.assetName}`,
   });
 
-  // ==========================================================
-  // ASSET CODE
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2209,23 +2524,20 @@ const fillPageOne = ({
     text: `Asset Code: ${data.assetCode}`,
   });
 
-  // ==========================================================
-  // REGISTERED OWNER
-  // ==========================================================
+  // =========================================================
+  // REGISTERED LEGAL OWNER REMOVED
+  // CUSTOMER NAME ADDED
+  // =========================================================
 
   drawSingleLine({
     page,
 
     top: 355.1,
 
-    font,
+    font: boldFont,
 
-    text: `Registered Legal Owner: ${data.registeredLegalOwner}`,
+    text: `Customer Name: ${data.fullLegalName}`,
   });
-
-  // ==========================================================
-  // TOTAL ASSET VALUE
-  // ==========================================================
 
   drawSingleLine({
     page,
@@ -2237,10 +2549,6 @@ const fillPageOne = ({
     text: `Total Asset Value: INR ${formatAmount(data.totalAssetValue)}`,
   });
 
-  // ==========================================================
-  // TOTAL FRACTIONS
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2250,10 +2558,6 @@ const fillPageOne = ({
 
     text: `Total Number of fractions: ${data.totalFractions}`,
   });
-
-  // ==========================================================
-  // AMOUNT PER FRACTION
-  // ==========================================================
 
   drawSingleLine({
     page,
@@ -2265,10 +2569,6 @@ const fillPageOne = ({
     text: `Amount Per Fraction: INR ${formatAmount(data.amountPerFraction)}`,
   });
 
-  // ==========================================================
-  // FRACTIONS ACQUIRED
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2278,10 +2578,6 @@ const fillPageOne = ({
 
     text: `Number of Fractions Acquired: ${data.fractionsAcquired}`,
   });
-
-  // ==========================================================
-  // TOTAL PAID
-  // ==========================================================
 
   drawSingleLine({
     page,
@@ -2293,12 +2589,6 @@ const fillPageOne = ({
     text: `Total Amount Paid: INR ${formatAmount(data.totalAmountPaid)}`,
   });
 
-  // ==========================================================
-  // ACQUISITION DATE
-  //
-  // Source: PurchaseHistory.paidAt
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2306,17 +2596,23 @@ const fillPageOne = ({
 
     font,
 
-    text: `Acquisition Date: ${formatDate(data.acquisitionDate)}`,
+    text: `Acquisition Date: ${formatIndianDate(data.acquisitionDate)}`,
   });
 
-  // ==========================================================
-  // RENTAL PER FRACTION
-  // ==========================================================
+  // =========================================================
+  // FIXED MONTHLY RENTAL
+  // =========================================================
 
   drawSingleLine({
     page,
 
     top: 456.3,
+
+    width: 510,
+
+    maxFontSize: 9,
+
+    minFontSize: 7,
 
     font,
 
@@ -2325,14 +2621,16 @@ const fillPageOne = ({
     )}`,
   });
 
-  // ==========================================================
-  // TOTAL RENTAL
-  // ==========================================================
-
   drawSingleLine({
     page,
 
     top: 470.8,
+
+    width: 510,
+
+    maxFontSize: 9,
+
+    minFontSize: 7,
 
     font,
 
@@ -2341,10 +2639,6 @@ const fillPageOne = ({
     )}`,
   });
 
-  // ==========================================================
-  // RENTAL COMMENCEMENT
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2352,14 +2646,10 @@ const fillPageOne = ({
 
     font,
 
-    text: `Rental Commencement Date: ${formatDate(
+    text: `Rental Commencement Date: ${formatIndianDate(
       data.rentalCommencementDate,
     )}`,
   });
-
-  // ==========================================================
-  // RENTAL TERM
-  // ==========================================================
 
   drawSingleLine({
     page,
@@ -2371,10 +2661,6 @@ const fillPageOne = ({
     text: `Rental Term: ${data.rentalTermMonths} months`,
   });
 
-  // ==========================================================
-  // RENTAL EXPIRY
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2382,12 +2668,12 @@ const fillPageOne = ({
 
     font,
 
-    text: `Rental Expiry Date: ${formatDate(data.rentalExpiryDate)}`,
+    text: `Rental Expiry Date: ${formatIndianDate(data.rentalExpiryDate)}`,
   });
 
-  // ==========================================================
-  // BANK ACCOUNT HOLDER
-  // ==========================================================
+  // =========================================================
+  // BANK DETAILS
+  // =========================================================
 
   drawSingleLine({
     page,
@@ -2399,10 +2685,6 @@ const fillPageOne = ({
     text: `Account Holder Name: ${data.accountHolderName}`,
   });
 
-  // ==========================================================
-  // BANK NAME
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2412,10 +2694,6 @@ const fillPageOne = ({
 
     text: `Bank Name: ${data.bankName}`,
   });
-
-  // ==========================================================
-  // ACCOUNT NUMBER
-  // ==========================================================
 
   drawSingleLine({
     page,
@@ -2427,10 +2705,6 @@ const fillPageOne = ({
     text: `Account Number: ${data.accountNumber}`,
   });
 
-  // ==========================================================
-  // IFSC
-  // ==========================================================
-
   drawSingleLine({
     page,
 
@@ -2440,10 +2714,6 @@ const fillPageOne = ({
 
     text: `IFSC Code: ${data.ifscCode}`,
   });
-
-  // ==========================================================
-  // ACCOUNT TYPE
-  // ==========================================================
 
   drawSingleLine({
     page,
@@ -2458,6 +2728,7 @@ const fillPageOne = ({
 
 // ============================================================
 // PAGE 2
+// FIXED MONTHLY RENTAL CLAUSE
 // ============================================================
 
 const fillPageTwo = ({
@@ -2467,18 +2738,44 @@ const fillPageTwo = ({
 
   font,
 }) => {
-  // ==========================================================
-  // FIXED MONTHLY RENT
-  // ==========================================================
+  /*
+   * Clear original placeholder lines first.
+   *
+   * This fixes:
+   * overlapping text
+   * old INR placeholder
+   * old "Only)"
+   * leftover dots/symbols
+   */
+
+  clearPdfArea({
+    page,
+
+    x: 49,
+
+    top: 567,
+
+    width: 527,
+
+    height: 32.5,
+  });
 
   drawWrappedBlock({
     page,
 
     top: 568.7,
 
+    width: 510,
+
     height: 29,
 
     maxLines: 2,
+
+    maxFontSize: 9.25,
+
+    minFontSize: 6.25,
+
+    lineGap: 3.1,
 
     font,
 
@@ -2489,13 +2786,6 @@ const fillPageTwo = ({
     )} Only) for the acquired fractions during the agreed rental term.`,
   });
 };
-
-// ============================================================
-// PAGES 3, 4, 5
-//
-// Current new template contains no variable placeholders
-// on these pages, therefore no overlay is required.
-// ============================================================
 
 // ============================================================
 // PAGE 6
@@ -2510,9 +2800,9 @@ const fillPageSix = ({
 
   italicFont,
 }) => {
-  // ==========================================================
+  // =========================================================
   // FRACTION OWNER NAME
-  // ==========================================================
+  // =========================================================
 
   drawSingleLine({
     page,
@@ -2534,9 +2824,9 @@ const fillPageSix = ({
     text: `Name: ${data.fullLegalName}`,
   });
 
-  // ==========================================================
+  // =========================================================
   // FRACTION OWNER PAN
-  // ==========================================================
+  // =========================================================
 
   drawSingleLine({
     page,
@@ -2558,25 +2848,84 @@ const fillPageSix = ({
     text: `PAN No : ${data.pan}`,
   });
 
-  /*
-   * IMPORTANT
-   *
-   * Do NOT fill:
-   *
-   * Company Date & Time
-   * Fraction Owner Date & Time
-   *
-   * Those should contain the actual
-   * digital-signing timestamp.
-   *
-   * PDF generation != digital signing.
-   */
-
-  // ==========================================================
-  // GENERATED DATE / TIME
+  // =========================================================
+  // PAYMENT DATE & TIME
   //
-  // This is generated when user generates PDF.
-  // ==========================================================
+  // This comes from:
+  // PurchaseHistory.paidAt
+  //
+  // Example:
+  // 24/09/2026 03:52:24 PM IST
+  // =========================================================
+
+  const paymentDateTime = formatIndianDateTimeCompact(data.paymentDate);
+
+  // =========================================================
+  // COMPANY DATE & TIME
+  // =========================================================
+
+  drawSingleLine({
+    page,
+
+    x: 126.5,
+
+    top: 199.4,
+
+    width: 151,
+
+    height: 13.5,
+
+    maxFontSize: 7.2,
+
+    minFontSize: 5.8,
+
+    font,
+
+    text: paymentDateTime,
+  });
+
+  // =========================================================
+  // FRACTION OWNER DATE & TIME
+  // =========================================================
+
+  drawSingleLine({
+    page,
+
+    x: 414.5,
+
+    top: 200.8,
+
+    width: 143,
+
+    height: 13.5,
+
+    maxFontSize: 7.2,
+
+    minFontSize: 5.8,
+
+    font,
+
+    text: paymentDateTime,
+  });
+
+  // =========================================================
+  // GENERATED DATE/TIME
+  //
+  // This is PDF generation time.
+  // It is NOT payment time.
+  // =========================================================
+
+  clearPdfArea({
+    page,
+
+    x: 50.5,
+
+    top: 267,
+
+    width: 526,
+
+    height: 30,
+  });
 
   drawWrappedBlock({
     page,
@@ -2599,9 +2948,9 @@ const fillPageSix = ({
 
     font: italicFont,
 
-    text: `This Agreement was generated on ${formatDate(
+    text: `This Agreement was generated on ${formatGeneratedDate(
       data.generatedAt,
-    )} at ${formatTime(
+    )} at ${formatGeneratedTime(
       data.generatedAt,
     )} and digitally signed on [Signing Date] at [Signing Time].`,
   });
@@ -2619,12 +2968,9 @@ export const generateAgreementPdf = async (
   let purchase = null;
 
   /*
-   * IMPORTANT
+   * Capture generation time exactly once.
    *
-   * Capture generation timestamp only once.
-   *
-   * This timestamp is the moment when user
-   * requests agreement generation.
+   * Same generatedAt is used in generated PDF response.
    */
   const generatedAt = getIndianTime();
 
@@ -2646,7 +2992,7 @@ export const generateAgreementPdf = async (
     }
 
     // ======================================================
-    // PAYMENT SUCCESS
+    // PAYMENT CHECK
     // ======================================================
 
     if (purchase.paymentStatus !== "SUCCESS") {
@@ -2659,13 +3005,6 @@ export const generateAgreementPdf = async (
       throw error;
     }
 
-    // ======================================================
-    // PAYMENT DATE
-    //
-    // Required because Agreement Date and
-    // Acquisition Date use paidAt.
-    // ======================================================
-
     if (!purchase.paidAt) {
       const error = new Error(
         "Payment date is not available in purchase history",
@@ -2677,7 +3016,7 @@ export const generateAgreementPdf = async (
     }
 
     // ======================================================
-    // FORM DATA
+    // FORM DATA CHECK
     // ======================================================
 
     if (!formData) {
@@ -2703,7 +3042,7 @@ export const generateAgreementPdf = async (
     }
 
     // ======================================================
-    // AGREEMENT ALREADY GENERATED
+    // DO NOT REGENERATE COMPLETED AGREEMENT
     // ======================================================
 
     const existingAgreementUrl =
@@ -2721,7 +3060,7 @@ export const generateAgreementPdf = async (
     }
 
     // ======================================================
-    // PROCESSING STATUS
+    // MARK PROCESSING
     // ======================================================
 
     purchase.documentGenerationStatus = "PROCESSING";
@@ -2731,7 +3070,7 @@ export const generateAgreementPdf = async (
     await purchase.save();
 
     // ======================================================
-    // CURRENT ASSET
+    // ASSET
     // ======================================================
 
     const asset = await Asset.findById(purchase.assetId);
@@ -2781,7 +3120,7 @@ export const generateAgreementPdf = async (
     });
 
     // ======================================================
-    // READ PDF TEMPLATE
+    // READ TEMPLATE
     // ======================================================
 
     const templateBytes = await fs.readFile(AGREEMENT_TEMPLATE_PATH);
@@ -2800,10 +3139,6 @@ export const generateAgreementPdf = async (
 
     const pages = pdfDoc.getPages();
 
-    // ======================================================
-    // NEW TEMPLATE = 6 PAGES
-    // ======================================================
-
     if (pages.length !== 6) {
       throw new Error(
         `Invalid agreement template. Expected 6 pages but found ${pages.length}.`,
@@ -2815,17 +3150,19 @@ export const generateAgreementPdf = async (
     // ======================================================
 
     /*
-     * Using INR instead of ₹ because
-     * Standard Helvetica may not contain
-     * the ₹ character.
+     * INR is used instead of ₹
+     * because Helvetica does not reliably support
+     * the rupee Unicode glyph.
      */
 
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
     const italicFont = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
 
     // ======================================================
-    // PAGE 1
+    // FILL PAGE 1
     // ======================================================
 
     fillPageOne({
@@ -2834,10 +3171,12 @@ export const generateAgreementPdf = async (
       data: agreementData,
 
       font,
+
+      boldFont,
     });
 
     // ======================================================
-    // PAGE 2
+    // FILL PAGE 2
     // ======================================================
 
     fillPageTwo({
@@ -2848,26 +3187,13 @@ export const generateAgreementPdf = async (
       font,
     });
 
-    // ======================================================
-    // PAGE 3
-    //
-    // No dynamic fields currently.
-    // ======================================================
+    /*
+     * Pages 3, 4 and 5 currently do not
+     * contain dynamic placeholders.
+     */
 
     // ======================================================
-    // PAGE 4
-    //
-    // No dynamic fields currently.
-    // ======================================================
-
-    // ======================================================
-    // PAGE 5
-    //
-    // No dynamic fields currently.
-    // ======================================================
-
-    // ======================================================
-    // PAGE 6
+    // FILL PAGE 6
     // ======================================================
 
     fillPageSix({
@@ -2881,14 +3207,10 @@ export const generateAgreementPdf = async (
     });
 
     /*
-     * IMPORTANT:
+     * Do NOT flatten AcroForm / signature fields.
      *
-     * Do NOT call:
-     *
-     * pdfDoc.getForm().flatten()
-     *
-     * if you later add/use actual
-     * PDF digital-signature fields.
+     * Digital signature fields must remain available
+     * for the future signing flow.
      */
 
     // ======================================================
@@ -2900,7 +3222,7 @@ export const generateAgreementPdf = async (
     const pdfBuffer = Buffer.from(pdfBytes);
 
     // ======================================================
-    // AGREEMENT NUMBER / FILE NAME
+    // AGREEMENT FILE NAME
     // ======================================================
 
     const suffix = purchase._id.toString().slice(-10).toUpperCase();
@@ -2924,10 +3246,7 @@ export const generateAgreementPdf = async (
     }
 
     // ======================================================
-    // SAVE DOCUMENT
-    //
-    // Keeping your previous requirement:
-    // only URL is populated in digitalAgreement.
+    // SAVE PDF URL IN PURCHASE HISTORY
     // ======================================================
 
     purchase.documents = purchase.documents || {};
@@ -2936,10 +3255,6 @@ export const generateAgreementPdf = async (
       url: uploadedPdf.url,
     };
 
-    // ======================================================
-    // COMPLETE
-    // ======================================================
-
     purchase.documentGenerationStatus = "COMPLETED";
 
     purchase.documentGenerationError = null;
@@ -2947,7 +3262,7 @@ export const generateAgreementPdf = async (
     await purchase.save();
 
     // ======================================================
-    // RESPONSE
+    // SUCCESS RESPONSE
     // ======================================================
 
     return {
@@ -2961,22 +3276,17 @@ export const generateAgreementPdf = async (
         url: uploadedPdf.url,
       },
 
-      /*
-       * Returned mainly for debugging/frontend.
-       *
-       * The same generatedAt value has already
-       * been printed on page 6.
-       */
       generatedAt,
     };
   } catch (error) {
-    console.error("GENERATE AGREEMENT PDF ERROR:", error);
+    console.error(
+      "GENERATE AGREEMENT PDF ERROR:",
+
+      error,
+    );
 
     // ======================================================
-    // PDF FAILURE
-    //
-    // Never change paymentStatus.
-    // Only document status becomes FAILED.
+    // PDF FAILURE MUST NOT CHANGE PAYMENT STATUS
     // ======================================================
 
     if (purchase?._id) {
@@ -2993,7 +3303,11 @@ export const generateAgreementPdf = async (
           },
         );
       } catch (statusUpdateError) {
-        console.error("FAILED TO UPDATE DOCUMENT STATUS:", statusUpdateError);
+        console.error(
+          "FAILED TO UPDATE DOCUMENT STATUS:",
+
+          statusUpdateError,
+        );
       }
     }
 
