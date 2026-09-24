@@ -854,14 +854,18 @@ export const submitAgreementDetails = async (req, res) => {
 
     const agreement = await generateAgreementPdf(purchase._id, {
       fullLegalName: normalizedName,
-
       fullAddress: normalizedAddress,
-
       pan: normalizedPan,
-
       mobile: normalizedMobile,
-
       email: normalizedEmail,
+
+      bankDetails: {
+        accountHolderName,
+        accountNumber,
+        ifscCode: normalizedIfsc,
+        bankName: normalizedBankName,
+        accountType,
+      },
 
       acceptedTerms: true,
     });
@@ -1084,9 +1088,31 @@ export const getAgreementDetails = async (req, res) => {
 
 export const retryAgreementGeneration = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // ======================================================
+    // USER
+    // ======================================================
 
-    const { purchaseId } = req.params;
+    const userId =
+      req.user?.id ||
+      req.user?._id;
+
+    // ======================================================
+    // PARAMS
+    // ======================================================
+
+    const { purchaseId } =
+      req.params;
+
+    // ======================================================
+    // BODY
+    //
+    // IMPORTANT:
+    // req.body undefined ho sakta hai, isliye direct
+    // destructuring nahi karna.
+    // ======================================================
+
+    const body =
+      req.body || {};
 
     const {
       fullLegalName,
@@ -1094,24 +1120,28 @@ export const retryAgreementGeneration = async (req, res) => {
       pan,
       mobile,
       email,
-
+      bankDetails,
       acceptedTerms,
-    } = req.body;
+    } = body;
 
     // ======================================================
     // PURCHASE ID VALIDATION
     // ======================================================
 
-    if (!mongoose.isValidObjectId(purchaseId)) {
+    if (
+      !mongoose.isValidObjectId(
+        purchaseId,
+      )
+    ) {
       return res.status(400).json({
         success: false,
-
-        message: "Invalid purchase id",
+        message:
+          "Invalid purchase id",
       });
     }
 
     // ======================================================
-    // REQUIRED AGREEMENT DETAILS
+    // AGREEMENT DETAILS REQUIRED
     // ======================================================
 
     if (
@@ -1123,8 +1153,8 @@ export const retryAgreementGeneration = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-
-        message: "Full legal name, address, PAN, mobile and email are required",
+        message:
+          "Retry requires full legal name, address, PAN, mobile and email",
       });
     }
 
@@ -1132,65 +1162,219 @@ export const retryAgreementGeneration = async (req, res) => {
     // TERMS
     // ======================================================
 
-    if (acceptedTerms !== true) {
+    if (
+      acceptedTerms !== true
+    ) {
       return res.status(400).json({
         success: false,
-
-        message: "Agreement terms must be accepted",
+        message:
+          "Agreement terms must be accepted",
       });
     }
 
     // ======================================================
-    // NORMALIZE
+    // BANK DETAILS REQUIRED
+    //
+    // Full account number is needed because PDF now shows
+    // complete bank account number.
     // ======================================================
 
-    const normalizedName = fullLegalName.trim();
-
-    const normalizedAddress = fullAddress.trim();
-
-    const normalizedPan = pan.trim().toUpperCase();
-
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const normalizedMobile = String(mobile).replace(/\D/g, "");
-
-    // ======================================================
-    // PAN
-    // ======================================================
-
-    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-
-    if (!panRegex.test(normalizedPan)) {
+    if (
+      !bankDetails ||
+      !bankDetails
+        .accountHolderName
+        ?.trim() ||
+      !bankDetails
+        .accountNumber ||
+      !bankDetails
+        .ifscCode
+        ?.trim()
+    ) {
       return res.status(400).json({
         success: false,
-
-        message: "Invalid PAN number",
+        message:
+          "Complete bank details including full account number are required for retry",
       });
     }
 
     // ======================================================
-    // EMAIL
+    // NORMALIZE CUSTOMER DETAILS
     // ======================================================
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const normalizedName =
+      fullLegalName
+        .trim();
 
-    if (!emailRegex.test(normalizedEmail)) {
+    const normalizedAddress =
+      fullAddress
+        .trim();
+
+    const normalizedPan =
+      pan
+        .trim()
+        .toUpperCase();
+
+    const normalizedEmail =
+      email
+        .trim()
+        .toLowerCase();
+
+    const normalizedMobile =
+      String(mobile)
+        .replace(
+          /\D/g,
+          "",
+        );
+
+    // ======================================================
+    // NORMALIZE BANK DETAILS
+    // ======================================================
+
+    const accountHolderName =
+      bankDetails
+        .accountHolderName
+        .trim();
+
+    const accountNumber =
+      String(
+        bankDetails
+          .accountNumber,
+      )
+        .replace(
+          /\s+/g,
+          "",
+        );
+
+    const normalizedIfsc =
+      bankDetails
+        .ifscCode
+        .trim()
+        .toUpperCase();
+
+    const normalizedBankName =
+      bankDetails
+        .bankName
+        ?.trim() ||
+      "";
+
+    const accountType =
+      String(
+        bankDetails
+          .accountType ||
+          "SAVINGS",
+      )
+        .trim()
+        .toUpperCase();
+
+    // ======================================================
+    // PAN VALIDATION
+    // ======================================================
+
+    const panRegex =
+      /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+
+    if (
+      !panRegex.test(
+        normalizedPan,
+      )
+    ) {
       return res.status(400).json({
         success: false,
-
-        message: "Invalid email address",
+        message:
+          "Invalid PAN number",
       });
     }
 
     // ======================================================
-    // MOBILE
+    // EMAIL VALIDATION
     // ======================================================
 
-    if (normalizedMobile.length < 10 || normalizedMobile.length > 15) {
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (
+      !emailRegex.test(
+        normalizedEmail,
+      )
+    ) {
       return res.status(400).json({
         success: false,
+        message:
+          "Invalid email address",
+      });
+    }
 
-        message: "Invalid mobile number",
+    // ======================================================
+    // MOBILE VALIDATION
+    // ======================================================
+
+    if (
+      normalizedMobile.length <
+        10 ||
+      normalizedMobile.length >
+        15
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid mobile number",
+      });
+    }
+
+    // ======================================================
+    // ACCOUNT NUMBER VALIDATION
+    // ======================================================
+
+    const accountNumberRegex =
+      /^\d{9,18}$/;
+
+    if (
+      !accountNumberRegex.test(
+        accountNumber,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid bank account number",
+      });
+    }
+
+    // ======================================================
+    // IFSC VALIDATION
+    // ======================================================
+
+    const ifscRegex =
+      /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+    if (
+      !ifscRegex.test(
+        normalizedIfsc,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid IFSC code",
+      });
+    }
+
+    // ======================================================
+    // ACCOUNT TYPE
+    // ======================================================
+
+    if (
+      ![
+        "SAVINGS",
+        "CURRENT",
+      ].includes(
+        accountType,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Account type must be SAVINGS or CURRENT",
       });
     }
 
@@ -1198,82 +1382,184 @@ export const retryAgreementGeneration = async (req, res) => {
     // FIND PURCHASE
     // ======================================================
 
-    const purchase = await PurchaseHistory.findOne({
-      _id: purchaseId,
+    const purchase =
+      await PurchaseHistory
+        .findOne({
+          _id:
+            purchaseId,
 
-      userId,
+          userId,
 
-      paymentStatus: "SUCCESS",
-    });
+          paymentStatus:
+            "SUCCESS",
+        })
+        .select(
+          "+documentGenerationError",
+        );
 
     if (!purchase) {
       return res.status(404).json({
         success: false,
-
-        message: "Purchase not found",
+        message:
+          "Successful purchase not found",
       });
     }
 
     // ======================================================
-    // CHECK PROCESSING
+    // COMPLETED CHECK
     // ======================================================
 
-    if (purchase.documentGenerationStatus === "PROCESSING") {
+    const existingAgreementUrl =
+      purchase
+        .documents
+        ?.digitalAgreement
+        ?.url ||
+      null;
+
+    if (
+      existingAgreementUrl ||
+      purchase
+        .documentGenerationStatus ===
+        "COMPLETED"
+    ) {
       return res.status(409).json({
         success: false,
-
-        message: "Agreement PDF generation is already in progress",
+        message:
+          "Agreement has already been generated",
+        data: {
+          agreementUrl:
+            existingAgreementUrl,
+        },
       });
     }
 
     // ======================================================
-    // REGENERATE PDF
+    // PROCESSING CHECK
     // ======================================================
 
-    const agreement = await generateAgreementPdf(
-      purchase._id,
+    if (
+      purchase
+        .documentGenerationStatus ===
+      "PROCESSING"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Agreement PDF generation is already in progress",
+      });
+    }
 
-      {
-        fullLegalName: normalizedName,
+    // ======================================================
+    // RETRY SHOULD ONLY BE USED AFTER FAILED GENERATION
+    // ======================================================
 
-        fullAddress: normalizedAddress,
+    if (
+      purchase
+        .documentGenerationStatus !==
+      "FAILED"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Agreement retry is only allowed after PDF generation has failed",
+      });
+    }
 
-        pan: normalizedPan,
+    // ======================================================
+    // GENERATE PDF AGAIN
+    //
+    // IMPORTANT:
+    // Full bank details are passed again because database
+    // stores encrypted account number / last4.
+    // ======================================================
 
-        mobile: normalizedMobile,
+    const agreement =
+      await generateAgreementPdf(
+        purchase._id,
 
-        email: normalizedEmail,
+        {
+          fullLegalName:
+            normalizedName,
 
-        acceptedTerms: true,
-      },
-    );
+          fullAddress:
+            normalizedAddress,
+
+          pan:
+            normalizedPan,
+
+          mobile:
+            normalizedMobile,
+
+          email:
+            normalizedEmail,
+
+          bankDetails: {
+            accountHolderName,
+
+            accountNumber,
+
+            ifscCode:
+              normalizedIfsc,
+
+            bankName:
+              normalizedBankName,
+
+            accountType,
+          },
+
+          acceptedTerms:
+            true,
+        },
+      );
 
     // ======================================================
     // RESPONSE
     // ======================================================
 
-    return res.status(200).json({
-      success: true,
+    return res
+      .status(200)
+      .json({
+        success: true,
 
-      message: "Agreement generated successfully",
+        message:
+          "Agreement generated successfully",
 
-      data: {
-        purchaseId: purchase._id,
+        data: {
+          purchaseId:
+            purchase._id,
 
-        documentGenerationStatus: agreement.documentGenerationStatus,
+          documentGenerationStatus:
+            agreement
+              .documentGenerationStatus,
 
-        digitalAgreement: agreement.digitalAgreement,
+          digitalAgreement:
+            agreement
+              .digitalAgreement,
 
-        pdfUrl: agreement.digitalAgreement?.url || null,
-      },
-    });
+          pdfUrl:
+            agreement
+              .digitalAgreement
+              ?.url ||
+            null,
+        },
+      });
   } catch (error) {
-    console.error("RETRY AGREEMENT GENERATION ERROR:", error);
+    console.error(
+      "RETRY AGREEMENT GENERATION ERROR:",
+      error,
+    );
 
-    return res.status(error.statusCode || 500).json({
-      success: false,
+    return res
+      .status(
+        error.statusCode ||
+          500,
+      )
+      .json({
+        success: false,
 
-      message: error.message || "Unable to regenerate agreement",
-    });
+        message:
+          error.message ||
+          "Unable to regenerate agreement",
+      });
   }
 };

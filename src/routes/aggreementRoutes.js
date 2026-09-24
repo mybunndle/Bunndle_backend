@@ -76,7 +76,7 @@ router.get(
 //
 
 router.post(
-  "/purchase/:purchaseId/agreement/retry",
+  "/retry/:purchaseId",
   authMiddleware,
   retryAgreementGeneration
 );
