@@ -814,9 +814,190 @@ export const delete_co_own = async (req, res) => {
 
 
 
+// export const getPurchaseHistoryByUserId = async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+
+//     if (!userId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "User ID is required",
+//       });
+//     }
+
+//     if (!mongoose.Types.ObjectId.isValid(userId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid user ID",
+//       });
+//     }
+
+//     const purchaseHistory = await PurchaseHistory.find({
+//       userId: userId,
+//     })
+//       .select(
+//         `
+//         userId
+//         assetId
+//         totalAmount
+//         createdAt
+//         paymentStatus
+//         fractionsPurchased
+//         razorpayOrderId
+//         razorpayPaymentId
+//         transactionReference
+//         documents.digitalAgreement.url
+//         documents.paymentReceipt.url
+//         `
+//       )
+//       .populate(
+//         "userId",
+//         "name"
+//       )
+//       .populate(
+//         "assetId",
+//         "assetName assetCode model specification"
+//       )
+//       .sort({
+//         createdAt: -1,
+//       })
+//       .lean();
+
+//     const formattedHistory = await Promise.all(
+//       purchaseHistory.map(async (purchase) => {
+//         const paymentDateTime =
+//           new Date(purchase.createdAt);
+
+//         const paymentData =
+//           await paymentModel
+//             .findOne({
+//               userId: userId,
+
+//               $or: [
+//                 {
+//                   razorpayOrderId:
+//                     purchase.razorpayOrderId,
+//                 },
+//                 {
+//                   razorpayPaymentId:
+//                     purchase.razorpayPaymentId,
+//                 },
+//               ],
+//             })
+//             .select(
+//               `
+//               razorpayOrderId
+//               razorpayPaymentId
+//               amount
+//               status
+//               createdAt
+//               `
+//             )
+//             .lean();
+
+//         return {
+//           username:
+//             purchase.userId?.name ||
+//             "N/A",
+
+//           assetName:
+//             purchase.assetId?.assetName ||
+//             "N/A",
+
+//           assetCode:
+//             purchase.assetId?.assetCode ||
+//             "N/A",
+
+//           model:
+//             purchase.assetId?.model ||
+//             purchase.assetId?.specification ||
+//             "N/A",
+
+//           orderId:
+//             paymentData?.razorpayOrderId ||
+//             purchase.razorpayOrderId ||
+//             "N/A",
+
+//           paymentDate:
+//             paymentDateTime.toLocaleDateString(
+//               "en-IN",
+//               {
+//                 day: "2-digit",
+//                 month: "short",
+//                 year: "numeric",
+//                 timeZone: "Asia/Kolkata",
+//               }
+//             ),
+
+//           paymentTime:
+//             paymentDateTime.toLocaleTimeString(
+//               "en-IN",
+//               {
+//                 hour: "2-digit",
+//                 minute: "2-digit",
+//                 hour12: true,
+//                 timeZone: "Asia/Kolkata",
+//               }
+//             ),
+
+//           amount:
+//             purchase.totalAmount ||
+//             paymentData?.amount ||
+//             0,
+
+//           fractionsPurchased:
+//             purchase.fractionsPurchased ||
+//             0,
+
+//           // Agreement PDF URL
+//           agreementUrl:
+//             purchase.documents
+//               ?.digitalAgreement
+//               ?.url ||
+//             null,
+
+//           // Payment Receipt PDF URL
+//           paymentReceiptUrl:
+//             purchase.documents
+//               ?.paymentReceipt
+//               ?.url ||
+//             null,
+//         };
+//       })
+//     );
+
+//     return res.status(200).json({
+//       success: true,
+//       message:
+//         "User purchase history fetched successfully",
+//       count:
+//         formattedHistory.length,
+//       data:
+//         formattedHistory,
+//     });
+//   } catch (error) {
+//     console.error(
+//       "Admin Get User Purchase History Error:",
+//       error
+//     );
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
+
+
+
 export const getPurchaseHistoryByUserId = async (req, res) => {
   try {
     const { userId } = req.params;
+
+    // =========================================================
+    // VALIDATE USER ID
+    // =========================================================
 
     if (!userId) {
       return res.status(400).json({
@@ -832,6 +1013,10 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
       });
     }
 
+    // =========================================================
+    // FETCH PURCHASE HISTORY
+    // =========================================================
+
     const purchaseHistory = await PurchaseHistory.find({
       userId: userId,
     })
@@ -841,6 +1026,7 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
         assetId
         totalAmount
         createdAt
+        paidAt
         paymentStatus
         fractionsPurchased
         razorpayOrderId
@@ -863,10 +1049,35 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
       })
       .lean();
 
+    // =========================================================
+    // FORMAT RESPONSE
+    // =========================================================
+
     const formattedHistory = await Promise.all(
       purchaseHistory.map(async (purchase) => {
+
+        // =====================================================
+        // PAYMENT / PURCHASE DATE TIME
+        //
+        // First preference:
+        // PurchaseHistory.paidAt
+        //
+        // Fallback:
+        // createdAt
+        // =====================================================
+
+        const purchaseDateSource =
+          purchase.paidAt ||
+          purchase.createdAt;
+
         const paymentDateTime =
-          new Date(purchase.createdAt);
+          purchaseDateSource
+            ? new Date(purchaseDateSource)
+            : null;
+
+        // =====================================================
+        // FETCH PAYMENT DATA
+        // =====================================================
 
         const paymentData =
           await paymentModel
@@ -895,6 +1106,46 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
             )
             .lean();
 
+        // =====================================================
+        // INDIAN DATE
+        // =====================================================
+
+        const paymentDate =
+          paymentDateTime
+            ? new Intl.DateTimeFormat(
+                "en-IN",
+                {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  timeZone: "Asia/Kolkata",
+                }
+              ).format(paymentDateTime)
+            : null;
+
+        // =====================================================
+        // INDIAN TIME
+        // =====================================================
+
+        const paymentTime =
+          paymentDateTime
+            ? new Intl.DateTimeFormat(
+                "en-IN",
+                {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                  timeZone: "Asia/Kolkata",
+                }
+              )
+                .format(paymentDateTime)
+                .toLowerCase()
+            : null;
+
+        // =====================================================
+        // RESPONSE ITEM
+        // =====================================================
+
         return {
           username:
             purchase.userId?.name ||
@@ -918,27 +1169,9 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
             purchase.razorpayOrderId ||
             "N/A",
 
-          paymentDate:
-            paymentDateTime.toLocaleDateString(
-              "en-IN",
-              {
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-                timeZone: "Asia/Kolkata",
-              }
-            ),
+          paymentDate,
 
-          paymentTime:
-            paymentDateTime.toLocaleTimeString(
-              "en-IN",
-              {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-                timeZone: "Asia/Kolkata",
-              }
-            ),
+          paymentTime,
 
           amount:
             purchase.totalAmount ||
@@ -949,14 +1182,29 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
             purchase.fractionsPurchased ||
             0,
 
-          // Agreement PDF URL
+          paymentStatus:
+            purchase.paymentStatus ||
+            paymentData?.status ||
+            "N/A",
+
+          transactionReference:
+            purchase.transactionReference ||
+            null,
+
+          // ===============================================
+          // AGREEMENT PDF URL
+          // ===============================================
+
           agreementUrl:
             purchase.documents
               ?.digitalAgreement
               ?.url ||
             null,
 
-          // Payment Receipt PDF URL
+          // ===============================================
+          // PAYMENT RECEIPT PDF URL
+          // ===============================================
+
           paymentReceiptUrl:
             purchase.documents
               ?.paymentReceipt
@@ -966,15 +1214,23 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
       })
     );
 
+    // =========================================================
+    // SUCCESS RESPONSE
+    // =========================================================
+
     return res.status(200).json({
       success: true,
+
       message:
         "User purchase history fetched successfully",
+
       count:
         formattedHistory.length,
+
       data:
         formattedHistory,
     });
+
   } catch (error) {
     console.error(
       "Admin Get User Purchase History Error:",
@@ -983,7 +1239,10 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+
+      message:
+        error.message ||
+        "Unable to fetch purchase history",
     });
   }
 };
