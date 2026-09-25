@@ -4,15 +4,8 @@ import PurchaseHistory from "../model/purchaseHistoryModel.js";
 import BankAccount from "../model/bankAccountModel.js";
 
 import { encryptBankAccount } from "../utils/bankEncryption.js";
+import {generateAgreementPdf} from "../services/agreement_pdf_service.js";
 
-import { generateAgreementPdf } from "../services/agreementPdfService.js";
-
-// ============================================================
-// SUBMIT AGREEMENT DETAILS
-// ============================================================
-
-// export const submitAgreementDetails = async (req, res) => {
-//   const session = await mongoose.startSession();
 
 //   try {
 //     // ========================================================
