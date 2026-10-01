@@ -63,10 +63,7 @@ export async function registerUser(req, res) {
     }
 
     const existingUser = await userModel.findOne({
-      $or: [
-        { email: normalizedEmail },
-        { phone: normalizedPhone },
-      ],
+      $or: [{ email: normalizedEmail }, { phone: normalizedPhone }],
     });
 
     if (existingUser) {
@@ -99,7 +96,7 @@ export async function registerUser(req, res) {
       config.jwtSecret,
       {
         expiresIn: "30d",
-      }
+      },
     );
 
     return res.status(201).json({
@@ -119,9 +116,7 @@ export async function registerUser(req, res) {
     console.error("REGISTER USER ERROR:", error);
 
     if (error.code === 11000) {
-      const field = Object.keys(
-        error.keyPattern || error.keyValue || {}
-      )[0];
+      const field = Object.keys(error.keyPattern || error.keyValue || {})[0];
 
       return res.status(409).json({
         success: false,
@@ -1121,15 +1116,10 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-
 export const changePassword = async (req, res) => {
   try {
     const userId = req.user?._id;
-    const {
-      currentPassword,
-      newPassword,
-      confirmPassword,
-    } = req.body;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
 
     if (!userId) {
       return res.status(401).json({
@@ -1149,14 +1139,11 @@ export const changePassword = async (req, res) => {
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
         success: false,
-        message:
-          "New password and confirm password do not match.",
+        message: "New password and confirm password do not match.",
       });
     }
 
-    const user = await userModel
-      .findById(userId)
-      .select("+password");
+    const user = await userModel.findById(userId).select("+password");
 
     if (!user) {
       return res.status(404).json({
@@ -1176,7 +1163,7 @@ export const changePassword = async (req, res) => {
 
     const isCurrentPasswordCorrect = await bcrypt.compare(
       currentPassword,
-      user.password
+      user.password,
     );
 
     if (!isCurrentPasswordCorrect) {
@@ -1186,16 +1173,12 @@ export const changePassword = async (req, res) => {
       });
     }
 
-    const isSamePassword = await bcrypt.compare(
-      newPassword,
-      user.password
-    );
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
 
     if (isSamePassword) {
       return res.status(400).json({
         success: false,
-        message:
-          "New password cannot be the same as your current password.",
+        message: "New password cannot be the same as your current password.",
       });
     }
 
@@ -1207,7 +1190,7 @@ export const changePassword = async (req, res) => {
         $set: {
           password: hashedPassword,
         },
-      }
+      },
     );
 
     return res.status(200).json({
@@ -1609,6 +1592,99 @@ export const deleteAccount = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Unable to delete your account.",
+    });
+  }
+};
+
+// user.services.js
+export const getRecentRegisteredUsers = async (req, res) => {
+  try {
+    const { days } = req.body;
+    const {
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    const parsedDays = Number(days);
+
+    if (
+      !days ||
+      !Number.isInteger(parsedDays) ||
+      parsedDays <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Days must be a valid positive integer",
+      });
+    }
+
+    const parsedPage = Math.max(
+      parseInt(page, 10) || 1,
+      1
+    );
+
+    const parsedLimit = Math.min(
+      Math.max(parseInt(limit, 10) || 20, 1),
+      100
+    );
+
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    const endDate = new Date();
+
+    const startDate = new Date(
+      endDate.getTime() -
+        parsedDays * 24 * 60 * 60 * 1000
+    );
+
+    const filter = {
+      createdAt: {
+        $gte: startDate,
+        $lte: endDate,
+      },
+    };
+
+    const [users, totalUsers] = await Promise.all([
+      userModel
+        .find(filter)
+        .select("-password -otp -refreshToken")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parsedLimit)
+        .lean(),
+
+      userModel.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Recent registered users fetched successfully",
+      count: users.length,
+      data: users,
+      pagination: {
+        totalUsers,
+        currentPage: parsedPage,
+        totalPages: Math.ceil(
+          totalUsers / parsedLimit
+        ),
+        limit: parsedLimit,
+      },
+      filter: {
+        days: parsedDays,
+        from: startDate,
+        to: endDate,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "GET RECENT REGISTERED USERS ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching users",
+      error: error.message,
     });
   }
 };

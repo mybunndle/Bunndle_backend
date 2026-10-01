@@ -3984,23 +3984,20 @@
 //     throw error;
 //   }
 // };
+
+
+
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import {
-  PDFDocument,
-  StandardFonts,
-  rgb,
-} from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
 import Asset from "../model/coAssetModel.js";
 import BankAccount from "../model/bankAccountModel.js";
 
-import {
-  uploadAgreementPdf,
-} from "./imageStorageService.js";
+import { uploadAgreementPdf } from "./imageStorageService.js";
 
 // ============================================================
 // TEMPLATE PATH
@@ -4022,12 +4019,9 @@ const AGREEMENT_TEMPLATE_PATH = path.join(
 // ============================================================
 
 const getIndianTime = () => {
-  const istOffset =
-    5.5 * 60 * 60 * 1000;
+  const istOffset = 5.5 * 60 * 60 * 1000;
 
-  return new Date(
-    Date.now() + istOffset,
-  );
+  return new Date(Date.now() + istOffset);
 };
 
 // ============================================================
@@ -4039,18 +4033,14 @@ const formatGeneratedDate = (value) => {
     return "-";
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  return new Intl.DateTimeFormat(
-    "en-IN",
-    {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-      timeZone: "UTC",
-    },
-  ).format(date);
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 };
 
 const formatGeneratedTime = (value) => {
@@ -4058,19 +4048,15 @@ const formatGeneratedTime = (value) => {
     return "-";
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  return new Intl.DateTimeFormat(
-    "en-IN",
-    {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-      timeZone: "UTC",
-    },
-  )
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  })
     .format(date)
     .toUpperCase();
 };
@@ -4080,18 +4066,14 @@ const formatIndianDate = (value) => {
     return "-";
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  return new Intl.DateTimeFormat(
-    "en-IN",
-    {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-      timeZone: "Asia/Kolkata",
-    },
-  ).format(date);
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).format(date);
 };
 
 const formatIndianTime = (value) => {
@@ -4099,47 +4081,34 @@ const formatIndianTime = (value) => {
     return "-";
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  return new Intl.DateTimeFormat(
-    "en-IN",
-    {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Kolkata",
-    },
-  )
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  })
     .format(date)
     .toUpperCase();
 };
 
-const formatIndianDateTimeCompact = (
-  value,
-) => {
+const formatIndianDateTimeCompact = (value) => {
   if (!value) {
     return "-";
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  const datePart =
-    new Intl.DateTimeFormat(
-      "en-IN",
-      {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        timeZone: "Asia/Kolkata",
-      },
-    ).format(date);
+  const datePart = new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).format(date);
 
-  return `${datePart} ${formatIndianTime(
-    date,
-  )} IST`;
+  return `${datePart} ${formatIndianTime(date)} IST`;
 };
 
 // ============================================================
@@ -4147,15 +4116,10 @@ const formatIndianDateTimeCompact = (
 // ============================================================
 
 const formatAmount = (value) => {
-  return Number(
-    value || 0,
-  ).toLocaleString(
-    "en-IN",
-    {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    },
-  );
+  return Number(value || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 // ============================================================
@@ -4198,38 +4162,20 @@ const TENS = [
   "Ninety",
 ];
 
-const belowHundredToWords = (
-  number,
-) => {
+const belowHundredToWords = (number) => {
   if (number < 20) {
     return ONES[number];
   }
 
-  const tens =
-    Math.floor(
-      number / 10,
-    );
+  const tens = Math.floor(number / 10);
 
-  const ones =
-    number % 10;
+  const ones = number % 10;
 
-  return [
-    TENS[tens],
-    ONES[ones],
-  ]
-    .filter(Boolean)
-    .join(" ");
+  return [TENS[tens], ONES[ones]].filter(Boolean).join(" ");
 };
 
-const numberToIndianWords = (
-  value,
-) => {
-  let number =
-    Math.round(
-      Number(
-        value || 0,
-      ),
-    );
+const numberToIndianWords = (value) => {
+  let number = Math.round(Number(value || 0));
 
   if (number === 0) {
     return "Zero";
@@ -4237,74 +4183,40 @@ const numberToIndianWords = (
 
   const parts = [];
 
-  const crore =
-    Math.floor(
-      number / 10000000,
-    );
+  const crore = Math.floor(number / 10000000);
 
   if (crore) {
-    parts.push(
-      `${numberToIndianWords(
-        crore,
-      )} Crore`,
-    );
+    parts.push(`${numberToIndianWords(crore)} Crore`);
 
-    number %=
-      10000000;
+    number %= 10000000;
   }
 
-  const lakh =
-    Math.floor(
-      number / 100000,
-    );
+  const lakh = Math.floor(number / 100000);
 
   if (lakh) {
-    parts.push(
-      `${numberToIndianWords(
-        lakh,
-      )} Lakh`,
-    );
+    parts.push(`${numberToIndianWords(lakh)} Lakh`);
 
-    number %=
-      100000;
+    number %= 100000;
   }
 
-  const thousand =
-    Math.floor(
-      number / 1000,
-    );
+  const thousand = Math.floor(number / 1000);
 
   if (thousand) {
-    parts.push(
-      `${numberToIndianWords(
-        thousand,
-      )} Thousand`,
-    );
+    parts.push(`${numberToIndianWords(thousand)} Thousand`);
 
-    number %=
-      1000;
+    number %= 1000;
   }
 
-  const hundred =
-    Math.floor(
-      number / 100,
-    );
+  const hundred = Math.floor(number / 100);
 
   if (hundred) {
-    parts.push(
-      `${ONES[hundred]} Hundred`,
-    );
+    parts.push(`${ONES[hundred]} Hundred`);
 
-    number %=
-      100;
+    number %= 100;
   }
 
   if (number > 0) {
-    parts.push(
-      belowHundredToWords(
-        number,
-      ),
-    );
+    parts.push(belowHundredToWords(number));
   }
 
   return parts.join(" ");
@@ -4314,84 +4226,41 @@ const numberToIndianWords = (
 // GENERAL HELPERS
 // ============================================================
 
-const addMonths = (
-  value,
-  months,
-) => {
+const addMonths = (value, months) => {
   if (!value) {
     return null;
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  const result =
-    new Date(
-      date.getTime(),
-    );
+  const result = new Date(date.getTime());
 
-  result.setUTCMonth(
-    result.getUTCMonth() +
-      Number(
-        months || 0,
-      ),
-  );
+  result.setUTCMonth(result.getUTCMonth() + Number(months || 0));
 
   return result;
 };
 
-const firstValue = (
-  ...values
-) => {
+const firstValue = (...values) => {
   return values.find(
-    (value) =>
-      value !== undefined &&
-      value !== null &&
-      value !== "",
+    (value) => value !== undefined && value !== null && value !== "",
   );
 };
 
-const requiredValue = (
-  value,
-  fieldName,
-) => {
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
-    throw new Error(
-      `Agreement configuration missing: ${fieldName}`,
-    );
+const requiredValue = (value, fieldName) => {
+  if (value === undefined || value === null || value === "") {
+    throw new Error(`Agreement configuration missing: ${fieldName}`);
   }
 
   return value;
 };
 
 const cleanText = (value) => {
-  return String(
-    value ?? "",
-  )
-    .replace(
-      /[\r\n\t]+/g,
-      " ",
-    )
-    .replace(
-      /\s+/g,
-      " ",
-    )
-    .replace(
-      /\s+,/g,
-      ",",
-    )
-    .replace(
-      /\s+\./g,
-      ".",
-    )
-    .replace(
-      /\s+:/g,
-      ":",
-    )
+  return String(value ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+,/g, ",")
+    .replace(/\s+\./g, ".")
+    .replace(/\s+:/g, ":")
     .trim();
 };
 
@@ -4399,59 +4268,31 @@ const cleanText = (value) => {
 // WORD WRAPPING
 // ============================================================
 
-const splitTextIntoLines = ({
-  text,
-  font,
-  fontSize,
-  maxWidth,
-}) => {
-  const words =
-    String(text)
-      .trim()
-      .split(/\s+/);
+const splitTextIntoLines = ({ text, font, fontSize, maxWidth }) => {
+  const words = String(text).trim().split(/\s+/);
 
   const lines = [];
 
   let currentLine = "";
 
-  for (
-    const word
-    of words
-  ) {
-    const testLine =
-      currentLine
-        ? `${currentLine} ${word}`
-        : word;
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
 
-    const width =
-      font
-        .widthOfTextAtSize(
-          testLine,
-          fontSize,
-        );
+    const width = font.widthOfTextAtSize(testLine, fontSize);
 
-    if (
-      width <=
-      maxWidth
-    ) {
-      currentLine =
-        testLine;
+    if (width <= maxWidth) {
+      currentLine = testLine;
     } else {
       if (currentLine) {
-        lines.push(
-          currentLine,
-        );
+        lines.push(currentLine);
       }
 
-      currentLine =
-        word;
+      currentLine = word;
     }
   }
 
   if (currentLine) {
-    lines.push(
-      currentLine,
-    );
+    lines.push(currentLine);
   }
 
   return lines;
@@ -4461,17 +4302,8 @@ const splitTextIntoLines = ({
 // PDF DRAW HELPERS
 // ============================================================
 
-const clearPdfArea = ({
-  page,
-  x,
-  top,
-  width,
-  height,
-}) => {
-  const y =
-    page.getHeight() -
-    top -
-    height;
+const clearPdfArea = ({ page, x, top, width, height }) => {
+  const y = page.getHeight() - top - height;
 
   page.drawRectangle({
     x,
@@ -4479,12 +4311,7 @@ const clearPdfArea = ({
     width,
     height,
 
-    color:
-      rgb(
-        1,
-        1,
-        1,
-      ),
+    color: rgb(1, 1, 1),
   });
 };
 
@@ -4502,60 +4329,36 @@ const drawSingleLine = ({
   clearPdfArea({
     page,
 
-    x:
-      x - 1,
+    x: x - 1,
 
-    top:
-      top - 1,
+    top: top - 1,
 
-    width:
-      width + 2,
+    width: width + 2,
 
-    height:
-      height + 2,
+    height: height + 2,
   });
 
-  let fontSize =
-    maxFontSize;
+  let fontSize = maxFontSize;
 
   while (
-    fontSize >
-      minFontSize &&
-    font
-      .widthOfTextAtSize(
-        String(text),
-        fontSize,
-      ) >
-      width
+    fontSize > minFontSize &&
+    font.widthOfTextAtSize(String(text), fontSize) > width
   ) {
-    fontSize -=
-      0.25;
+    fontSize -= 0.25;
   }
 
-  const y =
-    page.getHeight() -
-    top -
-    fontSize;
+  const y = page.getHeight() - top - fontSize;
 
-  page.drawText(
-    String(text),
-    {
-      x,
-      y,
+  page.drawText(String(text), {
+    x,
+    y,
 
-      size:
-        fontSize,
+    size: fontSize,
 
-      font,
+    font,
 
-      color:
-        rgb(
-          0,
-          0,
-          0,
-        ),
-    },
-  );
+    color: rgb(0, 0, 0),
+  });
 };
 
 const drawWrappedBlock = ({
@@ -4574,95 +4377,57 @@ const drawWrappedBlock = ({
   clearPdfArea({
     page,
 
-    x:
-      x - 1,
+    x: x - 1,
 
-    top:
-      top - 1,
+    top: top - 1,
 
-    width:
-      width + 2,
+    width: width + 2,
 
-    height:
-      height + 2,
+    height: height + 2,
   });
 
-  let fontSize =
-    maxFontSize;
+  let fontSize = maxFontSize;
 
   let lines = [];
 
-  while (
-    fontSize >=
-    minFontSize
-  ) {
-    lines =
-      splitTextIntoLines({
-        text,
-        font,
-        fontSize,
+  while (fontSize >= minFontSize) {
+    lines = splitTextIntoLines({
+      text,
+      font,
+      fontSize,
 
-        maxWidth:
-          width,
-      });
+      maxWidth: width,
+    });
 
-    if (
-      lines.length <=
-      maxLines
-    ) {
+    if (lines.length <= maxLines) {
       break;
     }
 
-    fontSize -=
-      0.25;
+    fontSize -= 0.25;
   }
 
-  if (
-    lines.length >
-    maxLines
-  ) {
+  if (lines.length > maxLines) {
     throw new Error(
       "Agreement text is too long to fit in the PDF template. Please shorten the address/details.",
     );
   }
 
-  const lineHeight =
-    fontSize +
-    lineGap;
+  const lineHeight = fontSize + lineGap;
 
-  lines.forEach(
-    (
-      line,
-      index,
-    ) => {
-      const y =
-        page.getHeight() -
-        top -
-        fontSize -
-        index *
-          lineHeight;
+  lines.forEach((line, index) => {
+    const y = page.getHeight() - top - fontSize - index * lineHeight;
 
-      page.drawText(
-        line,
-        {
-          x,
-          y,
+    page.drawText(line, {
+      x,
+      y,
 
-          size:
-            fontSize,
+      size: fontSize,
 
-          font,
+      font,
 
-          color:
-            rgb(
-              0,
-              0,
-              0,
-            ),
-        },
-      );
-    },
-  );
+      color: rgb(0, 0, 0),
+    });
+  });
 };
 
 // ============================================================
@@ -4683,66 +4448,35 @@ const drawInlineSegments = ({
   clearPdfArea({
     page,
 
-    x:
-      x - 2,
+    x: x - 2,
 
-    top:
-      top - 2,
+    top: top - 2,
 
-    width:
-      width + 4,
+    width: width + 4,
 
-    height:
-      height + 4,
+    height: height + 4,
   });
 
-  const y =
-    page.getHeight() -
-    top -
-    fontSize;
+  const y = page.getHeight() - top - fontSize;
 
-  let cursorX =
-    x;
+  let cursorX = x;
 
-  for (
-    const segment
-    of segments
-  ) {
-    const text =
-      String(
-        segment.text ??
-          "",
-      );
+  for (const segment of segments) {
+    const text = String(segment.text ?? "");
 
-    page.drawText(
-      text,
-      {
-        x:
-          cursorX,
+    page.drawText(text, {
+      x: cursorX,
 
-        y,
+      y,
 
-        size:
-          fontSize,
+      size: fontSize,
 
-        font:
-          segment.font,
+      font: segment.font,
 
-        color:
-          rgb(
-            0,
-            0,
-            0,
-          ),
-      },
-    );
+      color: rgb(0, 0, 0),
+    });
 
-    cursorX +=
-      segment.font
-        .widthOfTextAtSize(
-          text,
-          fontSize,
-        );
+    cursorX += segment.font.widthOfTextAtSize(text, fontSize);
   }
 };
 
@@ -4750,133 +4484,72 @@ const drawInlineSegments = ({
 // RICH TEXT WRAPPING
 // ============================================================
 
-const splitRichTextIntoLines = ({
-  segments,
-  fontSize,
-  maxWidth,
-}) => {
+const splitRichTextIntoLines = ({ segments, fontSize, maxWidth }) => {
   const tokens = [];
 
-  for (
-    const segment
-    of segments
-  ) {
-    const parts =
-      String(
-        segment.text ??
-          "",
-      )
-        .split(
-          /(\s+)/,
-        )
-        .filter(
-          (part) =>
-            part !== "",
-        );
+  for (const segment of segments) {
+    const parts = String(segment.text ?? "")
+      .split(/(\s+)/)
+      .filter((part) => part !== "");
 
-    for (
-      const part
-      of parts
-    ) {
+    for (const part of parts) {
       tokens.push({
-        text:
-          part,
+        text: part,
 
-        font:
-          segment.font,
+        font: segment.font,
       });
     }
   }
 
   const lines = [];
 
-  let currentLine =
-    [];
+  let currentLine = [];
 
-  let currentWidth =
-    0;
+  let currentWidth = 0;
 
-  const pushCurrentLine =
-    () => {
-      while (
-        currentLine.length &&
-        /^\s+$/.test(
-          currentLine[
-            currentLine.length -
-              1
-          ].text,
-        )
-      ) {
-        currentLine.pop();
-      }
-
-      if (
-        currentLine.length
-      ) {
-        lines.push(
-          currentLine,
-        );
-      }
-
-      currentLine =
-        [];
-
-      currentWidth =
-        0;
-    };
-
-  for (
-    const token
-    of tokens
-  ) {
-    const isWhitespace =
-      /^\s+$/.test(
-        token.text,
-      );
-
-    if (
-      isWhitespace &&
-      currentLine.length ===
-        0
+  const pushCurrentLine = () => {
+    while (
+      currentLine.length &&
+      /^\s+$/.test(currentLine[currentLine.length - 1].text)
     ) {
+      currentLine.pop();
+    }
+
+    if (currentLine.length) {
+      lines.push(currentLine);
+    }
+
+    currentLine = [];
+
+    currentWidth = 0;
+  };
+
+  for (const token of tokens) {
+    const isWhitespace = /^\s+$/.test(token.text);
+
+    if (isWhitespace && currentLine.length === 0) {
       continue;
     }
 
-    const tokenWidth =
-      token.font
-        .widthOfTextAtSize(
-          token.text,
-          fontSize,
-        );
+    const tokenWidth = token.font.widthOfTextAtSize(token.text, fontSize);
 
     if (
       !isWhitespace &&
-      currentLine.length >
-        0 &&
-      currentWidth +
-        tokenWidth >
-        maxWidth
+      currentLine.length > 0 &&
+      currentWidth + tokenWidth > maxWidth
     ) {
       pushCurrentLine();
     }
 
-    if (
-      isWhitespace &&
-      currentWidth +
-        tokenWidth >
-        maxWidth
-    ) {
+    if (isWhitespace && currentWidth + tokenWidth > maxWidth) {
       pushCurrentLine();
 
       continue;
     }
 
-    currentLine.push(
-      token,
-    );
+    currentLine.push(token);
 
-    currentWidth +=
-      tokenWidth;
+    currentWidth += tokenWidth;
   }
 
   pushCurrentLine();
@@ -4899,113 +4572,64 @@ const drawRichWrappedBlock = ({
   clearPdfArea({
     page,
 
-    x:
-      x - 2,
+    x: x - 2,
 
-    top:
-      top - 2,
+    top: top - 2,
 
-    width:
-      width + 4,
+    width: width + 4,
 
-    height:
-      height + 4,
+    height: height + 4,
   });
 
-  let fontSize =
-    maxFontSize;
+  let fontSize = maxFontSize;
 
   let lines = [];
 
-  while (
-    fontSize >=
-    minFontSize
-  ) {
-    lines =
-      splitRichTextIntoLines({
-        segments,
+  while (fontSize >= minFontSize) {
+    lines = splitRichTextIntoLines({
+      segments,
 
-        fontSize,
+      fontSize,
 
-        maxWidth:
-          width,
-      });
+      maxWidth: width,
+    });
 
-    if (
-      lines.length <=
-      maxLines
-    ) {
+    if (lines.length <= maxLines) {
       break;
     }
 
-    fontSize -=
-      0.25;
+    fontSize -= 0.25;
   }
 
-  if (
-    lines.length >
-    maxLines
-  ) {
+  if (lines.length > maxLines) {
     throw new Error(
       "Agreement identity details are too long to fit in the PDF template. Please shorten the address/details.",
     );
   }
 
-  const lineHeight =
-    fontSize +
-    lineGap;
+  const lineHeight = fontSize + lineGap;
 
-  lines.forEach(
-    (
-      line,
-      lineIndex,
-    ) => {
-      let cursorX =
-        x;
+  lines.forEach((line, lineIndex) => {
+    let cursorX = x;
 
-      const y =
-        page.getHeight() -
-        top -
-        fontSize -
-        lineIndex *
-          lineHeight;
+    const y = page.getHeight() - top - fontSize - lineIndex * lineHeight;
 
-      for (
-        const token
-        of line
-      ) {
-        page.drawText(
-          token.text,
-          {
-            x:
-              cursorX,
+    for (const token of line) {
+      page.drawText(token.text, {
+        x: cursorX,
 
-            y,
+        y,
 
-            size:
-              fontSize,
+        size: fontSize,
 
-            font:
-              token.font,
+        font: token.font,
 
-            color:
-              rgb(
-                0,
-                0,
-                0,
-              ),
-          },
-        );
+        color: rgb(0, 0, 0),
+      });
 
-        cursorX +=
-          token.font
-            .widthOfTextAtSize(
-              token.text,
-              fontSize,
-            );
-      }
-    },
-  );
+      cursorX += token.font.widthOfTextAtSize(token.text, fontSize);
+    }
+  });
 };
 
 // ============================================================
@@ -5020,252 +4644,178 @@ const buildAgreementData = ({
   generatedAt,
 }) => {
   if (!formData) {
-    throw new Error(
-      "Agreement form data is required",
-    );
+    throw new Error("Agreement form data is required");
   }
 
   // =========================================================
   // CUSTOMER DETAILS
   // =========================================================
 
-  const fullLegalName =
-    cleanText(
-      requiredValue(
-        formData
-          .fullLegalName,
+  const fullLegalName = cleanText(
+    requiredValue(
+      formData.fullLegalName,
 
-        "Full Legal Name",
-      ),
-    );
+      "Full Legal Name",
+    ),
+  );
 
-  const fullAddress =
-    cleanText(
-      requiredValue(
-        formData
-          .fullAddress,
+  const fullAddress = cleanText(
+    requiredValue(
+      formData.fullAddress,
 
-        "Full Address",
-      ),
-    );
+      "Full Address",
+    ),
+  );
 
-  const pan =
-    cleanText(
-      requiredValue(
-        formData.pan,
+  const pan = cleanText(
+    requiredValue(
+      formData.pan,
 
-        "PAN",
-      ),
-    ).toUpperCase();
+      "PAN",
+    ),
+  ).toUpperCase();
 
-  const mobile =
-    cleanText(
-      requiredValue(
-        formData.mobile,
+  const mobile = cleanText(
+    requiredValue(
+      formData.mobile,
 
-        "Mobile",
-      ),
-    );
+      "Mobile",
+    ),
+  );
 
-  const email =
-    cleanText(
-      requiredValue(
-        formData.email,
+  const email = cleanText(
+    requiredValue(
+      formData.email,
 
-        "Email",
-      ),
-    ).toLowerCase();
+      "Email",
+    ),
+  ).toLowerCase();
 
   // =========================================================
   // PAYMENT DATE
   // =========================================================
 
-  const paymentDate =
-    requiredValue(
-      purchase
-        .paidAt,
+  const paymentDate = requiredValue(
+    purchase.paidAt,
 
-      "PurchaseHistory.paidAt",
-    );
+    "PurchaseHistory.paidAt",
+  );
 
   // =========================================================
   // ASSET DETAILS
   // =========================================================
 
-  const assetName =
-    cleanText(
-      requiredValue(
-        firstValue(
-          purchase
-            .assetSnapshot
-            ?.assetName,
-
-          asset
-            .assetName,
-        ),
-
-        "Asset Name",
-      ),
-    );
-
-  const assetCode =
-    cleanText(
-      requiredValue(
-        firstValue(
-          purchase
-            .assetSnapshot
-            ?.assetCode,
-
-          asset
-            .assetCode,
-        ),
-
-        "Asset Code",
-      ),
-    );
-
-  const totalAssetValue =
-    Number(
+  const assetName = cleanText(
+    requiredValue(
       firstValue(
-        purchase
-          .assetSnapshot
-          ?.assetCost,
+        purchase.assetSnapshot?.assetName,
 
-        asset
-          .assetCost,
-
-        0,
+        asset.assetName,
       ),
-    );
 
-  const totalFractions =
-    Number(
+      "Asset Name",
+    ),
+  );
+
+  const assetCode = cleanText(
+    requiredValue(
       firstValue(
-        purchase
-          .assetSnapshot
-          ?.totalFractions,
+        purchase.assetSnapshot?.assetCode,
 
-        asset
-          .totalFractions,
-
-        0,
+        asset.assetCode,
       ),
-    );
 
-  if (
-    !totalFractions ||
-    totalFractions <=
-      0
-  ) {
-    throw new Error(
-      "Asset totalFractions is missing",
-    );
+      "Asset Code",
+    ),
+  );
+
+  const totalAssetValue = Number(
+    firstValue(
+      purchase.assetSnapshot?.assetCost,
+
+      asset.assetCost,
+
+      0,
+    ),
+  );
+
+  const totalFractions = Number(
+    firstValue(
+      purchase.assetSnapshot?.totalFractions,
+
+      asset.totalFractions,
+
+      0,
+    ),
+  );
+
+  if (!totalFractions || totalFractions <= 0) {
+    throw new Error("Asset totalFractions is missing");
   }
 
-  const fractionsAcquired =
-    Number(
-      purchase
-        .fractionsPurchased ||
-        0,
-    );
+  const fractionsAcquired = Number(purchase.fractionsPurchased || 0);
 
-  if (
-    !fractionsAcquired ||
-    fractionsAcquired <=
-      0
-  ) {
-    throw new Error(
-      "Purchased fraction quantity is missing",
-    );
+  if (!fractionsAcquired || fractionsAcquired <= 0) {
+    throw new Error("Purchased fraction quantity is missing");
   }
 
-  const amountPerFraction =
-    Number(
-      firstValue(
-        purchase
-          .amountPerFraction,
+  const amountPerFraction = Number(
+    firstValue(
+      purchase.amountPerFraction,
 
-        purchase
-          .assetSnapshot
-          ?.amountPerFraction,
+      purchase.assetSnapshot?.amountPerFraction,
 
-        asset
-          .amountPerFraction,
+      asset.amountPerFraction,
 
-        0,
-      ),
-    );
+      0,
+    ),
+  );
 
-  const totalAmountPaid =
-    Number(
-      purchase
-        .totalAmount ||
-        0,
-    );
+  const totalAmountPaid = Number(purchase.totalAmount || 0);
 
   // =========================================================
   // RENTAL
   // =========================================================
 
-  const rentalPerFraction =
-    Number(
-      firstValue(
-        purchase
-          .assetSnapshot
-          ?.rentalAmountPerFraction,
-
-        asset
-          .rentalAmountPerFraction,
-
-        0,
-      ),
-    );
-
-  const totalMonthlyRental =
-    rentalPerFraction *
-    fractionsAcquired;
-
-  const rentalCommencementDate =
+  const rentalPerFraction = Number(
     firstValue(
-      purchase
-        .rentalCommencementDate,
+      purchase.assetSnapshot?.rentalAmountPerFraction,
 
-      asset
-        .rentalCommencementDate,
+      asset.rentalAmountPerFraction,
 
-      paymentDate,
-    );
+      0,
+    ),
+  );
 
-  const rentalTermMonths =
-    Number(
-      firstValue(
-        purchase
-          .assetSnapshot
-          ?.durationMonths,
+  const totalMonthlyRental = rentalPerFraction * fractionsAcquired;
 
-        asset
-          .durationMonths,
+  const rentalCommencementDate = firstValue(
+    purchase.rentalCommencementDate,
 
-        0,
-      ),
-    );
+    asset.rentalCommencementDate,
 
-  if (
-    !rentalTermMonths ||
-    rentalTermMonths <=
-      0
-  ) {
-    throw new Error(
-      "Rental term/duration is missing",
-    );
+    paymentDate,
+  );
+
+  const rentalTermMonths = Number(
+    firstValue(
+      purchase.assetSnapshot?.durationMonths,
+
+      asset.durationMonths,
+
+      0,
+    ),
+  );
+
+  if (!rentalTermMonths || rentalTermMonths <= 0) {
+    throw new Error("Rental term/duration is missing");
   }
 
-  const rentalExpiryDate =
-    addMonths(
-      rentalCommencementDate,
+  const rentalExpiryDate = addMonths(
+    rentalCommencementDate,
 
-      rentalTermMonths,
-    );
+    rentalTermMonths,
+  );
 
   // =========================================================
   // BANK DETAILS
@@ -5275,113 +4825,88 @@ const buildAgreementData = ({
   // value + last4.
   // =========================================================
 
-  const requestBank =
-    formData
-      .bankDetails ||
-    {};
+  const requestBank = formData.bankDetails || {};
 
-  const accountHolderName =
-    cleanText(
-      requiredValue(
-        firstValue(
-          requestBank
-            .accountHolderName,
+  const accountHolderName = cleanText(
+    requiredValue(
+      firstValue(
+        requestBank.accountHolderName,
 
-          formData
-            .accountHolderName,
+        formData.accountHolderName,
 
-          bankAccount
-            ?.accountHolderName,
-        ),
-
-        "Bank Account Holder Name",
+        bankAccount?.accountHolderName,
       ),
-    );
 
-  const bankName =
-    cleanText(
-      requiredValue(
-        firstValue(
-          requestBank
-            .bankName,
+      "Bank Account Holder Name",
+    ),
+  );
 
-          formData
-            .bankName,
+  const bankName = cleanText(
+    requiredValue(
+      firstValue(
+        requestBank.bankName,
 
-          bankAccount
-            ?.bankName,
-        ),
+        formData.bankName,
 
-        "Bank Name",
+        bankAccount?.bankName,
       ),
-    );
+
+      "Bank Name",
+    ),
+  );
 
   // =========================================================
   // FULL ACCOUNT NUMBER
   // =========================================================
 
-  const accountNumber =
-    cleanText(
-      requiredValue(
-        firstValue(
-          requestBank
-            .accountNumber,
-
-          formData
-            .accountNumber,
-
-          bankAccount
-            ?.accountNumber,
-        ),
-
-        "Full Bank Account Number",
-      ),
-    );
-
-  const ifscCode =
-    cleanText(
-      requiredValue(
-        firstValue(
-          requestBank
-            .ifscCode,
-
-          formData
-            .ifscCode,
-
-          bankAccount
-            ?.ifscCode,
-        ),
-
-        "IFSC Code",
-      ),
-    ).toUpperCase();
-
-  const accountType =
-    cleanText(
+  const accountNumber = cleanText(
+    requiredValue(
       firstValue(
-        requestBank
-          .accountType,
+        requestBank.accountNumber,
 
-        formData
-          .accountType,
+        formData.accountNumber,
 
-        bankAccount
-          ?.accountType,
-
-        "SAVINGS",
+        bankAccount?.accountNumber,
       ),
-    ).toUpperCase();
+
+      "Full Bank Account Number",
+    ),
+  );
+
+  const ifscCode = cleanText(
+    requiredValue(
+      firstValue(
+        requestBank.ifscCode,
+
+        formData.ifscCode,
+
+        bankAccount?.ifscCode,
+      ),
+
+      "IFSC Code",
+    ),
+  ).toUpperCase();
+
+  const accountType = cleanText(
+    firstValue(
+      requestBank.accountType,
+
+      formData.accountType,
+
+      bankAccount?.accountType,
+
+      "SAVINGS",
+    ),
+  ).toUpperCase();
 
   // =========================================================
   // FINAL DATA
   // =========================================================
 
   return {
-    agreementDate:
-      paymentDate,
+    agreementDate: paymentDate,
 
-    acquisitionDate:
-      paymentDate,
+    acquisitionDate: paymentDate,
 
     paymentDate,
 
@@ -5423,12 +4948,7 @@ const buildAgreementData = ({
 // PAGE 1
 // ============================================================
 
-const fillPageOne = ({
-  page,
-  data,
-  font,
-  boldFont,
-}) => {
+const fillPageOne = ({ page, data, font, boldFont }) => {
   // =========================================================
   // CLEAR OLD PLACEHOLDER AREAS
   // =========================================================
@@ -5494,10 +5014,9 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `This Agreement is electronically executed on ${formatIndianDate(
-        data.agreementDate,
-      )} between:`,
+    text: `This Agreement is electronically executed on ${formatIndianDate(
+      data.agreementDate,
+    )} between:`,
   });
 
   // =========================================================
@@ -5515,76 +5034,61 @@ const fillPageOne = ({
 
     segments: [
       {
-        text:
-          `${data.fullLegalName},`,
+        text: `${data.fullLegalName},`,
 
-        font:
-          boldFont,
+        font: boldFont,
       },
 
       {
-        text:
-          " residing at ",
+        text: " residing at ",
 
         font,
       },
 
       {
-        text:
-          `${data.fullAddress},`,
+        text: `${data.fullAddress},`,
 
-        font:
-          boldFont,
+        font: boldFont,
       },
 
       {
-        text:
-          " bearing PAN ",
+        text: " bearing PAN ",
 
         font,
       },
 
       {
-        text:
-          `${data.pan},`,
+        text: `${data.pan},`,
 
-        font:
-          boldFont,
+        font: boldFont,
       },
 
       {
-        text:
-          " mobile number ",
+        text: " mobile number ",
 
         font,
       },
 
       {
-        text:
-          `${data.mobile},`,
+        text: `${data.mobile},`,
 
-        font:
-          boldFont,
+        font: boldFont,
       },
 
       {
-        text:
-          " and email address ",
+        text: " and email address ",
 
         font,
       },
 
       {
-        text:
-          `${data.email},`,
+        text: `${data.email},`,
 
-        font:
-          boldFont,
+        font: boldFont,
       },
 
       {
-        text:
-          ' hereinafter referred to as the "Fraction Owner".',
+        text: ' hereinafter referred to as the "Fraction Owner".',
 
         font,
       },
@@ -5602,8 +5106,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Asset Name: ${data.assetName}`,
+    text: `Asset Name: ${data.assetName}`,
   });
 
   drawSingleLine({
@@ -5613,8 +5116,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Asset Code: ${data.assetCode}`,
+    text: `Asset Code: ${data.assetCode}`,
   });
 
   // =========================================================
@@ -5636,18 +5138,15 @@ const fillPageOne = ({
 
     segments: [
       {
-        text:
-          "Legal Name: ",
+        text: "Legal Name: ",
 
         font,
       },
 
       {
-        text:
-          data.fullLegalName,
+        text: data.fullLegalName,
 
-        font:
-          boldFont,
+        font: boldFont,
       },
     ],
   });
@@ -5659,10 +5158,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Total Asset Value: INR ${formatAmount(
-        data.totalAssetValue,
-      )}`,
+    text: `Total Asset Value: INR ${formatAmount(data.totalAssetValue)}`,
   });
 
   drawSingleLine({
@@ -5672,8 +5168,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Total Number of fractions: ${data.totalFractions}`,
+    text: `Total Number of fractions: ${data.totalFractions}`,
   });
 
   drawSingleLine({
@@ -5683,10 +5178,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Amount Per Fraction: INR ${formatAmount(
-        data.amountPerFraction,
-      )}`,
+    text: `Amount Per Fraction: INR ${formatAmount(data.amountPerFraction)}`,
   });
 
   drawSingleLine({
@@ -5696,8 +5188,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Number of Fractions Acquired: ${data.fractionsAcquired}`,
+    text: `Number of Fractions Acquired: ${data.fractionsAcquired}`,
   });
 
   drawSingleLine({
@@ -5707,10 +5198,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Total Amount Paid: INR ${formatAmount(
-        data.totalAmountPaid,
-      )}`,
+    text: `Total Amount Paid: INR ${formatAmount(data.totalAmountPaid)}`,
   });
 
   drawSingleLine({
@@ -5720,10 +5208,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Acquisition Date: ${formatIndianDate(
-        data.acquisitionDate,
-      )}`,
+    text: `Acquisition Date: ${formatIndianDate(data.acquisitionDate)}`,
   });
 
   // =========================================================
@@ -5743,10 +5228,9 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Fixed Monthly Rental per Fraction: INR ${formatAmount(
-        data.rentalPerFraction,
-      )}`,
+    text: `Fixed Monthly Rental per Fraction: INR ${formatAmount(
+      data.rentalPerFraction,
+    )}`,
   });
 
   drawSingleLine({
@@ -5762,10 +5246,9 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Total Fixed Monthly Rental: INR ${formatAmount(
-        data.totalMonthlyRental,
-      )}`,
+    text: `Total Fixed Monthly Rental: INR ${formatAmount(
+      data.totalMonthlyRental,
+    )}`,
   });
 
   drawSingleLine({
@@ -5775,10 +5258,9 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Rental Commencement Date: ${formatIndianDate(
-        data.rentalCommencementDate,
-      )}`,
+    text: `Rental Commencement Date: ${formatIndianDate(
+      data.rentalCommencementDate,
+    )}`,
   });
 
   drawSingleLine({
@@ -5788,8 +5270,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Rental Term: ${data.rentalTermMonths} months`,
+    text: `Rental Term: ${data.rentalTermMonths} months`,
   });
 
   drawSingleLine({
@@ -5799,10 +5280,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Rental Expiry Date: ${formatIndianDate(
-        data.rentalExpiryDate,
-      )}`,
+    text: `Rental Expiry Date: ${formatIndianDate(data.rentalExpiryDate)}`,
   });
 
   // =========================================================
@@ -5816,8 +5294,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Account Holder Name: ${data.accountHolderName}`,
+    text: `Account Holder Name: ${data.accountHolderName}`,
   });
 
   drawSingleLine({
@@ -5827,8 +5304,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Bank Name: ${data.bankName}`,
+    text: `Bank Name: ${data.bankName}`,
   });
 
   drawSingleLine({
@@ -5838,8 +5314,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Account Number: ${data.accountNumber}`,
+    text: `Account Number: ${data.accountNumber}`,
   });
 
   drawSingleLine({
@@ -5849,8 +5324,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `IFSC Code: ${data.ifscCode}`,
+    text: `IFSC Code: ${data.ifscCode}`,
   });
 
   drawSingleLine({
@@ -5860,8 +5334,7 @@ const fillPageOne = ({
 
     font,
 
-    text:
-      `Account Type: ${data.accountType}`,
+    text: `Account Type: ${data.accountType}`,
   });
 };
 
@@ -5869,11 +5342,7 @@ const fillPageOne = ({
 // PAGE 2
 // ============================================================
 
-const fillPageTwo = ({
-  page,
-  data,
-  font,
-}) => {
+const fillPageTwo = ({ page, data, font }) => {
   clearPdfArea({
     page,
 
@@ -5905,12 +5374,11 @@ const fillPageTwo = ({
 
     font,
 
-    text:
-      `The Company shall pay the Fraction Owner a fixed monthly rental of INR ${formatAmount(
-        data.totalMonthlyRental,
-      )} (Rupees ${numberToIndianWords(
-        data.totalMonthlyRental,
-      )} Only) for the acquired fractions during the agreed rental term.`,
+    text: `The Company shall pay the Fraction Owner a fixed monthly rental of INR ${formatAmount(
+      data.totalMonthlyRental,
+    )} (Rupees ${numberToIndianWords(
+      data.totalMonthlyRental,
+    )} Only) for the acquired fractions during the agreed rental term.`,
   });
 };
 
@@ -5918,13 +5386,7 @@ const fillPageTwo = ({
 // PAGE 6
 // ============================================================
 
-const fillPageSix = ({
-  page,
-  data,
-  font,
-  boldFont,
-  italicFont,
-}) => {
+const fillPageSix = ({ page, data, font, boldFont, italicFont }) => {
   // =========================================================
   // FRACTION OWNER NAME
   // =========================================================
@@ -5947,17 +5409,13 @@ const fillPageSix = ({
 
     segments: [
       {
-        text:
-          "Name: ",
-        font:
-          boldFont,
+        text: "Name: ",
+        font: boldFont,
       },
 
       {
-        text:
-          data.fullLegalName,
-        font:
-          boldFont,
+        text: data.fullLegalName,
+        font: boldFont,
       },
     ],
   });
@@ -5984,17 +5442,13 @@ const fillPageSix = ({
 
     segments: [
       {
-        text:
-          "PAN No : ",
-        font:
-          boldFont,
+        text: "PAN No : ",
+        font: boldFont,
       },
 
       {
-        text:
-          data.pan,
-        font:
-          boldFont,
+        text: data.pan,
+        font: boldFont,
       },
     ],
   });
@@ -6003,10 +5457,7 @@ const fillPageSix = ({
   // PAYMENT DATE & TIME
   // =========================================================
 
-  const paymentDateTime =
-    formatIndianDateTimeCompact(
-      data.paymentDate,
-    );
+  const paymentDateTime = formatIndianDateTimeCompact(data.paymentDate);
 
   // =========================================================
   // COMPANY DATE & TIME
@@ -6030,17 +5481,13 @@ const fillPageSix = ({
 
     segments: [
       {
-        text:
-          "Date & Time: ",
-        font:
-          boldFont,
+        text: "Date & Time: ",
+        font: boldFont,
       },
 
       {
-        text:
-          paymentDateTime,
-        font:
-          boldFont,
+        text: paymentDateTime,
+        font: boldFont,
       },
     ],
   });
@@ -6064,17 +5511,13 @@ const fillPageSix = ({
 
     segments: [
       {
-        text:
-          "Date & Time: ",
-        font:
-          boldFont,
+        text: "Date & Time: ",
+        font: boldFont,
       },
 
       {
-        text:
-          paymentDateTime,
-        font:
-          boldFont,
+        text: paymentDateTime,
+        font: boldFont,
       },
     ],
   });
@@ -6083,15 +5526,9 @@ const fillPageSix = ({
   // GENERATED DATE / TIME
   // =========================================================
 
-  const generatedDate =
-    formatGeneratedDate(
-      data.generatedAt,
-    );
+  const generatedDate = formatGeneratedDate(data.generatedAt);
 
-  const generatedTime =
-    formatGeneratedTime(
-      data.generatedAt,
-    );
+  const generatedTime = formatGeneratedTime(data.generatedAt);
 
   // =========================================================
   // SIGNING DATE / TIME
@@ -6099,15 +5536,9 @@ const fillPageSix = ({
   // signed timestamp = payment timestamp.
   // =========================================================
 
-  const signingDate =
-    formatIndianDate(
-      data.paymentDate,
-    );
+  const signingDate = formatIndianDate(data.paymentDate);
 
-  const signingTime =
-    `${formatIndianTime(
-      data.paymentDate,
-    )} IST`;
+  const signingTime = `${formatIndianTime(data.paymentDate)} IST`;
 
   // =========================================================
   // CLEAR OLD SIGNING PLACEHOLDERS
@@ -6148,11 +5579,9 @@ const fillPageSix = ({
 
     lineGap: 2.7,
 
-    font:
-      italicFont,
+    font: italicFont,
 
-    text:
-      `This Agreement was generated on ${generatedDate} at ${generatedTime} and digitally signed on ${signingDate} at ${signingTime}.`,
+    text: `This Agreement was generated on ${generatedDate} at ${generatedTime} and digitally signed on ${signingDate} at ${signingTime}.`,
   });
 };
 
@@ -6160,508 +5589,348 @@ const fillPageSix = ({
 // MAIN AGREEMENT PDF GENERATOR
 // ============================================================
 
-export const generateAgreementPdf =
-  async (
-    purchaseHistoryId,
-    formData,
-  ) => {
-    let purchase =
-      null;
+export const generateAgreementPdf = async (purchaseHistoryId, formData) => {
+  let purchase = null;
 
-    /*
-     * If user already generated an agreement before,
-     * keep its URL so that a failed regeneration does not
-     * destroy the previous successful agreement.
-     */
+  /*
+   * If user already generated an agreement before,
+   * keep its URL so that a failed regeneration does not
+   * destroy the previous successful agreement.
+   */
 
-    let previousAgreementUrl =
-      null;
+  let previousAgreementUrl = null;
 
-    /*
-     * Capture generation time exactly once.
-     */
+  /*
+   * Capture generation time exactly once.
+   */
 
-    const generatedAt =
-      getIndianTime();
+  const generatedAt = getIndianTime();
 
-    try {
-      // ======================================================
-      // PURCHASE HISTORY
-      // ======================================================
+  try {
+    // ======================================================
+    // PURCHASE HISTORY
+    // ======================================================
 
-      purchase =
-        await PurchaseHistory
-          .findById(
-            purchaseHistoryId,
-          )
-          .select(
-            "+documentGenerationError",
-          );
+    purchase = await PurchaseHistory.findById(purchaseHistoryId).select(
+      "+documentGenerationError",
+    );
 
-      if (!purchase) {
-        const error =
-          new Error(
-            "Purchase history not found",
-          );
+    if (!purchase) {
+      const error = new Error("Purchase history not found");
 
-        error.statusCode =
-          404;
-
-        throw error;
-      }
-
-      // ======================================================
-      // PAYMENT MUST BE SUCCESS
-      // ======================================================
-
-      if (
-        purchase
-          .paymentStatus !==
-        "SUCCESS"
-      ) {
-        const error =
-          new Error(
-            "Agreement can only be generated after successful payment",
-          );
-
-        error.statusCode =
-          400;
-
-        throw error;
-      }
-
-      // ======================================================
-      // PAID AT REQUIRED
-      // ======================================================
-
-      if (
-        !purchase
-          .paidAt
-      ) {
-        const error =
-          new Error(
-            "Payment date is not available in purchase history",
-          );
-
-        error.statusCode =
-          400;
-
-        throw error;
-      }
-
-      // ======================================================
-      // FORM DATA REQUIRED
-      // ======================================================
-
-      if (!formData) {
-        const error =
-          new Error(
-            "Agreement form data is required",
-          );
-
-        error.statusCode =
-          400;
-
-        throw error;
-      }
-
-      if (
-        !formData
-          .fullLegalName ||
-        !formData
-          .fullAddress ||
-        !formData
-          .pan ||
-        !formData
-          .mobile ||
-        !formData
-          .email
-      ) {
-        const error =
-          new Error(
-            "Complete agreement form details are required",
-          );
-
-        error.statusCode =
-          400;
-
-        throw error;
-      }
-
-      // ======================================================
-      // MULTIPLE PDF GENERATION
-      //
-      // COMPLETED agreement DOES NOT block regeneration.
-      // ======================================================
-
-      previousAgreementUrl =
-        purchase
-          .documents
-          ?.digitalAgreement
-          ?.url ||
-        null;
-
-      // ======================================================
-      // MARK PROCESSING
-      // ======================================================
-
-      purchase
-        .documentGenerationStatus =
-        "PROCESSING";
-
-      purchase
-        .documentGenerationError =
-        null;
-
-      await purchase.save();
-
-      // ======================================================
-      // ASSET
-      // ======================================================
-
-      const asset =
-        await Asset.findById(
-          purchase
-            .assetId,
-        );
-
-      if (!asset) {
-        const error =
-          new Error(
-            "Asset not found",
-          );
-
-        error.statusCode =
-          404;
-
-        throw error;
-      }
-
-      // ======================================================
-      // BANK ACCOUNT
-      // ======================================================
-
-      let bankAccount =
-        null;
-
-      if (
-        purchase
-          .bankAccountId
-      ) {
-        bankAccount =
-          await BankAccount
-            .findById(
-              purchase
-                .bankAccountId,
-            )
-            .lean();
-      }
-
-      if (
-        !bankAccount &&
-        !formData
-          .bankDetails
-      ) {
-        const error =
-          new Error(
-            "Bank account details are not available for agreement generation",
-          );
-
-        error.statusCode =
-          400;
-
-        throw error;
-      }
-
-      // ======================================================
-      // BUILD AGREEMENT DATA
-      // ======================================================
-
-      const agreementData =
-        buildAgreementData({
-          purchase,
-
-          asset,
-
-          bankAccount,
-
-          formData,
-
-          generatedAt,
-        });
-
-      // ======================================================
-      // READ TEMPLATE
-      // ======================================================
-
-      const templateBytes =
-        await fs.readFile(
-          AGREEMENT_TEMPLATE_PATH,
-        );
-
-      // ======================================================
-      // LOAD PDF
-      // ======================================================
-
-      const pdfDoc =
-        await PDFDocument.load(
-          templateBytes,
-          {
-            updateMetadata:
-              false,
-          },
-        );
-
-      const pages =
-        pdfDoc.getPages();
-
-      if (
-        pages.length !==
-        6
-      ) {
-        throw new Error(
-          `Invalid agreement template. Expected 6 pages but found ${pages.length}.`,
-        );
-      }
-
-      // ======================================================
-      // FONTS
-      // ======================================================
-
-      const font =
-        await pdfDoc.embedFont(
-          StandardFonts
-            .Helvetica,
-        );
-
-      const boldFont =
-        await pdfDoc.embedFont(
-          StandardFonts
-            .HelveticaBold,
-        );
-
-      const italicFont =
-        await pdfDoc.embedFont(
-          StandardFonts
-            .HelveticaOblique,
-        );
-
-      // ======================================================
-      // PAGE 1
-      // ======================================================
-
-      fillPageOne({
-        page:
-          pages[0],
-
-        data:
-          agreementData,
-
-        font,
-
-        boldFont,
-      });
-
-      // ======================================================
-      // PAGE 2
-      // ======================================================
-
-      fillPageTwo({
-        page:
-          pages[1],
-
-        data:
-          agreementData,
-
-        font,
-      });
-
-      /*
-       * Pages 3, 4 and 5 have no dynamic placeholders
-       * in the current template.
-       */
-
-      // ======================================================
-      // PAGE 6
-      // ======================================================
-
-      fillPageSix({
-        page:
-          pages[5],
-
-        data:
-          agreementData,
-
-        font,
-
-        boldFont,
-
-        italicFont,
-      });
-
-      /*
-       * Do not flatten existing AcroForm / signature fields.
-       */
-
-      // ======================================================
-      // SAVE PDF
-      // ======================================================
-
-      const pdfBytes =
-        await pdfDoc.save();
-
-      const pdfBuffer =
-        Buffer.from(
-          pdfBytes,
-        );
-
-      // ======================================================
-      // AGREEMENT NUMBER
-      // ======================================================
-
-      const suffix =
-        purchase
-          ._id
-          .toString()
-          .slice(-10)
-          .toUpperCase();
-
-      const agreementNumber =
-        `BND-AGR-${suffix}`;
-
-      // ======================================================
-      // UNIQUE FILE NAME
-      // ======================================================
-
-      const generationId =
-        Date.now();
-
-      const fileName =
-        `${agreementNumber}-${generationId}.pdf`;
-
-      // ======================================================
-      // IMAGEKIT UPLOAD
-      // ======================================================
-
-      const uploadedPdf =
-        await uploadAgreementPdf(
-          pdfBuffer,
-
-          fileName,
-        );
-
-      if (
-        !uploadedPdf
-          ?.url
-      ) {
-        throw new Error(
-          "Agreement PDF URL was not returned by ImageKit",
-        );
-      }
-
-      // ======================================================
-      // SAVE LATEST AGREEMENT URL
-      // ======================================================
-
-      purchase.documents =
-        purchase.documents ||
-        {};
-
-      purchase
-        .documents
-        .digitalAgreement =
-        {
-          url:
-            uploadedPdf
-              .url,
-        };
-
-      purchase
-        .documentGenerationStatus =
-        "COMPLETED";
-
-      purchase
-        .documentGenerationError =
-        null;
-
-      await purchase.save();
-
-      // ======================================================
-      // SUCCESS
-      // ======================================================
-
-      return {
-        success:
-          true,
-
-        purchaseId:
-          purchase._id,
-
-        documentGenerationStatus:
-          purchase
-            .documentGenerationStatus,
-
-        digitalAgreement: {
-          url:
-            uploadedPdf
-              .url,
-        },
-
-        generatedAt,
-      };
-    } catch (
-      error
-    ) {
-      console.error(
-        "GENERATE AGREEMENT PDF ERROR:",
-        error,
-      );
-
-      // ======================================================
-      // FAILURE HANDLING
-      // ======================================================
-
-      if (
-        purchase?._id
-      ) {
-        try {
-          const fallbackAgreementUrl =
-            previousAgreementUrl ||
-            purchase
-              .documents
-              ?.digitalAgreement
-              ?.url ||
-            null;
-
-          const fallbackStatus =
-            fallbackAgreementUrl
-              ? "COMPLETED"
-              : "FAILED";
-
-          await PurchaseHistory
-            .findByIdAndUpdate(
-              purchase._id,
-
-              {
-                $set: {
-                  documentGenerationStatus:
-                    fallbackStatus,
-
-                  documentGenerationError:
-                    error.message,
-                },
-              },
-            );
-        } catch (
-          statusUpdateError
-        ) {
-          console.error(
-            "FAILED TO UPDATE DOCUMENT STATUS:",
-            statusUpdateError,
-          );
-        }
-      }
+      error.statusCode = 404;
 
       throw error;
     }
-  };
+
+    // ======================================================
+    // PAYMENT MUST BE SUCCESS
+    // ======================================================
+
+    if (purchase.paymentStatus !== "SUCCESS") {
+      const error = new Error(
+        "Agreement can only be generated after successful payment",
+      );
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+
+    // ======================================================
+    // PAID AT REQUIRED
+    // ======================================================
+
+    if (!purchase.paidAt) {
+      const error = new Error(
+        "Payment date is not available in purchase history",
+      );
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+
+    // ======================================================
+    // FORM DATA REQUIRED
+    // ======================================================
+
+    if (!formData) {
+      const error = new Error("Agreement form data is required");
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+
+    if (
+      !formData.fullLegalName ||
+      !formData.fullAddress ||
+      !formData.pan ||
+      !formData.mobile ||
+      !formData.email
+    ) {
+      const error = new Error("Complete agreement form details are required");
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+
+    // ======================================================
+    // MULTIPLE PDF GENERATION
+    //
+    // COMPLETED agreement DOES NOT block regeneration.
+    // ======================================================
+
+    previousAgreementUrl = purchase.documents?.digitalAgreement?.url || null;
+
+    // ======================================================
+    // MARK PROCESSING
+    // ======================================================
+
+    purchase.documentGenerationStatus = "PROCESSING";
+
+    purchase.documentGenerationError = null;
+
+    await purchase.save();
+
+    // ======================================================
+    // ASSET
+    // ======================================================
+
+    const asset = await Asset.findById(purchase.assetId);
+
+    if (!asset) {
+      const error = new Error("Asset not found");
+
+      error.statusCode = 404;
+
+      throw error;
+    }
+
+    // ======================================================
+    // BANK ACCOUNT
+    // ======================================================
+
+    let bankAccount = null;
+
+    if (purchase.bankAccountId) {
+      bankAccount = await BankAccount.findById(purchase.bankAccountId).lean();
+    }
+
+    if (!bankAccount && !formData.bankDetails) {
+      const error = new Error(
+        "Bank account details are not available for agreement generation",
+      );
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+
+    // ======================================================
+    // BUILD AGREEMENT DATA
+    // ======================================================
+
+    const agreementData = buildAgreementData({
+      purchase,
+
+      asset,
+
+      bankAccount,
+
+      formData,
+
+      generatedAt,
+    });
+
+    // ======================================================
+    // READ TEMPLATE
+    // ======================================================
+
+    const templateBytes = await fs.readFile(AGREEMENT_TEMPLATE_PATH);
+
+    // ======================================================
+    // LOAD PDF
+    // ======================================================
+
+    const pdfDoc = await PDFDocument.load(templateBytes, {
+      updateMetadata: false,
+    });
+
+    const pages = pdfDoc.getPages();
+
+    if (pages.length !== 6) {
+      throw new Error(
+        `Invalid agreement template. Expected 6 pages but found ${pages.length}.`,
+      );
+    }
+
+    // ======================================================
+    // FONTS
+    // ======================================================
+
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    const italicFont = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+    // ======================================================
+    // PAGE 1
+    // ======================================================
+
+    fillPageOne({
+      page: pages[0],
+
+      data: agreementData,
+
+      font,
+
+      boldFont,
+    });
+
+    // ======================================================
+    // PAGE 2
+    // ======================================================
+
+    fillPageTwo({
+      page: pages[1],
+
+      data: agreementData,
+
+      font,
+    });
+
+    /*
+     * Pages 3, 4 and 5 have no dynamic placeholders
+     * in the current template.
+     */
+
+    // ======================================================
+    // PAGE 6
+    // ======================================================
+
+    fillPageSix({
+      page: pages[5],
+
+      data: agreementData,
+
+      font,
+
+      boldFont,
+
+      italicFont,
+    });
+
+    /*
+     * Do not flatten existing AcroForm / signature fields.
+     */
+
+    // ======================================================
+    // SAVE PDF
+    // ======================================================
+
+    const pdfBytes = await pdfDoc.save();
+
+    const pdfBuffer = Buffer.from(pdfBytes);
+
+    // ======================================================
+    // AGREEMENT NUMBER
+    // ======================================================
+
+    const suffix = purchase._id.toString().slice(-10).toUpperCase();
+
+    const agreementNumber = `BND-AGR-${suffix}`;
+
+    // ======================================================
+    // UNIQUE FILE NAME
+    // ======================================================
+
+    const generationId = Date.now();
+
+    const fileName = `${agreementNumber}-${generationId}.pdf`;
+
+    // ======================================================
+    // IMAGEKIT UPLOAD
+    // ======================================================
+
+    const uploadedPdf = await uploadAgreementPdf(
+      pdfBuffer,
+
+      fileName,
+    );
+
+    if (!uploadedPdf?.url) {
+      throw new Error("Agreement PDF URL was not returned by ImageKit");
+    }
+
+    // ======================================================
+    // SAVE LATEST AGREEMENT URL
+    // ======================================================
+
+    purchase.documents = purchase.documents || {};
+
+    purchase.documents.digitalAgreement = {
+      url: uploadedPdf.url,
+    };
+
+    purchase.documentGenerationStatus = "COMPLETED";
+
+    purchase.documentGenerationError = null;
+
+    await purchase.save();
+
+    // ======================================================
+    // SUCCESS
+    // ======================================================
+
+    return {
+      success: true,
+
+      purchaseId: purchase._id,
+
+      documentGenerationStatus: purchase.documentGenerationStatus,
+
+      digitalAgreement: {
+        url: uploadedPdf.url,
+      },
+
+      generatedAt,
+    };
+  } catch (error) {
+    console.error("GENERATE AGREEMENT PDF ERROR:", error);
+
+    // ======================================================
+    // FAILURE HANDLING
+    // ======================================================
+
+    if (purchase?._id) {
+      try {
+        const fallbackAgreementUrl =
+          previousAgreementUrl ||
+          purchase.documents?.digitalAgreement?.url ||
+          null;
+
+        const fallbackStatus = fallbackAgreementUrl ? "COMPLETED" : "FAILED";
+
+        await PurchaseHistory.findByIdAndUpdate(
+          purchase._id,
+
+          {
+            $set: {
+              documentGenerationStatus: fallbackStatus,
+
+              documentGenerationError: error.message,
+            },
+          },
+        );
+      } catch (statusUpdateError) {
+        console.error("FAILED TO UPDATE DOCUMENT STATUS:", statusUpdateError);
+      }
+    }
+
+    throw error;
+  }
+};
