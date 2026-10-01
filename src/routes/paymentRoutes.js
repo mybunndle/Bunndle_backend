@@ -5,7 +5,8 @@ import {
 
    createOrder,
    verifyPayment,
-   razorpayWebhook
+   razorpayWebhook,
+   getAllOrders
 
 } from "../controllers/paymentcontroller.js";
 
@@ -14,5 +15,6 @@ const router = express.Router();
 router.post("/create-order",authMiddleware, createOrder);
 router.post("/verify-payment",authMiddleware, verifyPayment);
 router.post("/webhook", razorpayWebhook);
+router.get("/get_all_orders",authMiddleware, getAllOrders);
 
 export default router;

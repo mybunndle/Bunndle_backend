@@ -1551,3 +1551,47 @@ export const razorpayWebhook =
 //    }
 
 // };
+
+
+
+export const getAllOrders = async (req, res) => {
+  try {
+    const orders = await Order.find()
+      .populate({
+        path: "userId",
+        select: "name email phone",
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const formattedOrders = orders.map((order) => ({
+      ...order,
+
+      userDetails: order.userId
+        ? {
+            name: order.userId.name || "",
+            email: order.userId.email || "",
+            number: order.userId.phone || "",
+            amount: order.totalAmount || 0,
+          }
+        : null,
+
+      userId: order.userId?._id || order.userId,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: "Orders fetched successfully",
+      totalOrders: formattedOrders.length,
+      data: formattedOrders,
+    });
+  } catch (error) {
+    console.error("GET ALL ORDERS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching orders",
+      error: error.message,
+    });
+  }
+};
