@@ -1599,9 +1599,9 @@ export const deleteAccount = async (req, res) => {
 // user.services.js
 export const getRecentRegisteredUsers = async (req, res) => {
   try {
-    const { type = "all", days } = req.body;
-
     const {
+      type,
+      days,
       page = 1,
       limit = 20,
     } = req.query;
@@ -1639,8 +1639,7 @@ export const getRecentRegisteredUsers = async (req, res) => {
       const parsedDays = Number(days);
 
       if (
-        days === undefined ||
-        days === null ||
+        !days ||
         !Number.isInteger(parsedDays) ||
         parsedDays <= 0
       ) {
@@ -1698,9 +1697,9 @@ export const getRecentRegisteredUsers = async (req, res) => {
       success: true,
 
       message:
-        type === "days"
-          ? `Users registered in last ${filterInfo.days} days fetched successfully`
-          : "All users fetched successfully",
+        type === "all"
+          ? "All users fetched successfully"
+          : `Users registered in last ${filterInfo.days} days fetched successfully`,
 
       count: users.length,
 
@@ -1718,10 +1717,7 @@ export const getRecentRegisteredUsers = async (req, res) => {
       filter: filterInfo,
     });
   } catch (error) {
-    console.error(
-      "GET REGISTERED USERS ERROR:",
-      error
-    );
+    console.error("GET REGISTERED USERS ERROR:", error);
 
     return res.status(500).json({
       success: false,
