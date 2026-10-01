@@ -1599,24 +1599,12 @@ export const deleteAccount = async (req, res) => {
 // user.services.js
 export const getRecentRegisteredUsers = async (req, res) => {
   try {
-    const { days } = req.body;
+    const { type = "all", days } = req.body;
+
     const {
       page = 1,
       limit = 20,
     } = req.query;
-
-    const parsedDays = Number(days);
-
-    if (
-      !days ||
-      !Number.isInteger(parsedDays) ||
-      parsedDays <= 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Days must be a valid positive integer",
-      });
-    }
 
     const parsedPage = Math.max(
       parseInt(page, 10) || 1,
@@ -1630,19 +1618,69 @@ export const getRecentRegisteredUsers = async (req, res) => {
 
     const skip = (parsedPage - 1) * parsedLimit;
 
-    const endDate = new Date();
+    let filter = {};
+    let filterInfo = {};
 
-    const startDate = new Date(
-      endDate.getTime() -
-        parsedDays * 24 * 60 * 60 * 1000
-    );
+    // =========================
+    // ALL USERS
+    // =========================
+    if (type === "all") {
+      filter = {};
 
-    const filter = {
-      createdAt: {
-        $gte: startDate,
-        $lte: endDate,
-      },
-    };
+      filterInfo = {
+        type: "all",
+      };
+    }
+
+    // =========================
+    // USERS BY DAYS
+    // =========================
+    else if (type === "days") {
+      const parsedDays = Number(days);
+
+      if (
+        days === undefined ||
+        days === null ||
+        !Number.isInteger(parsedDays) ||
+        parsedDays <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Days must be a valid positive integer",
+        });
+      }
+
+      const endDate = new Date();
+
+      const startDate = new Date(
+        endDate.getTime() -
+          parsedDays * 24 * 60 * 60 * 1000
+      );
+
+      filter = {
+        createdAt: {
+          $gte: startDate,
+          $lte: endDate,
+        },
+      };
+
+      filterInfo = {
+        type: "days",
+        days: parsedDays,
+        from: startDate,
+        to: endDate,
+      };
+    }
+
+    // =========================
+    // INVALID TYPE
+    // =========================
+    else {
+      return res.status(400).json({
+        success: false,
+        message: "Type must be either 'all' or 'days'",
+      });
+    }
 
     const [users, totalUsers] = await Promise.all([
       userModel
@@ -1658,9 +1696,16 @@ export const getRecentRegisteredUsers = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Recent registered users fetched successfully",
+
+      message:
+        type === "days"
+          ? `Users registered in last ${filterInfo.days} days fetched successfully`
+          : "All users fetched successfully",
+
       count: users.length,
+
       data: users,
+
       pagination: {
         totalUsers,
         currentPage: parsedPage,
@@ -1669,15 +1714,12 @@ export const getRecentRegisteredUsers = async (req, res) => {
         ),
         limit: parsedLimit,
       },
-      filter: {
-        days: parsedDays,
-        from: startDate,
-        to: endDate,
-      },
+
+      filter: filterInfo,
     });
   } catch (error) {
     console.error(
-      "GET RECENT REGISTERED USERS ERROR:",
+      "GET REGISTERED USERS ERROR:",
       error
     );
 
