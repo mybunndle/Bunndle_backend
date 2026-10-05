@@ -131,6 +131,58 @@ export const createCoAsset = async (req, res) => {
 //   }
 // };
 
+// export const getCoAssets = async (req, res) => {
+//   try {
+//     const assets = await Asset.find({
+//       status: "ACTIVE",
+//     })
+//       .sort({
+//         amountPerFraction: 1,
+//       })
+//       .lean();
+
+//     const updatedAssets = assets.map((asset) => {
+//       // Maximum 80% users ke liye
+//       const publicLimit = Math.floor(
+//         asset.totalFractions * 0.8
+//       );
+
+//       // Already sold/reserved fractions
+//       const usedFractions =
+//         asset.totalFractions -
+//         asset.availableFractions;
+
+//       // Actual fractions jo abhi users buy kar sakte hain
+//       const publicAvailableFractions = Math.max(
+//         0,
+//         publicLimit - usedFractions
+//       );
+
+//       return {
+//         ...asset,
+
+//         // Original DB value ko response me replace kar rahe hain
+//         availableFractions:
+//           publicAvailableFractions,
+//       };
+//     });
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Co-Assets retrieved successfully",
+//       count: updatedAssets.length,
+//       data: updatedAssets,
+//     });
+//   } catch (error) {
+//     console.error("Get Co-Assets Error:", error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
 export const getCoAssets = async (req, res) => {
   try {
     const assets = await Asset.find({
@@ -161,9 +213,18 @@ export const getCoAssets = async (req, res) => {
       return {
         ...asset,
 
-        // Original DB value ko response me replace kar rahe hain
+        // Previous logic same
         availableFractions:
-          publicAvailableFractions,
+          publicAvailableFractions-asset.dummyFractions,
+
+        // Only extra dummy-related fields
+        dummyFractions:
+          Number(asset.dummyFractions || 0),
+
+        realAvailableFractions:
+          asset.availableFractions,
+
+        publicLimit,
       };
     });
 
@@ -182,6 +243,7 @@ export const getCoAssets = async (req, res) => {
     });
   }
 };
+
 export const getCoAssetById = async (req, res) => {
   try {
     const asset = await Asset.findById(req.params.id);
