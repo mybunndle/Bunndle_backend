@@ -313,11 +313,9 @@ export const createOrder = async (req, res) => {
     try {
       await Payment.create({
         userId,
-
         orderId: order._id,
-
         razorpayOrderId:
-          razorpayOrder.id,
+        razorpayOrder.id,
 
         amount: order.totalAmount,
 
@@ -1554,6 +1552,50 @@ export const razorpayWebhook =
 
 
 
+// export const getAllOrders = async (req, res) => {
+//   try {
+//     const orders = await Order.find()
+//       .populate({
+//         path: "userId",
+//         select: "name email phone",
+//       })
+//       .sort({ createdAt: -1 })
+//       .lean();
+
+//     const formattedOrders = orders.map((order) => ({
+//       ...order,
+
+//       userDetails: order.userId
+//         ? {
+//             name: order.userId.name || "",
+//             email: order.userId.email || "",
+//             number: order.userId.phone || "",
+//             amount: order.totalAmount || 0,
+//           }
+//         : null,
+
+//       userId: order.userId?._id || order.userId,
+//     }));
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Orders fetched successfully",
+//       totalOrders: formattedOrders.length,
+//       data: formattedOrders,
+//     });
+//   } catch (error) {
+//     console.error("GET ALL ORDERS ERROR:", error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Something went wrong while fetching orders",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+
 export const getAllOrders = async (req, res) => {
   try {
     const orders = await Order.find()
@@ -1577,6 +1619,32 @@ export const getAllOrders = async (req, res) => {
         : null,
 
       userId: order.userId?._id || order.userId,
+
+      createdAtIST: order.createdAt
+        ? new Date(order.createdAt).toLocaleString("en-IN", {
+            timeZone: "Asia/Kolkata",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          })
+        : null,
+
+      updatedAtIST: order.updatedAt
+        ? new Date(order.updatedAt).toLocaleString("en-IN", {
+            timeZone: "Asia/Kolkata",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          })
+        : null,
     }));
 
     return res.status(200).json({
