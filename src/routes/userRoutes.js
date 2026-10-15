@@ -18,7 +18,8 @@ import {
   uploadProfile,
   deleteAccount,
   changePassword,
-  getRecentRegisteredUsers
+  getRecentRegisteredUsers,
+  searchUsers
 }from "../controllers/usercontroller.js";
 
 import { uploadProfileImage } from "../middleware/upload.js";
@@ -95,6 +96,6 @@ router.post("/apple_login", appleLogin);
 router.delete("/delete-account", authMiddleware, deleteAccount);
 //get all users
 router.get("/get_users",adminAuthMiddleware, getRecentRegisteredUsers);
-
+router.get("/search-users", adminAuthMiddleware, searchUsers );
 
 export default router;

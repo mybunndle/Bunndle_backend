@@ -1726,3 +1726,99 @@ export const getRecentRegisteredUsers = async (req, res) => {
     });
   }
 };
+
+
+
+export const searchUsers = async (req, res) => {
+  try {
+    const { search, page = 1, limit = 20 } = req.query;
+
+    if (typeof search !== "string" || !search.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Search query is required",
+      });
+    }
+
+    const parsedPage = Math.max(
+      parseInt(page, 10) || 1,
+      1
+    );
+
+    const parsedLimit = Math.min(
+      Math.max(parseInt(limit, 10) || 20, 1),
+      100
+    );
+
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    const searchValue = search.trim();
+
+    const escapedSearch = searchValue.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+
+    const filter = {
+      $or: [
+        {
+          name: {
+            $regex: escapedSearch,
+            $options: "i",
+          },
+        },
+        {
+          email: {
+            $regex: escapedSearch,
+            $options: "i",
+          },
+        },
+        {
+          phone: {
+            $regex: escapedSearch,
+          },
+        },
+      ],
+    };
+
+    const [users, totalUsers] = await Promise.all([
+      userModel
+        .find(filter)
+        .select("-password -otp -refreshToken")
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(parsedLimit)
+        .lean(),
+
+      userModel.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Users searched successfully",
+
+      count: users.length,
+      data: users,
+
+      pagination: {
+        totalUsers,
+        currentPage: parsedPage,
+        totalPages: Math.ceil(
+          totalUsers / parsedLimit
+        ),
+        limit: parsedLimit,
+      },
+
+      filter: {
+        search: searchValue,
+      },
+    });
+  } catch (error) {
+    console.error("SEARCH USERS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while searching users",
+    });
+  }
+};
