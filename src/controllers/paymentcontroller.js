@@ -1,4 +1,3 @@
-
 import Order from "../model/OrderModel.js";
 import Payment from "../model/PaymentModel.js";
 import Asset from "../model/coAssetModel.js";
@@ -12,10 +11,7 @@ import {
   verifyRazorpayWebhookSignature,
 } from "../utils/razorpaySignature.js";
 
-import {
-  finalizeSuccessfulPayment,
-} from "../services/finalizeSuccessfulPaymentService.js";
-
+import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPaymentService.js";
 
 // Helper: safely expire order and release reserved fractions
 const expireAndReleaseOrder = async (orderId) => {
@@ -37,7 +33,7 @@ const expireAndReleaseOrder = async (orderId) => {
         {
           returnDocument: "after",
           session,
-        }
+        },
       );
 
       // Already handled by payment/cron/another request
@@ -60,13 +56,11 @@ const expireAndReleaseOrder = async (orderId) => {
         },
         {
           session,
-        }
+        },
       );
 
       if (assetResult.modifiedCount !== 1) {
-        throw new Error(
-          `Unable to release fractions for order ${order._id}`
-        );
+        throw new Error(`Unable to release fractions for order ${order._id}`);
       }
 
       await Payment.updateMany(
@@ -81,7 +75,7 @@ const expireAndReleaseOrder = async (orderId) => {
         },
         {
           session,
-        }
+        },
       );
     });
   } finally {
@@ -117,10 +111,7 @@ export const createOrder = async (req, res) => {
 
     const fractionCount = Number(fractions);
 
-    if (
-      !Number.isInteger(fractionCount) ||
-      fractionCount <= 0
-    ) {
+    if (!Number.isInteger(fractionCount) || fractionCount <= 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid fraction count",
@@ -131,9 +122,7 @@ export const createOrder = async (req, res) => {
     // KYC CHECK
     // =========================
 
-    const user = await User.findById(userId).select(
-      "kycStatus isKycVerified"
-    );
+    const user = await User.findById(userId).select("kycStatus isKycVerified");
 
     if (!user) {
       return res.status(404).json({
@@ -142,14 +131,10 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    if (
-      user.kycStatus !== "VERIFIED" ||
-      !user.isKycVerified
-    ) {
+    if (user.kycStatus !== "VERIFIED" || !user.isKycVerified) {
       return res.status(403).json({
         success: false,
-        message:
-          "KYC verification is required before making an investment.",
+        message: "KYC verification is required before making an investment.",
       });
     }
 
@@ -190,10 +175,7 @@ export const createOrder = async (req, res) => {
                 {
                   $add: [
                     {
-                      $subtract: [
-                        "$totalFractions",
-                        "$availableFractions",
-                      ],
+                      $subtract: ["$totalFractions", "$availableFractions"],
                     },
                     fractionCount,
                   ],
@@ -201,10 +183,7 @@ export const createOrder = async (req, res) => {
 
                 {
                   $floor: {
-                    $multiply: [
-                      "$totalFractions",
-                      0.8,
-                    ],
+                    $multiply: ["$totalFractions", 0.8],
                   },
                 },
               ],
@@ -221,12 +200,12 @@ export const createOrder = async (req, res) => {
           {
             returnDocument: "after",
             session,
-          }
+          },
         );
 
         if (!asset) {
           const error = new Error(
-            "Requested fractions are not available. Maximum 80% of the asset can be purchased by users."
+            "Requested fractions are not available. Maximum 80% of the asset can be purchased by users.",
           );
 
           error.statusCode = 400;
@@ -234,36 +213,29 @@ export const createOrder = async (req, res) => {
           throw error;
         }
 
-        const amount =
-          fractionCount *
-          asset.amountPerFraction;
+        const amount = fractionCount * asset.amountPerFraction;
 
-        const createdOrders =
-          await Order.create(
-            [
-              {
-                userId,
-                assetId,
-
-                fractions: fractionCount,
-
-                amountPerFraction:
-                  asset.amountPerFraction,
-
-                totalAmount: amount,
-
-                status: "PENDING_PAYMENT",
-
-                expiresAt: new Date(
-                  Date.now() +
-                    5 * 60 * 1000
-                ),
-              },
-            ],
+        const createdOrders = await Order.create(
+          [
             {
-              session,
-            }
-          );
+              userId,
+              assetId,
+
+              fractions: fractionCount,
+
+              amountPerFraction: asset.amountPerFraction,
+
+              totalAmount: amount,
+
+              status: "PENDING_PAYMENT",
+
+              expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+            },
+          ],
+          {
+            session,
+          },
+        );
 
         order = createdOrders[0];
       });
@@ -279,30 +251,21 @@ export const createOrder = async (req, res) => {
     let razorpayOrder;
 
     try {
-      razorpayOrder =
-        await razorpay.orders.create({
-          amount: Math.round(
-            order.totalAmount * 100
-          ),
+      razorpayOrder = await razorpay.orders.create({
+        amount: Math.round(order.totalAmount * 100),
 
-          currency: "INR",
+        currency: "INR",
 
-          receipt: `receipt_${order._id}`,
-        });
+        receipt: `receipt_${order._id}`,
+      });
     } catch (razorpayError) {
-      console.error(
-        "Razorpay Order Creation Error:",
-        razorpayError
-      );
+      console.error("Razorpay Order Creation Error:", razorpayError);
 
-      await expireAndReleaseOrder(
-        order._id
-      );
+      await expireAndReleaseOrder(order._id);
 
       return res.status(502).json({
         success: false,
-        message:
-          "Unable to initialize payment. Please try again.",
+        message: "Unable to initialize payment. Please try again.",
       });
     }
 
@@ -314,27 +277,20 @@ export const createOrder = async (req, res) => {
       await Payment.create({
         userId,
         orderId: order._id,
-        razorpayOrderId:
-        razorpayOrder.id,
+        razorpayOrderId: razorpayOrder.id,
 
         amount: order.totalAmount,
 
         status: "PENDING",
       });
     } catch (paymentError) {
-      console.error(
-        "Payment Record Creation Error:",
-        paymentError
-      );
+      console.error("Payment Record Creation Error:", paymentError);
 
-      await expireAndReleaseOrder(
-        order._id
-      );
+      await expireAndReleaseOrder(order._id);
 
       return res.status(500).json({
         success: false,
-        message:
-          "Unable to initialize payment. Please try again.",
+        message: "Unable to initialize payment. Please try again.",
       });
     }
 
@@ -342,23 +298,13 @@ export const createOrder = async (req, res) => {
     // PUBLIC / COMPANY FRACTIONS
     // =========================
 
-    const publicLimit = Math.floor(
-      asset.totalFractions * 0.8
-    );
+    const publicLimit = Math.floor(asset.totalFractions * 0.8);
 
-    const companyReservedFractions =
-      asset.totalFractions -
-      publicLimit;
+    const companyReservedFractions = asset.totalFractions - publicLimit;
 
-    const publicUsed =
-      asset.totalFractions -
-      asset.availableFractions;
+    const publicUsed = asset.totalFractions - asset.availableFractions;
 
-    const publicAvailableFractions =
-      Math.max(
-        0,
-        publicLimit - publicUsed
-      );
+    const publicAvailableFractions = Math.max(0, publicLimit - publicUsed);
 
     // =========================
     // RESPONSE
@@ -373,8 +319,7 @@ export const createOrder = async (req, res) => {
       razorpayOrder,
 
       fractionInfo: {
-        totalFractions:
-          asset.totalFractions,
+        totalFractions: asset.totalFractions,
 
         publicLimit,
 
@@ -384,27 +329,16 @@ export const createOrder = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(
-      "Create Order Error:",
-      error
-    );
+    console.error("Create Order Error:", error);
 
-    return res
-      .status(error.statusCode || 500)
-      .json({
-        success: false,
-        message:
-          error.statusCode
-            ? error.message
-            : "Something went wrong while creating the order.",
-      });
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode
+        ? error.message
+        : "Something went wrong while creating the order.",
+    });
   }
 };
-
-
-
-
-
 
 // ============================================================
 // VERIFY PAYMENT
@@ -415,75 +349,53 @@ export const createOrder = async (req, res) => {
 
 export const verifyPayment = async (req, res) => {
   try {
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-    } = req.body;
-
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
+      req.body;
 
     // ========================================================
     // 1. VALIDATION
     // ========================================================
 
-    if (
-      !razorpay_order_id ||
-      !razorpay_payment_id ||
-      !razorpay_signature
-    ) {
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({
         success: false,
-        message:
-          "Payment verification details are required",
+        message: "Payment verification details are required",
       });
     }
-
 
     // ========================================================
     // 2. VERIFY CHECKOUT SIGNATURE
     // ========================================================
 
-    const validSignature =
-      verifyRazorpayPaymentSignature({
-        razorpayOrderId:
-          razorpay_order_id,
+    const validSignature = verifyRazorpayPaymentSignature({
+      razorpayOrderId: razorpay_order_id,
 
-        razorpayPaymentId:
-          razorpay_payment_id,
+      razorpayPaymentId: razorpay_payment_id,
 
-        razorpaySignature:
-          razorpay_signature,
-      });
-
+      razorpaySignature: razorpay_signature,
+    });
 
     if (!validSignature) {
       return res.status(400).json({
         success: false,
-        message:
-          "Payment verification failed",
+        message: "Payment verification failed",
       });
     }
-
 
     // ========================================================
     // 3. FIND INTERNAL PAYMENT RECORD
     // ========================================================
 
-    const payment =
-      await Payment.findOne({
-        razorpayOrderId:
-          razorpay_order_id,
-      });
-
+    const payment = await Payment.findOne({
+      razorpayOrderId: razorpay_order_id,
+    });
 
     if (!payment) {
       return res.status(404).json({
         success: false,
-        message:
-          "Payment record not found",
+        message: "Payment record not found",
       });
     }
-
 
     // ========================================================
     // 4. FETCH PAYMENT DIRECTLY FROM RAZORPAY
@@ -492,65 +404,44 @@ export const verifyPayment = async (req, res) => {
     let razorpayPayment;
 
     try {
-      razorpayPayment =
-        await razorpay.payments.fetch(
-          razorpay_payment_id
-        );
+      razorpayPayment = await razorpay.payments.fetch(razorpay_payment_id);
     } catch (error) {
-      console.error(
-        "RAZORPAY PAYMENT FETCH ERROR:",
-        error
-      );
+      console.error("RAZORPAY PAYMENT FETCH ERROR:", error);
 
       return res.status(400).json({
         success: false,
-        message:
-          "Unable to verify payment with Razorpay",
+        message: "Unable to verify payment with Razorpay",
       });
     }
-
 
     if (!razorpayPayment) {
       return res.status(400).json({
         success: false,
-        message:
-          "Unable to verify payment with Razorpay",
+        message: "Unable to verify payment with Razorpay",
       });
     }
-
 
     // ========================================================
     // 5. VERIFY PAYMENT ID
     // ========================================================
 
-    if (
-      razorpayPayment.id &&
-      razorpayPayment.id !==
-        razorpay_payment_id
-    ) {
+    if (razorpayPayment.id && razorpayPayment.id !== razorpay_payment_id) {
       return res.status(400).json({
         success: false,
-        message:
-          "Razorpay payment ID mismatch",
+        message: "Razorpay payment ID mismatch",
       });
     }
-
 
     // ========================================================
     // 6. VERIFY ORDER RELATION
     // ========================================================
 
-    if (
-      razorpayPayment.order_id !==
-      razorpay_order_id
-    ) {
+    if (razorpayPayment.order_id !== razorpay_order_id) {
       return res.status(400).json({
         success: false,
-        message:
-          "Payment does not belong to this order",
+        message: "Payment does not belong to this order",
       });
     }
-
 
     // ========================================================
     // 7. VERIFY AMOUNT
@@ -559,68 +450,42 @@ export const verifyPayment = async (req, res) => {
     // Razorpay amount = paise
     // ========================================================
 
-    const expectedAmount =
-      Math.round(
-        Number(
-          payment.amount
-        ) * 100
-      );
+    const expectedAmount = Math.round(Number(payment.amount) * 100);
 
-
-    if (
-      Number(
-        razorpayPayment.amount
-      ) !== expectedAmount
-    ) {
+    if (Number(razorpayPayment.amount) !== expectedAmount) {
       return res.status(400).json({
         success: false,
-        message:
-          "Payment amount mismatch",
+        message: "Payment amount mismatch",
       });
     }
-
 
     // ========================================================
     // 8. VERIFY CURRENCY
     // ========================================================
 
-    const expectedCurrency =
-      payment.currency ||
-      "INR";
-
+    const expectedCurrency = payment.currency || "INR";
 
     if (
       razorpayPayment.currency &&
-      String(
-        razorpayPayment.currency
-      ).toUpperCase() !==
-        String(
-          expectedCurrency
-        ).toUpperCase()
+      String(razorpayPayment.currency).toUpperCase() !==
+        String(expectedCurrency).toUpperCase()
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Payment currency mismatch",
+        message: "Payment currency mismatch",
       });
     }
-
 
     // ========================================================
     // 9. PAYMENT MUST BE CAPTURED
     // ========================================================
 
-    if (
-      razorpayPayment.status !==
-      "captured"
-    ) {
+    if (razorpayPayment.status !== "captured") {
       return res.status(400).json({
         success: false,
-        message:
-          `Payment is not captured. Current status: ${razorpayPayment.status}`,
+        message: `Payment is not captured. Current status: ${razorpayPayment.status}`,
       });
     }
-
 
     // ========================================================
     // 10. PAYMENT SUCCESS TIMESTAMP
@@ -633,9 +498,7 @@ export const verifyPayment = async (req, res) => {
     // Asia/Kolkata is used only for display formatting.
     // ========================================================
 
-    const paidAt =
-      new Date();
-
+    const paidAt = new Date();
 
     // ========================================================
     // 11. FINALIZE SUCCESSFUL PAYMENT
@@ -646,87 +509,53 @@ export const verifyPayment = async (req, res) => {
     // PurchaseHistory.paidAt
     // ========================================================
 
-    const result =
-      await finalizeSuccessfulPayment({
-        razorpayOrderId:
-          razorpay_order_id,
+    const result = await finalizeSuccessfulPayment({
+      razorpayOrderId: razorpay_order_id,
 
-        razorpayPaymentId:
-          razorpay_payment_id,
+      razorpayPaymentId: razorpay_payment_id,
 
-        razorpaySignature:
-          razorpay_signature,
+      razorpaySignature: razorpay_signature,
 
-        paymentMethod:
-          razorpayPayment.method ||
-          null,
+      paymentMethod: razorpayPayment.method || null,
 
-        webhookVerified:
-          false,
+      webhookVerified: false,
 
-        paidAt,
-      });
-
+      paidAt,
+    });
 
     // ========================================================
     // 12. INDIA DATE
     // ========================================================
 
-    const finalPaidAt =
-      result.paidAt ||
-      paidAt;
+    const finalPaidAt = result.paidAt || paidAt;
 
+    const purchaseDate = new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
 
-    const purchaseDate =
-      new Intl.DateTimeFormat(
-        "en-IN",
-        {
-          day:
-            "2-digit",
+      month: "2-digit",
 
-          month:
-            "2-digit",
+      year: "numeric",
 
-          year:
-            "numeric",
-
-          timeZone:
-            "Asia/Kolkata",
-        }
-      ).format(
-        finalPaidAt
-      );
-
+      timeZone: "Asia/Kolkata",
+    }).format(finalPaidAt);
 
     // ========================================================
     // 13. INDIA TIME
     // ========================================================
 
-    const purchaseTime =
-      new Intl.DateTimeFormat(
-        "en-IN",
-        {
-          hour:
-            "2-digit",
+    const purchaseTime = new Intl.DateTimeFormat("en-IN", {
+      hour: "2-digit",
 
-          minute:
-            "2-digit",
+      minute: "2-digit",
 
-          second:
-            "2-digit",
+      second: "2-digit",
 
-          hour12:
-            true,
+      hour12: true,
 
-          timeZone:
-            "Asia/Kolkata",
-        }
-      )
-        .format(
-          finalPaidAt
-        )
-        .toLowerCase();
-
+      timeZone: "Asia/Kolkata",
+    })
+      .format(finalPaidAt)
+      .toLowerCase();
 
     // ========================================================
     // 14. RESPONSE
@@ -735,49 +564,32 @@ export const verifyPayment = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message:
-        result.alreadyProcessed
-          ? "Payment already verified and purchase already completed"
-          : "Payment verified and purchase completed successfully",
+      message: result.alreadyProcessed
+        ? "Payment already verified and purchase already completed"
+        : "Payment verified and purchase completed successfully",
 
       data: {
-        purchaseHistoryId:
-          result.purchaseHistoryId,
+        purchaseHistoryId: result.purchaseHistoryId,
 
-        paymentStatus:
-          "SUCCESS",
+        paymentStatus: "SUCCESS",
 
-        paidAt:
-          finalPaidAt,
+        paidAt: finalPaidAt,
 
         purchaseDate,
 
         purchaseTime,
       },
     });
-
   } catch (error) {
-    console.error(
-      "VERIFY PAYMENT ERROR:",
-      error
-    );
+    console.error("VERIFY PAYMENT ERROR:", error);
 
+    return res.status(error.statusCode || 500).json({
+      success: false,
 
-    return res
-      .status(
-        error.statusCode ||
-        500
-      )
-      .json({
-        success: false,
-
-        message:
-          error.message ||
-          "Unable to verify payment",
-      });
+      message: error.message || "Unable to verify payment",
+    });
   }
 };
-
 
 // export const verifyPayment = async (req, res) => {
 //   try {
@@ -933,14 +745,6 @@ export const verifyPayment = async (req, res) => {
 //   }
 // };
 
-
-
-
-
-
-
-
-
 // export const verifyPayment = async (
 //   req,
 //   res
@@ -951,7 +755,6 @@ export const verifyPayment = async (req, res) => {
 //       razorpay_payment_id,
 //       razorpay_signature,
 //     } = req.body;
-
 
 //     // =====================================
 //     // 1. VALIDATION
@@ -970,7 +773,6 @@ export const verifyPayment = async (req, res) => {
 //       });
 //     }
 
-
 //     // =====================================
 //     // 2. VERIFY SIGNATURE
 //     // =====================================
@@ -987,7 +789,6 @@ export const verifyPayment = async (req, res) => {
 //           razorpay_signature,
 //       });
 
-
 //     if (!validSignature) {
 //       return res.status(400).json({
 //         success: false,
@@ -996,7 +797,6 @@ export const verifyPayment = async (req, res) => {
 //           "Payment verification failed",
 //       });
 //     }
-
 
 //     // =====================================
 //     // 3. FIND PAYMENT RECORD
@@ -1008,7 +808,6 @@ export const verifyPayment = async (req, res) => {
 //           razorpay_order_id,
 //       });
 
-
 //     if (!payment) {
 //       return res.status(404).json({
 //         success: false,
@@ -1017,7 +816,6 @@ export const verifyPayment = async (req, res) => {
 //           "Payment record not found",
 //       });
 //     }
-
 
 //     // =====================================
 //     // 4. FETCH ACTUAL RAZORPAY PAYMENT
@@ -1028,7 +826,6 @@ export const verifyPayment = async (req, res) => {
 //         razorpay_payment_id
 //       );
 
-
 //     if (!razorpayPayment) {
 //       return res.status(400).json({
 //         success: false,
@@ -1037,7 +834,6 @@ export const verifyPayment = async (req, res) => {
 //           "Unable to verify payment with Razorpay",
 //       });
 //     }
-
 
 //     // =====================================
 //     // 5. VERIFY RAZORPAY ORDER
@@ -1055,7 +851,6 @@ export const verifyPayment = async (req, res) => {
 //       });
 //     }
 
-
 //     // =====================================
 //     // 6. VERIFY AMOUNT
 //     // =====================================
@@ -1065,7 +860,6 @@ export const verifyPayment = async (req, res) => {
 //         Number(payment.amount) *
 //           100
 //       );
-
 
 //     if (
 //       Number(
@@ -1079,7 +873,6 @@ export const verifyPayment = async (req, res) => {
 //           "Payment amount mismatch",
 //       });
 //     }
-
 
 //     // =====================================
 //     // 7. PAYMENT MUST BE CAPTURED
@@ -1096,7 +889,6 @@ export const verifyPayment = async (req, res) => {
 //           `Payment is not captured. Current status: ${razorpayPayment.status}`,
 //       });
 //     }
-
 
 //     // =====================================
 //     // 8. FINALIZE PURCHASE
@@ -1120,7 +912,6 @@ export const verifyPayment = async (req, res) => {
 //         webhookVerified:
 //           false,
 //       });
-
 
 //     return res.status(200).json({
 //       success: true,
@@ -1207,97 +998,55 @@ export const verifyPayment = async (req, res) => {
 //   }
 // };
 
+export const razorpayWebhook = async (req, res) => {
+  try {
+    const receivedSignature = req.headers["x-razorpay-signature"];
 
-export const razorpayWebhook =
-  async (req, res) => {
-    try {
-      const receivedSignature =
-        req.headers[
-          "x-razorpay-signature"
-        ];
+    const validSignature = verifyRazorpayWebhookSignature({
+      rawBody: req.body,
 
+      signature: receivedSignature,
+    });
 
-      const validSignature =
-        verifyRazorpayWebhookSignature({
-          rawBody:
-            req.body,
-
-          signature:
-            receivedSignature,
-        });
-
-
-      if (!validSignature) {
-        return res.status(400).json({
-          success: false,
-
-          message:
-            "Invalid webhook signature",
-        });
-      }
-
-
-      const eventData =
-        JSON.parse(
-          req.body.toString()
-        );
-
-
-      const event =
-        eventData.event;
-
-
-      if (
-        event ===
-        "payment.captured"
-      ) {
-        const paymentEntity =
-          eventData.payload.payment
-            .entity;
-
-
-        const result =
-          await finalizeSuccessfulPayment({
-            razorpayOrderId:
-              paymentEntity.order_id,
-
-            razorpayPaymentId:
-              paymentEntity.id,
-
-            paymentMethod:
-              paymentEntity.method ||
-              null,
-
-            webhookVerified:
-              true,
-          });
-
-
-        // PDF will be added here shortly.
-      }
-
-
-      return res.status(200).json({
-        success: true,
-      });
-
-    } catch (error) {
-      console.error(
-        "RAZORPAY WEBHOOK ERROR:",
-        error
-      );
-
-
-      return res.status(500).json({
+    if (!validSignature) {
+      return res.status(400).json({
         success: false,
+
+        message: "Invalid webhook signature",
       });
     }
-  };
 
+    const eventData = JSON.parse(req.body.toString());
 
+    const event = eventData.event;
 
+    if (event === "payment.captured") {
+      const paymentEntity = eventData.payload.payment.entity;
 
+      const result = await finalizeSuccessfulPayment({
+        razorpayOrderId: paymentEntity.order_id,
 
+        razorpayPaymentId: paymentEntity.id,
+
+        paymentMethod: paymentEntity.method || null,
+
+        webhookVerified: true,
+      });
+
+      // PDF will be added here shortly.
+    }
+
+    return res.status(200).json({
+      success: true,
+    });
+  } catch (error) {
+    console.error("RAZORPAY WEBHOOK ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+    });
+  }
+};
 
 // import crypto from "crypto";
 // import Order from "../model/OrderModel.js";
@@ -1549,8 +1298,6 @@ export const razorpayWebhook =
 //    }
 
 // };
-
-
 
 export const getAllOrders = async (req, res) => {
   try {

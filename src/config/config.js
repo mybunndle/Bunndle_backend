@@ -46,7 +46,8 @@ const _config = {
   msg91_flow_id:process.env.MSG91_FLOW_ID,
   msg91_sender_id:process.env.MSG91_SENDER_ID,
   use_real_sms:process.env.USE_REAL_SMS,
-  otp_expire_minutes:process.env.OTP_EXPIRE_MINUTES
+  otp_expire_minutes:process.env.OTP_EXPIRE_MINUTES,
+  
 
 };
 
