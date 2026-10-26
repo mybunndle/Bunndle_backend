@@ -1597,8 +1597,6 @@
 
 
 
-
-
 import mongoose from "mongoose";
 
 import Order from "../model/OrderModel.js";
@@ -1688,67 +1686,77 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
   }
 
   try {
-    const User = mongoose.model("User");
+    let customerName = purchase.userSnapshot?.name || "Customer";
+    let customerEmail = purchase.userSnapshot?.email;
 
-    const user = await User.findById(purchase.userId)
-      .select("name email")
-      .lean();
+    if (!customerEmail) {
+      const User = mongoose.model("User");
 
-    if (!user?.email) {
+      const user = await User.findById(purchase.userId)
+        .select("name email")
+        .lean();
+
+      customerEmail = user?.email;
+      customerName = user?.name || customerName;
+    }
+
+    if (!customerEmail) {
       throw new Error("Customer email not found");
     }
+
+    const asset = await Asset.findById(purchase.assetId).lean();
 
     const fractionsPurchased = Number(
       purchase.fractionsPurchased || 0
     );
 
-    const rentalAmountPerFraction = Number(
-      purchase.assetSnapshot?.rentalAmountPerFraction || 0
-    );
+    const monthlyRentalPerFraction =
+      purchase.assetSnapshot?.rentalAmountPerFraction ??
+      asset?.rentalAmountPerFraction ??
+      null;
 
     const totalFixedMonthlyRental =
-      fractionsPurchased * rentalAmountPerFraction;
+      monthlyRentalPerFraction == null
+        ? null
+        : fractionsPurchased * Number(monthlyRentalPerFraction);
 
     await sendPaymentWelcomeEmail({
-  email: user.email,
-  name: user.name || "Customer",
+      email: customerEmail,
+      name: customerName,
 
-  assetName: purchase.assetSnapshot?.assetName,
-  assetCode: purchase.assetSnapshot?.assetCode,
+      assetName:
+        purchase.assetSnapshot?.assetName ?? asset?.assetName,
 
-  registeredLegalOwner:
-    purchase.assetSnapshot?.registeredLegalOwner,
+      assetCode:
+        purchase.assetSnapshot?.assetCode ?? asset?.assetCode,
 
-  totalAssetValue:
-    purchase.assetSnapshot?.assetCost,
+      registeredLegalOwner:
+        asset?.registeredLegalOwner ?? null,
 
-  totalFractions:
-    purchase.assetSnapshot?.totalFractions,
+      totalAssetValue:
+        purchase.assetSnapshot?.assetCost ?? asset?.assetCost,
 
-  amountPerFraction:
-    purchase.amountPerFraction,
+      totalFractions:
+        asset?.totalFractions ?? null,
 
-  fractionsPurchased:
-    purchase.fractionsPurchased,
+      amountPerFraction:
+        purchase.amountPerFraction,
 
-  totalAmountPaid:
-    purchase.totalAmount,
+      fractionsPurchased,
 
-  acquisitionDate:
-    purchase.paidAt,
+      totalAmountPaid:
+        purchase.totalAmount,
 
-  monthlyRentalPerFraction:
-    purchase.assetSnapshot?.rentalAmountPerFraction,
+      acquisitionDate:
+        purchase.paidAt,
 
-  totalFixedMonthlyRental:
-    Number(purchase.fractionsPurchased || 0) *
-    Number(
-      purchase.assetSnapshot?.rentalAmountPerFraction || 0
-    ),
+      monthlyRentalPerFraction,
 
-  transactionId:
-    purchase.razorpayPaymentId,
-});
+      totalFixedMonthlyRental,
+
+      transactionId:
+        purchase.razorpayPaymentId,
+    });
 
     await PurchaseHistory.updateOne(
       {

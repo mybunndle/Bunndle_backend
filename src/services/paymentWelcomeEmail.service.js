@@ -6,35 +6,40 @@ export const sendPaymentWelcomeEmail = async ({
   name,
   assetName,
   assetCode,
-  transactionId,
-  totalAmountPaid,
+  registeredLegalOwner,
+  totalAssetValue,
+  totalFractions,
+  amountPerFraction,
   fractionsPurchased,
+  totalAmountPaid,
   acquisitionDate,
+  monthlyRentalPerFraction,
   totalFixedMonthlyRental,
+  transactionId,
 }) => {
   if (!email) {
     throw new Error("Customer email is required");
   }
 
-  const subject =
-    "Payment Successful! Welcome to Bunndle Co-Ownership 🎉";
-
   const html = paymentSuccessTemplate({
     customerName: name || "Customer",
     assetName,
     assetCode,
-    transactionId,
-    totalAmountPaid,
+    registeredLegalOwner,
+    totalAssetValue,
+    totalFractions,
+    amountPerFraction,
     fractionsAcquired: fractionsPurchased,
+    totalAmountPaid,
     acquisitionDate,
+    monthlyRentalPerFraction,
     totalFixedMonthlyRental,
+    transactionId,
   });
 
-  return await sendEmail({
+  return sendEmail({
     to: email,
-    subject,
+    subject: "Payment Successful! Welcome to Bunndle Co-Ownership 🎉",
     html,
   });
 };
-
-export default sendPaymentWelcomeEmail;
