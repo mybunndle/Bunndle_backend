@@ -100,8 +100,6 @@
 
 // export default mongoose.model("CoAsset", coAssetSchema);
 
-
-
 import mongoose from "mongoose";
 
 const coAssetSchema = new mongoose.Schema(
@@ -185,6 +183,12 @@ const coAssetSchema = new mongoose.Schema(
       required: true,
     },
 
+    registeredLegalOwner: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
     images: [
       {
         url: {
@@ -219,7 +223,4 @@ coAssetSchema.index({
   assetName: "text",
 });
 
-export default mongoose.model(
-  "CoAsset",
-  coAssetSchema,
-);
+export default mongoose.model("CoAsset", coAssetSchema);
