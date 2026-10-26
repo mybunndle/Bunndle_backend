@@ -1536,6 +1536,7 @@
 //   }
 // };
 
+
 import mongoose from "mongoose";
 
 import Order from "../model/OrderModel.js";
@@ -1577,7 +1578,11 @@ const buildAssetSnapshot = (asset, fractionsPurchased) => ({
   lockInMonths: asset.lockInMonths ?? null,
 });
 
-const findExistingPurchase = async ({ orderId, paymentId, session = null }) => {
+const findExistingPurchase = async ({
+  orderId,
+  paymentId,
+  session = null,
+}) => {
   let query = PurchaseHistory.findOne({
     $or: [{ orderId }, { paymentId }],
   });
@@ -1631,19 +1636,21 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
     const userSnapshot = purchase.userSnapshot || {};
     const assetSnapshot = purchase.assetSnapshot || {};
 
-    let customerEmail = userSnapshot.email;
-    let customerName = userSnapshot.name || "Customer";
+    let customerEmail = userSnapshot.email || null;
+    let customerName = userSnapshot.name || null;
 
-    if (!customerEmail) {
+    if (!customerEmail || !customerName) {
       const user = await getUserSnapshot(purchase.userId);
 
-      customerEmail = user.email;
-      customerName = user.name || customerName;
+      customerEmail = customerEmail || user.email;
+      customerName = customerName || user.name;
     }
 
     if (!customerEmail) {
       throw new Error("Customer email not found");
     }
+
+    customerName = customerName || "Customer";
 
     const asset = await Asset.findById(purchase.assetId)
       .select(
@@ -1668,19 +1675,27 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
       email: customerEmail,
       name: customerName,
 
-      assetName: assetSnapshot.assetName ?? asset?.assetName ?? null,
-
-      assetCode: assetSnapshot.assetCode ?? asset?.assetCode ?? null,
-
-      registeredLegalOwner:
-        assetSnapshot.registeredLegalOwner ??
-        asset?.registeredLegalOwner ??
+      assetName:
+        assetSnapshot.assetName ??
+        asset?.assetName ??
         null,
 
-      totalAssetValue: assetSnapshot.assetCost ?? asset?.assetCost ?? null,
+      assetCode:
+        assetSnapshot.assetCode ??
+        asset?.assetCode ??
+        null,
+
+      registeredLegalOwner: customerName,
+
+      totalAssetValue:
+        assetSnapshot.assetCost ??
+        asset?.assetCost ??
+        null,
 
       totalFractions:
-        assetSnapshot.totalFractions ?? asset?.totalFractions ?? null,
+        assetSnapshot.totalFractions ??
+        asset?.totalFractions ??
+        null,
 
       amountPerFraction: purchase.amountPerFraction,
       fractionsPurchased,
@@ -1690,7 +1705,8 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
       totalFixedMonthlyRental,
 
       transactionId:
-        purchase.transactionReference || purchase.razorpayPaymentId,
+        purchase.transactionReference ||
+        purchase.razorpayPaymentId,
     };
 
     console.log("PAYMENT EMAIL DETAILS:", {
@@ -1726,9 +1742,16 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
       },
     );
 
-    console.log("PAYMENT SUCCESS EMAIL SENT:", purchase.razorpayPaymentId);
+    console.log(
+      "PAYMENT SUCCESS EMAIL SENT:",
+      purchase.razorpayPaymentId,
+    );
   } catch (error) {
-    console.error("PAYMENT SUCCESS EMAIL FAILED:", purchaseHistoryId, error);
+    console.error(
+      "PAYMENT SUCCESS EMAIL FAILED:",
+      purchaseHistoryId,
+      error,
+    );
 
     try {
       await PurchaseHistory.updateOne(
@@ -1737,12 +1760,19 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
           paymentEmailStatus: "SENDING",
         },
         {
-          $set: { paymentEmailStatus: "FAILED" },
-          $unset: { paymentEmailClaimedAt: "" },
+          $set: {
+            paymentEmailStatus: "FAILED",
+          },
+          $unset: {
+            paymentEmailClaimedAt: "",
+          },
         },
       );
     } catch (updateError) {
-      console.error("PAYMENT EMAIL STATUS UPDATE FAILED:", updateError);
+      console.error(
+        "PAYMENT EMAIL STATUS UPDATE FAILED:",
+        updateError,
+      );
     }
   }
 };
@@ -1801,7 +1831,9 @@ export const finalizeSuccessfulPayment = async ({
 
   if (payment.status === "SUCCESS" && existingPurchase) {
     const existingPaidAt =
-      existingPurchase.paidAt || payment.paidAt || finalPaidAt;
+      existingPurchase.paidAt ||
+      payment.paidAt ||
+      finalPaidAt;
 
     const paymentUpdate = {};
 
@@ -1827,16 +1859,26 @@ export const finalizeSuccessfulPayment = async ({
     }
 
     if (Object.keys(paymentUpdate).length > 0) {
-      await Payment.updateOne({ _id: payment._id }, { $set: paymentUpdate });
+      await Payment.updateOne(
+        { _id: payment._id },
+        { $set: paymentUpdate },
+      );
     }
 
     if (!existingPurchase.paidAt) {
       await PurchaseHistory.updateOne(
         {
           _id: existingPurchase._id,
-          $or: [{ paidAt: null }, { paidAt: { $exists: false } }],
+          $or: [
+            { paidAt: null },
+            { paidAt: { $exists: false } },
+          ],
         },
-        { $set: { paidAt: existingPaidAt } },
+        {
+          $set: {
+            paidAt: existingPaidAt,
+          },
+        },
       );
     }
 
@@ -1864,15 +1906,17 @@ export const finalizeSuccessfulPayment = async ({
 
   try {
     await session.withTransaction(async () => {
-      const currentPayment = await Payment.findById(payment._id).session(
-        session,
-      );
+      const currentPayment = await Payment.findById(
+        payment._id,
+      ).session(session);
 
       if (!currentPayment) {
         throw createError(404, "Payment record not found");
       }
 
-      const currentOrder = await Order.findById(order._id).session(session);
+      const currentOrder = await Order.findById(
+        order._id,
+      ).session(session);
 
       if (!currentOrder) {
         throw createError(404, "Order not found");
@@ -1886,7 +1930,9 @@ export const finalizeSuccessfulPayment = async ({
 
       if (purchaseAlreadyExists) {
         const existingPaidAt =
-          purchaseAlreadyExists.paidAt || currentPayment.paidAt || finalPaidAt;
+          purchaseAlreadyExists.paidAt ||
+          currentPayment.paidAt ||
+          finalPaidAt;
 
         if (!purchaseAlreadyExists.paidAt) {
           purchaseAlreadyExists.paidAt = existingPaidAt;
@@ -1930,7 +1976,11 @@ export const finalizeSuccessfulPayment = async ({
         );
       }
 
-      if (!["PENDING_PAYMENT", "COMPLETED"].includes(currentOrder.status)) {
+      if (
+        !["PENDING_PAYMENT", "COMPLETED"].includes(
+          currentOrder.status,
+        )
+      ) {
         throw createError(
           409,
           `Order cannot be completed from status ${currentOrder.status}`,
@@ -1953,7 +2003,8 @@ export const finalizeSuccessfulPayment = async ({
       }
 
       currentPayment.status = "SUCCESS";
-      currentPayment.paidAt = currentPayment.paidAt || finalPaidAt;
+      currentPayment.paidAt =
+        currentPayment.paidAt || finalPaidAt;
 
       if (paymentMethod) {
         currentPayment.paymentMethod = paymentMethod;
@@ -1977,14 +2028,19 @@ export const finalizeSuccessfulPayment = async ({
           },
           {
             $inc: {
-              reservedFractions: -Number(currentOrder.fractions),
+              reservedFractions: -Number(
+                currentOrder.fractions,
+              ),
             },
           },
           { session },
         );
 
         if (assetUpdate.modifiedCount !== 1) {
-          throw createError(409, "Unable to finalize reserved fractions");
+          throw createError(
+            409,
+            "Unable to finalize reserved fractions",
+          );
         }
       }
 
@@ -1992,22 +2048,27 @@ export const finalizeSuccessfulPayment = async ({
 
       await currentOrder.save({ session });
 
-      const currentAsset = await Asset.findById(currentOrder.assetId).session(
-        session,
-      );
+      const currentAsset = await Asset.findById(
+        currentOrder.assetId,
+      ).session(session);
 
       if (!currentAsset) {
         throw createError(404, "Asset not found");
       }
 
-      const fractionsPurchased = Number(currentOrder.fractions || 0);
+      const fractionsPurchased = Number(
+        currentOrder.fractions || 0,
+      );
 
       const assetSnapshot = buildAssetSnapshot(
         currentAsset,
         fractionsPurchased,
       );
 
-      const userSnapshot = await getUserSnapshot(currentOrder.userId, session);
+      const userSnapshot = await getUserSnapshot(
+        currentOrder.userId,
+        session,
+      );
 
       const purchaseRecords = await PurchaseHistory.create(
         [
@@ -2026,7 +2087,9 @@ export const finalizeSuccessfulPayment = async ({
             ),
 
             totalAmount: Number(
-              currentOrder.totalAmount || currentPayment.amount || 0,
+              currentOrder.totalAmount ||
+                currentPayment.amount ||
+                0,
             ),
 
             userSnapshot,
@@ -2037,14 +2100,18 @@ export const finalizeSuccessfulPayment = async ({
             razorpayOrderId,
             razorpayPaymentId,
 
-            razorpaySignature: razorpaySignature || null,
+            razorpaySignature:
+              razorpaySignature || null,
 
             paymentMethod:
-              paymentMethod || currentPayment.paymentMethod || null,
+              paymentMethod ||
+              currentPayment.paymentMethod ||
+              null,
 
             transactionReference: razorpayPaymentId,
 
-            paidAt: currentPayment.paidAt || finalPaidAt,
+            paidAt:
+              currentPayment.paidAt || finalPaidAt,
 
             paymentEmailStatus: "PENDING",
             paymentEmailAttempts: 0,
@@ -2077,8 +2144,13 @@ export const finalizeSuccessfulPayment = async ({
       const confirmationPurchaseId = purchaseHistory._id;
 
       setImmediate(() => {
-        void sendPurchaseConfirmation(confirmationPurchaseId).catch((error) => {
-          console.error("PAYMENT EMAIL PROCESSING ERROR:", error);
+        void sendPurchaseConfirmation(
+          confirmationPurchaseId,
+        ).catch((error) => {
+          console.error(
+            "PAYMENT EMAIL PROCESSING ERROR:",
+            error,
+          );
         });
       });
     }
@@ -2092,7 +2164,10 @@ export const finalizeSuccessfulPayment = async ({
       paidAt: purchaseHistory.paidAt || finalPaidAt,
     };
   } catch (error) {
-    console.error("FINALIZE SUCCESSFUL PAYMENT ERROR:", error);
+    console.error(
+      "FINALIZE SUCCESSFUL PAYMENT ERROR:",
+      error,
+    );
 
     throw error;
   } finally {
