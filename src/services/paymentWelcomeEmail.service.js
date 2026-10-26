@@ -20,7 +20,16 @@ export const sendPaymentWelcomeEmail = async ({
   if (!email) {
     throw new Error("Customer email is required");
   }
-
+   console.log(email, registeredLegalOwner,
+  totalAssetValue,
+  totalFractions,
+  amountPerFraction,
+  fractionsPurchased,
+  totalAmountPaid,
+  acquisitionDate,
+  monthlyRentalPerFraction,
+  totalFixedMonthlyRental,
+  transactionId);
   const html = paymentSuccessTemplate({
     customerName: name || "Customer",
     assetName,

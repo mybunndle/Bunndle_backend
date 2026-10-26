@@ -1096,29 +1096,6 @@
 //   }
 // };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // import mongoose from "mongoose";
 
 // import Order from "../model/OrderModel.js";
@@ -1559,42 +1536,6 @@
 //   }
 // };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import mongoose from "mongoose";
 
 import Order from "../model/OrderModel.js";
@@ -1613,49 +1554,56 @@ const createError = (statusCode, message) => {
 
 const normalizePaidAt = (paidAt) => {
   if (paidAt) {
-    const parsedDate = new Date(paidAt);
-
-    if (!Number.isNaN(parsedDate.getTime())) {
-      return parsedDate;
-    }
+    const date = new Date(paidAt);
+    if (!Number.isNaN(date.getTime())) return date;
   }
-
   return new Date();
 };
 
-const buildAssetSnapshot = (asset) => {
-  return {
-    assetName: asset.assetName ?? null,
-    assetCode: asset.assetCode ?? null,
-    specification: asset.specification ?? null,
-    assetCost: Number(asset.assetCost || 0),
-    totalFractions: Number(asset.totalFractions || 0),
-    registeredLegalOwner: asset.registeredLegalOwner ?? null,
-    amountPerFraction: Number(asset.amountPerFraction || 0),
-    rentalAmountPerFraction: Number(
-      asset.rentalAmountPerFraction || 0
-    ),
-    durationMonths: Number(asset.durationMonths || 0),
-    lockInMonths: Number(asset.lockInMonths || 0),
-  };
-};
+const buildAssetSnapshot = (asset, fractionsPurchased) => ({
+  assetName: asset.assetName ?? null,
+  assetCode: asset.assetCode ?? null,
+  specification: asset.specification ?? null,
+  assetCost: asset.assetCost ?? null,
+  registeredLegalOwner: asset.registeredLegalOwner ?? null,
+  totalFractions: asset.totalFractions ?? null,
+  amountPerFraction: asset.amountPerFraction ?? null,
+  rentalAmountPerFraction: asset.rentalAmountPerFraction ?? null,
+  totalMonthlyRental:
+    asset.rentalAmountPerFraction == null
+      ? null
+      : Number(asset.rentalAmountPerFraction) * Number(fractionsPurchased),
+  durationMonths: asset.durationMonths ?? null,
+  lockInMonths: asset.lockInMonths ?? null,
+});
 
-const findExistingPurchase = async ({
-  orderId,
-  paymentId,
-  session = null,
-}) => {
+const findExistingPurchase = async ({ orderId, paymentId, session = null }) => {
   let query = PurchaseHistory.findOne({
     $or: [{ orderId }, { paymentId }],
   });
 
-  if (session) {
-    query = query.session(session);
-  }
+  if (session) query = query.session(session);
 
   return query;
 };
 
+const getUserSnapshot = async (userId, session = null) => {
+  const User = mongoose.model("User");
+
+  let query = User.findById(userId)
+    .select("name fullName email phone mobile fullPhone")
+    .lean();
+
+  if (session) query = query.session(session);
+
+  const user = await query;
+
+  return {
+    name: user?.name || user?.fullName || null,
+    email: user?.email || null,
+    phone: user?.fullPhone || user?.phone || user?.mobile || null,
+  };
+};
 
 const sendPurchaseConfirmation = async (purchaseHistoryId) => {
   const purchase = await PurchaseHistory.findOneAndUpdate(
@@ -1672,13 +1620,9 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
         paymentEmailStatus: "SENDING",
         paymentEmailClaimedAt: new Date(),
       },
-      $inc: {
-        paymentEmailAttempts: 1,
-      },
+      $inc: { paymentEmailAttempts: 1 },
     },
-    {
-      new: true,
-    }
+    { new: true },
   );
 
   if (!purchase) return;
@@ -1687,48 +1631,56 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
     const userSnapshot = purchase.userSnapshot || {};
     const assetSnapshot = purchase.assetSnapshot || {};
 
-    const customerEmail = userSnapshot.email;
-    const customerName = userSnapshot.name || "Customer";
+    let customerEmail = userSnapshot.email;
+    let customerName = userSnapshot.name || "Customer";
 
     if (!customerEmail) {
-      throw new Error("Customer email not found in userSnapshot");
+      const user = await getUserSnapshot(purchase.userId);
+
+      customerEmail = user.email;
+      customerName = user.name || customerName;
+    }
+
+    if (!customerEmail) {
+      throw new Error("Customer email not found");
     }
 
     const asset = await Asset.findById(purchase.assetId)
-      .select("registeredLegalOwner totalFractions")
+      .select(
+        "assetName assetCode registeredLegalOwner totalFractions assetCost rentalAmountPerFraction",
+      )
       .lean();
 
-    const fractionsPurchased = Number(
-      purchase.fractionsPurchased || 0
-    );
+    const fractionsPurchased = Number(purchase.fractionsPurchased || 0);
 
     const monthlyRentalPerFraction =
-      assetSnapshot.rentalAmountPerFraction ?? null;
+      assetSnapshot.rentalAmountPerFraction ??
+      asset?.rentalAmountPerFraction ??
+      null;
 
     const totalFixedMonthlyRental =
       assetSnapshot.totalMonthlyRental ??
       (monthlyRentalPerFraction == null
         ? null
-        : fractionsPurchased * Number(monthlyRentalPerFraction));
+        : Number(monthlyRentalPerFraction) * fractionsPurchased);
 
-    await sendPaymentWelcomeEmail({
+    const emailDetails = {
       email: customerEmail,
       name: customerName,
 
-      assetName: assetSnapshot.assetName,
-      assetCode: assetSnapshot.assetCode,
+      assetName: assetSnapshot.assetName ?? asset?.assetName ?? null,
+
+      assetCode: assetSnapshot.assetCode ?? asset?.assetCode ?? null,
 
       registeredLegalOwner:
         assetSnapshot.registeredLegalOwner ??
         asset?.registeredLegalOwner ??
         null,
 
-      totalAssetValue: assetSnapshot.assetCost,
+      totalAssetValue: assetSnapshot.assetCost ?? asset?.assetCost ?? null,
 
       totalFractions:
-        assetSnapshot.totalFractions ??
-        asset?.totalFractions ??
-        null,
+        assetSnapshot.totalFractions ?? asset?.totalFractions ?? null,
 
       amountPerFraction: purchase.amountPerFraction,
       fractionsPurchased,
@@ -1736,8 +1688,27 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
       acquisitionDate: purchase.paidAt,
       monthlyRentalPerFraction,
       totalFixedMonthlyRental,
-      transactionId: purchase.razorpayPaymentId,
+
+      transactionId:
+        purchase.transactionReference || purchase.razorpayPaymentId,
+    };
+
+    console.log("PAYMENT EMAIL DETAILS:", {
+      purchaseHistoryId: String(purchase._id),
+      assetName: emailDetails.assetName,
+      assetCode: emailDetails.assetCode,
+      registeredLegalOwner: emailDetails.registeredLegalOwner,
+      totalAssetValue: emailDetails.totalAssetValue,
+      totalFractions: emailDetails.totalFractions,
+      amountPerFraction: emailDetails.amountPerFraction,
+      fractionsPurchased: emailDetails.fractionsPurchased,
+      totalAmountPaid: emailDetails.totalAmountPaid,
+      acquisitionDate: emailDetails.acquisitionDate,
+      monthlyRentalPerFraction: emailDetails.monthlyRentalPerFraction,
+      totalFixedMonthlyRental: emailDetails.totalFixedMonthlyRental,
     });
+
+    await sendPaymentWelcomeEmail(emailDetails);
 
     await PurchaseHistory.updateOne(
       {
@@ -1752,19 +1723,12 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
         $unset: {
           paymentEmailClaimedAt: "",
         },
-      }
+      },
     );
 
-    console.log(
-      "PAYMENT SUCCESS EMAIL SENT:",
-      purchase.razorpayPaymentId
-    );
+    console.log("PAYMENT SUCCESS EMAIL SENT:", purchase.razorpayPaymentId);
   } catch (error) {
-    console.error(
-      "PAYMENT SUCCESS EMAIL FAILED:",
-      purchaseHistoryId,
-      error
-    );
+    console.error("PAYMENT SUCCESS EMAIL FAILED:", purchaseHistoryId, error);
 
     try {
       await PurchaseHistory.updateOne(
@@ -1773,23 +1737,15 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
           paymentEmailStatus: "SENDING",
         },
         {
-          $set: {
-            paymentEmailStatus: "FAILED",
-          },
-          $unset: {
-            paymentEmailClaimedAt: "",
-          },
-        }
+          $set: { paymentEmailStatus: "FAILED" },
+          $unset: { paymentEmailClaimedAt: "" },
+        },
       );
     } catch (updateError) {
-      console.error(
-        "PAYMENT EMAIL STATUS UPDATE FAILED:",
-        updateError
-      );
+      console.error("PAYMENT EMAIL STATUS UPDATE FAILED:", updateError);
     }
   }
 };
-
 
 export const finalizeSuccessfulPayment = async ({
   razorpayOrderId,
@@ -1800,64 +1756,42 @@ export const finalizeSuccessfulPayment = async ({
   paidAt = null,
 }) => {
   if (!razorpayOrderId) {
-    throw createError(
-      400,
-      "Razorpay order ID is required"
-    );
+    throw createError(400, "Razorpay order ID is required");
   }
 
   if (!razorpayPaymentId) {
-    throw createError(
-      400,
-      "Razorpay payment ID is required"
-    );
+    throw createError(400, "Razorpay payment ID is required");
   }
 
   const finalPaidAt = normalizePaidAt(paidAt);
 
-  const payment = await Payment.findOne({
-    razorpayOrderId,
-  });
+  const payment = await Payment.findOne({ razorpayOrderId });
 
   if (!payment) {
-    throw createError(
-      404,
-      "Payment record not found"
-    );
+    throw createError(404, "Payment record not found");
   }
 
   if (
     payment.status === "SUCCESS" &&
     payment.razorpayPaymentId &&
-    String(payment.razorpayPaymentId) !==
-      String(razorpayPaymentId)
+    String(payment.razorpayPaymentId) !== String(razorpayPaymentId)
   ) {
     throw createError(
       409,
-      "This order has already been completed using another payment"
+      "This order has already been completed using another payment",
     );
   }
 
-  const order = await Order.findById(
-    payment.orderId
-  );
+  const order = await Order.findById(payment.orderId);
 
   if (!order) {
-    throw createError(
-      404,
-      "Order not found"
-    );
+    throw createError(404, "Order not found");
   }
 
-  const asset = await Asset.findById(
-    order.assetId
-  );
+  const asset = await Asset.findById(order.assetId);
 
   if (!asset) {
-    throw createError(
-      404,
-      "Asset not found"
-    );
+    throw createError(404, "Asset not found");
   }
 
   const existingPurchase = await findExistingPurchase({
@@ -1865,14 +1799,9 @@ export const finalizeSuccessfulPayment = async ({
     paymentId: payment._id,
   });
 
-  if (
-    payment.status === "SUCCESS" &&
-    existingPurchase
-  ) {
+  if (payment.status === "SUCCESS" && existingPurchase) {
     const existingPaidAt =
-      existingPurchase.paidAt ||
-      payment.paidAt ||
-      finalPaidAt;
+      existingPurchase.paidAt || payment.paidAt || finalPaidAt;
 
     const paymentUpdate = {};
 
@@ -1881,76 +1810,40 @@ export const finalizeSuccessfulPayment = async ({
     }
 
     if (!payment.razorpayPaymentId) {
-      paymentUpdate.razorpayPaymentId =
-        razorpayPaymentId;
+      paymentUpdate.razorpayPaymentId = razorpayPaymentId;
     }
 
-    if (
-      razorpaySignature &&
-      !payment.razorpaySignature
-    ) {
-      paymentUpdate.razorpaySignature =
-        razorpaySignature;
+    if (razorpaySignature && !payment.razorpaySignature) {
+      paymentUpdate.razorpaySignature = razorpaySignature;
     }
 
-    if (
-      paymentMethod &&
-      !payment.paymentMethod
-    ) {
-      paymentUpdate.paymentMethod =
-        paymentMethod;
+    if (paymentMethod && !payment.paymentMethod) {
+      paymentUpdate.paymentMethod = paymentMethod;
     }
 
-    if (
-      webhookVerified &&
-      !payment.webhookVerified
-    ) {
+    if (webhookVerified && !payment.webhookVerified) {
       paymentUpdate.webhookVerified = true;
-      paymentUpdate.webhookVerifiedAt =
-        finalPaidAt;
+      paymentUpdate.webhookVerifiedAt = finalPaidAt;
     }
 
-    if (
-      Object.keys(paymentUpdate).length > 0
-    ) {
-      await Payment.updateOne(
-        {
-          _id: payment._id,
-        },
-        {
-          $set: paymentUpdate,
-        }
-      );
+    if (Object.keys(paymentUpdate).length > 0) {
+      await Payment.updateOne({ _id: payment._id }, { $set: paymentUpdate });
     }
 
     if (!existingPurchase.paidAt) {
       await PurchaseHistory.updateOne(
         {
           _id: existingPurchase._id,
-          $or: [
-            {
-              paidAt: null,
-            },
-            {
-              paidAt: {
-                $exists: false,
-              },
-            },
-          ],
+          $or: [{ paidAt: null }, { paidAt: { $exists: false } }],
         },
-        {
-          $set: {
-            paidAt: existingPaidAt,
-          },
-        }
+        { $set: { paidAt: existingPaidAt } },
       );
     }
 
     return {
       success: true,
       alreadyProcessed: true,
-      purchaseHistoryId:
-        existingPurchase._id,
+      purchaseHistoryId: existingPurchase._id,
       paymentId: payment._id,
       orderId: order._id,
       paidAt: existingPaidAt,
@@ -1960,343 +1853,232 @@ export const finalizeSuccessfulPayment = async ({
   if (order.status === "EXPIRED") {
     throw createError(
       409,
-      "Order has expired. Successful payment requires manual reconciliation"
+      "Order has expired. Successful payment requires manual reconciliation",
     );
   }
 
-  const session =
-    await mongoose.startSession();
+  const session = await mongoose.startSession();
 
   let purchaseHistory = null;
   let createdPurchase = false;
 
   try {
-    await session.withTransaction(
-      async () => {
-        const currentPayment =
-          await Payment.findById(
-            payment._id
-          ).session(session);
+    await session.withTransaction(async () => {
+      const currentPayment = await Payment.findById(payment._id).session(
+        session,
+      );
 
-        if (!currentPayment) {
-          throw createError(
-            404,
-            "Payment record not found"
-          );
+      if (!currentPayment) {
+        throw createError(404, "Payment record not found");
+      }
+
+      const currentOrder = await Order.findById(order._id).session(session);
+
+      if (!currentOrder) {
+        throw createError(404, "Order not found");
+      }
+
+      const purchaseAlreadyExists = await findExistingPurchase({
+        orderId: currentOrder._id,
+        paymentId: currentPayment._id,
+        session,
+      });
+
+      if (purchaseAlreadyExists) {
+        const existingPaidAt =
+          purchaseAlreadyExists.paidAt || currentPayment.paidAt || finalPaidAt;
+
+        if (!purchaseAlreadyExists.paidAt) {
+          purchaseAlreadyExists.paidAt = existingPaidAt;
+
+          await purchaseAlreadyExists.save({ session });
         }
 
-        const currentOrder =
-          await Order.findById(
-            order._id
-          ).session(session);
-
-        if (!currentOrder) {
-          throw createError(
-            404,
-            "Order not found"
-          );
-        }
-
-        const purchaseAlreadyExists =
-          await findExistingPurchase({
-            orderId: currentOrder._id,
-            paymentId: currentPayment._id,
-            session,
-          });
-
-        if (purchaseAlreadyExists) {
-          const existingPaidAt =
-            purchaseAlreadyExists.paidAt ||
-            currentPayment.paidAt ||
-            finalPaidAt;
-
-          if (
-            !purchaseAlreadyExists.paidAt
-          ) {
-            purchaseAlreadyExists.paidAt =
-              existingPaidAt;
-
-            await purchaseAlreadyExists.save({
-              session,
-            });
-          }
-
-          currentPayment.status =
-            "SUCCESS";
-
-          currentPayment.razorpayPaymentId =
-            razorpayPaymentId;
-
-          if (razorpaySignature) {
-            currentPayment.razorpaySignature =
-              razorpaySignature;
-          }
-
-          if (paymentMethod) {
-            currentPayment.paymentMethod =
-              paymentMethod;
-          }
-
-          if (!currentPayment.paidAt) {
-            currentPayment.paidAt =
-              existingPaidAt;
-          }
-
-          if (webhookVerified) {
-            currentPayment.webhookVerified =
-              true;
-
-            currentPayment.webhookVerifiedAt =
-              currentPayment.webhookVerifiedAt ||
-              finalPaidAt;
-          }
-
-          await currentPayment.save({
-            session,
-          });
-
-          purchaseHistory =
-            purchaseAlreadyExists;
-
-          createdPurchase = false;
-
-          return;
-        }
-
-        if (
-          currentOrder.status ===
-          "EXPIRED"
-        ) {
-          throw createError(
-            409,
-            "Order has expired. Successful payment requires manual reconciliation"
-          );
-        }
-
-        if (
-          ![
-            "PENDING_PAYMENT",
-            "COMPLETED",
-          ].includes(currentOrder.status)
-        ) {
-          throw createError(
-            409,
-            `Order cannot be completed from status ${currentOrder.status}`
-          );
-        }
-
-        await allocateFractions({
-          assetId: currentOrder.assetId,
-          userId: currentOrder.userId,
-          fractions:
-            currentOrder.fractions,
-          razorpayOrderId,
-          razorpayPaymentId,
-          session,
-        });
-
-        currentPayment.razorpayPaymentId =
-          razorpayPaymentId;
+        currentPayment.status = "SUCCESS";
+        currentPayment.razorpayPaymentId = razorpayPaymentId;
 
         if (razorpaySignature) {
-          currentPayment.razorpaySignature =
-            razorpaySignature;
+          currentPayment.razorpaySignature = razorpaySignature;
         }
 
-        currentPayment.status =
-          "SUCCESS";
-
-        currentPayment.paidAt =
-          currentPayment.paidAt ||
-          finalPaidAt;
-
         if (paymentMethod) {
-          currentPayment.paymentMethod =
-            paymentMethod;
+          currentPayment.paymentMethod = paymentMethod;
+        }
+
+        if (!currentPayment.paidAt) {
+          currentPayment.paidAt = existingPaidAt;
         }
 
         if (webhookVerified) {
-          currentPayment.webhookVerified =
-            true;
-
+          currentPayment.webhookVerified = true;
           currentPayment.webhookVerifiedAt =
-            currentPayment.webhookVerifiedAt ||
-            finalPaidAt;
+            currentPayment.webhookVerifiedAt || finalPaidAt;
         }
 
-        await currentPayment.save({
-          session,
-        });
+        await currentPayment.save({ session });
 
-        if (
-          currentOrder.status ===
-          "PENDING_PAYMENT"
-        ) {
-          const assetUpdate =
-            await Asset.updateOne(
-              {
-                _id:
-                  currentOrder.assetId,
-                reservedFractions: {
-                  $gte:
-                    currentOrder.fractions,
-                },
-              },
-              {
-                $inc: {
-                  reservedFractions:
-                    -Number(
-                      currentOrder.fractions
-                    ),
-                },
-              },
-              {
-                session,
-              }
-            );
+        purchaseHistory = purchaseAlreadyExists;
+        createdPurchase = false;
 
-          if (
-            assetUpdate.modifiedCount !==
-            1
-          ) {
-            throw createError(
-              409,
-              "Unable to finalize reserved fractions"
-            );
-          }
-        }
-
-        currentOrder.status =
-          "COMPLETED";
-
-        await currentOrder.save({
-          session,
-        });
-
-        const currentAsset =
-          await Asset.findById(
-            currentOrder.assetId
-          ).session(session);
-
-        if (!currentAsset) {
-          throw createError(
-            404,
-            "Asset not found"
-          );
-        }
-
-        const assetSnapshot =
-          buildAssetSnapshot(
-            currentAsset
-          );
-
-        const purchaseRecords =
-          await PurchaseHistory.create(
-            [
-              {
-                userId:
-                  currentOrder.userId,
-
-                assetId:
-                  currentOrder.assetId,
-
-                orderId:
-                  currentOrder._id,
-
-                paymentId:
-                  currentPayment._id,
-
-                fractionsPurchased:
-                  Number(
-                    currentOrder.fractions ||
-                      0
-                  ),
-
-                amountPerFraction:
-                  Number(
-                    currentOrder.amountPerFraction ||
-                      currentAsset.amountPerFraction ||
-                      0
-                  ),
-
-                totalAmount:
-                  Number(
-                    currentOrder.totalAmount ||
-                      currentPayment.amount ||
-                      0
-                  ),
-
-                paymentStatus:
-                  "SUCCESS",
-
-                razorpayOrderId,
-                razorpayPaymentId,
-
-                razorpaySignature:
-                  razorpaySignature ||
-                  null,
-
-                transactionReference:
-                  razorpayPaymentId,
-
-                paidAt:
-                  currentPayment.paidAt ||
-                  finalPaidAt,
-
-                assetSnapshot,
-
-                paymentEmailStatus:
-                  "PENDING",
-
-                paymentEmailAttempts:
-                  0,
-
-                paymentEmailSentAt:
-                  null,
-
-                paymentEmailClaimedAt:
-                  null,
-              },
-            ],
-            {
-              session,
-            }
-          );
-
-        purchaseHistory =
-          purchaseRecords[0];
-
-        createdPurchase = true;
+        return;
       }
-    );
+
+      if (currentOrder.status === "EXPIRED") {
+        throw createError(
+          409,
+          "Order has expired. Successful payment requires manual reconciliation",
+        );
+      }
+
+      if (!["PENDING_PAYMENT", "COMPLETED"].includes(currentOrder.status)) {
+        throw createError(
+          409,
+          `Order cannot be completed from status ${currentOrder.status}`,
+        );
+      }
+
+      await allocateFractions({
+        assetId: currentOrder.assetId,
+        userId: currentOrder.userId,
+        fractions: currentOrder.fractions,
+        razorpayOrderId,
+        razorpayPaymentId,
+        session,
+      });
+
+      currentPayment.razorpayPaymentId = razorpayPaymentId;
+
+      if (razorpaySignature) {
+        currentPayment.razorpaySignature = razorpaySignature;
+      }
+
+      currentPayment.status = "SUCCESS";
+      currentPayment.paidAt = currentPayment.paidAt || finalPaidAt;
+
+      if (paymentMethod) {
+        currentPayment.paymentMethod = paymentMethod;
+      }
+
+      if (webhookVerified) {
+        currentPayment.webhookVerified = true;
+        currentPayment.webhookVerifiedAt =
+          currentPayment.webhookVerifiedAt || finalPaidAt;
+      }
+
+      await currentPayment.save({ session });
+
+      if (currentOrder.status === "PENDING_PAYMENT") {
+        const assetUpdate = await Asset.updateOne(
+          {
+            _id: currentOrder.assetId,
+            reservedFractions: {
+              $gte: currentOrder.fractions,
+            },
+          },
+          {
+            $inc: {
+              reservedFractions: -Number(currentOrder.fractions),
+            },
+          },
+          { session },
+        );
+
+        if (assetUpdate.modifiedCount !== 1) {
+          throw createError(409, "Unable to finalize reserved fractions");
+        }
+      }
+
+      currentOrder.status = "COMPLETED";
+
+      await currentOrder.save({ session });
+
+      const currentAsset = await Asset.findById(currentOrder.assetId).session(
+        session,
+      );
+
+      if (!currentAsset) {
+        throw createError(404, "Asset not found");
+      }
+
+      const fractionsPurchased = Number(currentOrder.fractions || 0);
+
+      const assetSnapshot = buildAssetSnapshot(
+        currentAsset,
+        fractionsPurchased,
+      );
+
+      const userSnapshot = await getUserSnapshot(currentOrder.userId, session);
+
+      const purchaseRecords = await PurchaseHistory.create(
+        [
+          {
+            userId: currentOrder.userId,
+            assetId: currentOrder.assetId,
+            orderId: currentOrder._id,
+            paymentId: currentPayment._id,
+
+            fractionsPurchased,
+
+            amountPerFraction: Number(
+              currentOrder.amountPerFraction ||
+                currentAsset.amountPerFraction ||
+                0,
+            ),
+
+            totalAmount: Number(
+              currentOrder.totalAmount || currentPayment.amount || 0,
+            ),
+
+            userSnapshot,
+            assetSnapshot,
+
+            paymentStatus: "SUCCESS",
+
+            razorpayOrderId,
+            razorpayPaymentId,
+
+            razorpaySignature: razorpaySignature || null,
+
+            paymentMethod:
+              paymentMethod || currentPayment.paymentMethod || null,
+
+            transactionReference: razorpayPaymentId,
+
+            paidAt: currentPayment.paidAt || finalPaidAt,
+
+            paymentEmailStatus: "PENDING",
+            paymentEmailAttempts: 0,
+            paymentEmailSentAt: null,
+            paymentEmailClaimedAt: null,
+          },
+        ],
+        { session },
+      );
+
+      purchaseHistory = purchaseRecords[0];
+      createdPurchase = true;
+    });
 
     if (!purchaseHistory) {
-      purchaseHistory =
-        await findExistingPurchase({
-          orderId: order._id,
-          paymentId: payment._id,
-        });
+      purchaseHistory = await findExistingPurchase({
+        orderId: order._id,
+        paymentId: payment._id,
+      });
     }
 
     if (!purchaseHistory) {
       throw createError(
         500,
-        "Payment completed but purchase history could not be created"
+        "Payment completed but purchase history could not be created",
       );
     }
 
     if (createdPurchase) {
-      const confirmationPurchaseId =
-        purchaseHistory._id;
+      const confirmationPurchaseId = purchaseHistory._id;
 
       setImmediate(() => {
-        void sendPurchaseConfirmation(
-          confirmationPurchaseId
-        ).catch((error) => {
-          console.error(
-            "PAYMENT EMAIL PROCESSING ERROR:",
-            error
-          );
+        void sendPurchaseConfirmation(confirmationPurchaseId).catch((error) => {
+          console.error("PAYMENT EMAIL PROCESSING ERROR:", error);
         });
       });
     }
@@ -2304,19 +2086,13 @@ export const finalizeSuccessfulPayment = async ({
     return {
       success: true,
       alreadyProcessed: false,
-      purchaseHistoryId:
-        purchaseHistory._id,
+      purchaseHistoryId: purchaseHistory._id,
       paymentId: payment._id,
       orderId: order._id,
-      paidAt:
-        purchaseHistory.paidAt ||
-        finalPaidAt,
+      paidAt: purchaseHistory.paidAt || finalPaidAt,
     };
   } catch (error) {
-    console.error(
-      "FINALIZE SUCCESSFUL PAYMENT ERROR:",
-      error
-    );
+    console.error("FINALIZE SUCCESSFUL PAYMENT ERROR:", error);
 
     throw error;
   } finally {
