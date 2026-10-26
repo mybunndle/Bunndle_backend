@@ -5,7 +5,6 @@ const getIndianTime = () => {
   return new Date(Date.now() + istOffset);
 };
 
-
 // ==================================================
 // DOCUMENT SCHEMA
 // Actual PDF -> ImageKit
@@ -42,9 +41,8 @@ const documentSchema = new mongoose.Schema(
   },
   {
     _id: false,
-  }
+  },
 );
-
 
 // ==================================================
 // PURCHASE HISTORY SCHEMA
@@ -87,7 +85,6 @@ const purchaseHistorySchema = new mongoose.Schema(
       default: null,
     },
 
-
     // ==================================================
     // PURCHASE DETAILS
     // ==================================================
@@ -106,7 +103,6 @@ const purchaseHistorySchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-
 
     // ==================================================
     // USER SNAPSHOT
@@ -129,12 +125,21 @@ const purchaseHistorySchema = new mongoose.Schema(
       },
     },
 
-
     // ==================================================
     // ASSET SNAPSHOT
     // ==================================================
 
     assetSnapshot: {
+      registeredLegalOwner: {
+        type: String,
+        default: null,
+      },
+
+      totalFractions: {
+        type: Number,
+        default: null,
+      },
+
       assetName: {
         type: String,
         default: null,
@@ -175,30 +180,30 @@ const purchaseHistorySchema = new mongoose.Schema(
         default: null,
       },
     },
-     // ==================================================
-// PAYMENT SUCCESS EMAIL STATUS
-// ==================================================
+    // ==================================================
+    // PAYMENT SUCCESS EMAIL STATUS
+    // ==================================================
 
-paymentEmailStatus: {
-  type: String,
-  enum: ["PENDING", "SENDING", "SENT", "FAILED"],
-  default: "PENDING",
-},
+    paymentEmailStatus: {
+      type: String,
+      enum: ["PENDING", "SENDING", "SENT", "FAILED"],
+      default: "PENDING",
+    },
 
-paymentEmailSentAt: {
-  type: Date,
-  default: null,
-},
+    paymentEmailSentAt: {
+      type: Date,
+      default: null,
+    },
 
-paymentEmailAttempts: {
-  type: Number,
-  default: 0,
-},
+    paymentEmailAttempts: {
+      type: Number,
+      default: 0,
+    },
 
-paymentEmailClaimedAt: {
-  type: Date,
-  default: null,
-},
+    paymentEmailClaimedAt: {
+      type: Date,
+      default: null,
+    },
 
     // ==================================================
     // PAYMENT DETAILS
@@ -206,12 +211,7 @@ paymentEmailClaimedAt: {
 
     paymentStatus: {
       type: String,
-      enum: [
-        "PENDING",
-        "SUCCESS",
-        "FAILED",
-        "REFUNDED",
-      ],
+      enum: ["PENDING", "SUCCESS", "FAILED", "REFUNDED"],
       default: "PENDING",
     },
 
@@ -251,7 +251,6 @@ paymentEmailClaimedAt: {
       default: null,
     },
 
-
     // ==================================================
     // GENERATED PDF DOCUMENTS
     // ==================================================
@@ -283,7 +282,6 @@ paymentEmailClaimedAt: {
       },
     },
 
-
     // ==================================================
     // DOCUMENT GENERATION STATUS
     // ==================================================
@@ -291,12 +289,7 @@ paymentEmailClaimedAt: {
     documentGenerationStatus: {
       type: String,
 
-      enum: [
-        "NOT_STARTED",
-        "PROCESSING",
-        "COMPLETED",
-        "FAILED",
-      ],
+      enum: ["NOT_STARTED", "PROCESSING", "COMPLETED", "FAILED"],
 
       default: "NOT_STARTED",
     },
@@ -312,9 +305,8 @@ paymentEmailClaimedAt: {
     timestamps: {
       currentTime: getIndianTime,
     },
-  }
+  },
 );
-
 
 // ==================================================
 // INDEXES
@@ -325,11 +317,9 @@ purchaseHistorySchema.index({
   createdAt: -1,
 });
 
-
 purchaseHistorySchema.index({
   assetId: 1,
 });
-
 
 purchaseHistorySchema.index(
   {
@@ -343,15 +333,11 @@ purchaseHistorySchema.index(
         $type: "string",
       },
     },
-  }
+  },
 );
-
 
 // ==================================================
 // MODEL
 // ==================================================
 
-export default mongoose.model(
-  "PurchaseHistory",
-  purchaseHistorySchema
-);
+export default mongoose.model("PurchaseHistory", purchaseHistorySchema);
