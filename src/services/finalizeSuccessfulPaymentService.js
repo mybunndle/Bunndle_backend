@@ -1710,16 +1710,45 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
       fractionsPurchased * rentalAmountPerFraction;
 
     await sendPaymentWelcomeEmail({
-      email: user.email,
-      name: user.name || "Customer",
-      assetName: purchase.assetSnapshot?.assetName || "Asset",
-      assetCode: purchase.assetSnapshot?.assetCode || "",
-      transactionId: purchase.razorpayPaymentId,
-      totalAmountPaid: purchase.totalAmount,
-      fractionsPurchased,
-      acquisitionDate: purchase.paidAt,
-      totalFixedMonthlyRental,
-    });
+  email: user.email,
+  name: user.name || "Customer",
+
+  assetName: purchase.assetSnapshot?.assetName,
+  assetCode: purchase.assetSnapshot?.assetCode,
+
+  registeredLegalOwner:
+    purchase.assetSnapshot?.registeredLegalOwner,
+
+  totalAssetValue:
+    purchase.assetSnapshot?.assetCost,
+
+  totalFractions:
+    purchase.assetSnapshot?.totalFractions,
+
+  amountPerFraction:
+    purchase.amountPerFraction,
+
+  fractionsPurchased:
+    purchase.fractionsPurchased,
+
+  totalAmountPaid:
+    purchase.totalAmount,
+
+  acquisitionDate:
+    purchase.paidAt,
+
+  monthlyRentalPerFraction:
+    purchase.assetSnapshot?.rentalAmountPerFraction,
+
+  totalFixedMonthlyRental:
+    Number(purchase.fractionsPurchased || 0) *
+    Number(
+      purchase.assetSnapshot?.rentalAmountPerFraction || 0
+    ),
+
+  transactionId:
+    purchase.razorpayPaymentId,
+});
 
     await PurchaseHistory.updateOne(
       {
