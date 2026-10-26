@@ -175,7 +175,30 @@ const purchaseHistorySchema = new mongoose.Schema(
         default: null,
       },
     },
+     // ==================================================
+// PAYMENT SUCCESS EMAIL STATUS
+// ==================================================
 
+paymentEmailStatus: {
+  type: String,
+  enum: ["PENDING", "SENDING", "SENT", "FAILED"],
+  default: "PENDING",
+},
+
+paymentEmailSentAt: {
+  type: Date,
+  default: null,
+},
+
+paymentEmailAttempts: {
+  type: Number,
+  default: 0,
+},
+
+paymentEmailClaimedAt: {
+  type: Date,
+  default: null,
+},
 
     // ==================================================
     // PAYMENT DETAILS
