@@ -12,6 +12,7 @@ import homeListRouter from "./routes/Home_page_routes.js"
 import webAssetRouter from "./routes/web_asset_routes.js"
 import enquiryRoutes from "./routes/web_enquiry_routes.js"
 import aggrementRoutes from "./routes/aggreementRoutes.js"
+import OwnershipExitRoutes from './routes/ownershipExitRoutes.js';
 
 import "./config/passport.js";
 import cookieParser from 'cookie-parser';
@@ -68,6 +69,7 @@ app.use("/api/home", homeListRouter);
 app.use("/api/web_asset", webAssetRouter);
 app.use("/api/web_enquiry", enquiryRoutes);
 app.use("/api/agreement", aggrementRoutes);
+app.use("/api/ownership", OwnershipExitRoutes)
 
 
 
