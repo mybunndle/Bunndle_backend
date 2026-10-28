@@ -196,34 +196,24 @@ export const getCoAssets = async (req, res) => {
 
     const updatedAssets = assets.map((asset) => {
       // Maximum 80% users ke liye
-      const publicLimit = Math.floor(
-        asset.totalFractions * 0.8
-      );
+      const publicLimit = Math.floor(asset.totalFractions * 0.8);
 
       // Already sold/reserved fractions
-      const usedFractions =
-        asset.totalFractions -
-        asset.availableFractions;
+      const usedFractions = asset.totalFractions - asset.availableFractions;
 
       // Actual fractions jo abhi users buy kar sakte hain
-      const publicAvailableFractions = Math.max(
-        0,
-        publicLimit - usedFractions
-      );
+      const publicAvailableFractions = Math.max(0, publicLimit - usedFractions);
 
       return {
         ...asset,
 
         // Previous logic same
-        availableFractions:
-          publicAvailableFractions-asset.dummyFractions,
+        availableFractions: publicAvailableFractions - asset.dummyFractions,
 
         // Only extra dummy-related fields
-        dummyFractions:
-          Number(asset.dummyFractions || 0),
+        dummyFractions: Number(asset.dummyFractions || 0),
 
-        realAvailableFractions:
-          asset.availableFractions,
+        realAvailableFractions: asset.availableFractions,
 
         publicLimit,
       };
@@ -289,11 +279,10 @@ export const getCoAssetById = async (req, res) => {
 //       amountPerFraction: purchase.amountPerFraction,
 
 //       totalAmount: purchase.totalAmount,
-      
+
 //       paymentStatus: purchase.paymentStatus,
 
 //       purchaseDate: purchase.createdAt.toLocaleDateString("en-IN"),
-
 
 //       purchaseTime: purchase.createdAt.toLocaleTimeString("en-IN", {
 //         hour: "2-digit",
@@ -347,7 +336,6 @@ export const getCoAssetById = async (req, res) => {
 //   }
 // };
 
-
 //admin controller
 
 // export const getAssetInvestors = async (req, res) => {
@@ -370,7 +358,6 @@ export const getCoAssetById = async (req, res) => {
 //     });
 //   }
 // };
-
 
 // export const getPurchaseHistory = async (req, res) => {
 //   try {
@@ -477,8 +464,6 @@ export const getCoAssetById = async (req, res) => {
 //   }
 // };
 
-
-
 export const getPurchaseHistory = async (req, res) => {
   try {
     const purchases = await PurchaseHistory.find({
@@ -487,16 +472,14 @@ export const getPurchaseHistory = async (req, res) => {
     })
       .populate(
         "assetId",
-        "assetName assetCode images specification amountPerFraction"
+        "assetName assetCode images specification amountPerFraction",
       )
       .sort({
         createdAt: -1,
       })
       .lean();
 
-    const purchaseIds = purchases.map(
-      (purchase) => purchase._id
-    );
+    const purchaseIds = purchases.map((purchase) => purchase._id);
 
     const exitRequests = purchaseIds.length
       ? await OwnershipExitRequest.find({
@@ -515,9 +498,7 @@ export const getPurchaseHistory = async (req, res) => {
     const exitRequestMap = new Map();
 
     for (const request of exitRequests) {
-      const purchaseId = String(
-        request.purchaseHistoryId
-      );
+      const purchaseId = String(request.purchaseHistoryId);
 
       if (!exitRequestMap.has(purchaseId)) {
         exitRequestMap.set(purchaseId, request);
@@ -525,81 +506,57 @@ export const getPurchaseHistory = async (req, res) => {
     }
 
     const formattedPurchases = purchases.map((purchase) => {
-      const exitRequest = exitRequestMap.get(
-        String(purchase._id)
-      );
+      const exitRequest = exitRequestMap.get(String(purchase._id));
 
       return {
         id: purchase._id,
 
         asset: purchase.assetId,
 
-        fractionsPurchased:
-          purchase.fractionsPurchased,
+        fractionsPurchased: purchase.fractionsPurchased,
 
-        amountPerFraction:
-          purchase.amountPerFraction,
+        amountPerFraction: purchase.amountPerFraction,
 
-        totalAmount:
-          purchase.totalAmount,
+        totalAmount: purchase.totalAmount,
 
-        paymentStatus:
-          purchase.paymentStatus,
+        paymentStatus: purchase.paymentStatus,
 
-        purchaseDate:
-          new Date(
-            purchase.createdAt
-          ).toLocaleDateString("en-IN", {
-            timeZone: "Asia/Kolkata",
-          }),
+        purchaseDate: new Date(purchase.createdAt).toLocaleDateString("en-IN", {
+          timeZone: "Asia/Kolkata",
+        }),
 
-        purchaseTime:
-          new Date(
-            purchase.createdAt
-          ).toLocaleTimeString("en-IN", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-            timeZone: "Asia/Kolkata",
-          }),
+        purchaseTime: new Date(purchase.createdAt).toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+          timeZone: "Asia/Kolkata",
+        }),
 
-        agreementUrl:
-          purchase.documents
-            ?.digitalAgreement
-            ?.url || null,
+        agreementUrl: purchase.documents?.digitalAgreement?.url || null,
 
-        paymentReceiptUrl:
-          purchase.documents
-            ?.paymentReceipt
-            ?.url || null,
+        paymentReceiptUrl: purchase.documents?.paymentReceipt?.url || null,
 
-        createdAt:
-          purchase.createdAt,
+        createdAt: purchase.createdAt,
 
-        hasExitRequest:
-          Boolean(exitRequest),
+        hasExitRequest: Boolean(exitRequest),
 
-        exitRequestStatus:
-          exitRequest?.status || null,
+        exitRequestStatus: exitRequest?.status || null,
 
-        exitRequestId:
-          exitRequest?._id || null,
+        exitRequestId: exitRequest?._id || null,
 
-        requestedExitFractions:
-          exitRequest?.requestedFractions ?? 0,
+        requestedExitFractions: exitRequest?.requestedFractions ?? 0,
       };
     });
 
     return res.status(200).json({
       success: true,
+       message:
+       "User purchase history fetched successfully",
       count: formattedPurchases.length,
       data: formattedPurchases,
     });
   } catch (error) {
-    console.error(
-      "Get Purchase History Error:",
-      error
-    );
+    console.error("Get Purchase History Error:", error);
 
     return res.status(500).json({
       success: false,
@@ -608,38 +565,29 @@ export const getPurchaseHistory = async (req, res) => {
   }
 };
 
-
-
 export const getMyOwnerships = async (req, res) => {
   try {
-    const userId =
-      req.user._id ||
-      req.user.id;
+    const userId = req.user._id || req.user.id;
 
     // ========================================================
     // GET USER OWNERSHIPS
     // ========================================================
 
-    const ownerships =
-      await Ownership.find({
-        userId,
+    const ownerships = await Ownership.find({
+      userId,
+    })
+      .populate({
+        path: "assetId",
+
+        select:
+          "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction assetCost specification durationMonths lockInMonths",
       })
-        .populate({
-          path:
-            "assetId",
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
 
-          select:
-            "assetName assetCode images amountPerFraction totalFractions availableFractions status rentalAmountPerFraction assetCost specification durationMonths lockInMonths",
-        })
-        .sort({
-          createdAt: -1,
-        })
-        .lean();
-
-
-    if (
-      ownerships.length === 0
-    ) {
+    if (ownerships.length === 0) {
       return res.status(200).json({
         success: true,
         count: 0,
@@ -647,21 +595,13 @@ export const getMyOwnerships = async (req, res) => {
       });
     }
 
-
     // ========================================================
     // COLLECT ASSET IDS
     // ========================================================
 
-    const assetIds =
-      ownerships
-        .map(
-          (ownership) =>
-            ownership
-              .assetId
-              ?._id
-        )
-        .filter(Boolean);
-
+    const assetIds = ownerships
+      .map((ownership) => ownership.assetId?._id)
+      .filter(Boolean);
 
     // ========================================================
     // GET PURCHASE HISTORIES IN ONE QUERY
@@ -669,31 +609,27 @@ export const getMyOwnerships = async (req, res) => {
     // Avoids N+1 queries.
     // ========================================================
 
-    const purchases =
-      await PurchaseHistory.find({
-        userId,
+    const purchases = await PurchaseHistory.find({
+      userId,
 
-        assetId: {
-          $in:
-            assetIds,
-        },
+      assetId: {
+        $in: assetIds,
+      },
 
-        paymentStatus:
-          "SUCCESS",
-      })
-        .select(
-          `
+      paymentStatus: "SUCCESS",
+    })
+      .select(
+        `
           assetId
           documents.digitalAgreement.url
           documents.paymentReceipt.url
           createdAt
-          `
-        )
-        .sort({
-          createdAt: -1,
-        })
-        .lean();
-
+          `,
+      )
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
 
     // ========================================================
     // MAP PURCHASE BY ASSET
@@ -702,106 +638,54 @@ export const getMyOwnerships = async (req, res) => {
     // the first purchase found for an asset is used.
     // ========================================================
 
-    const purchaseMap =
-      new Map();
+    const purchaseMap = new Map();
 
+    for (const purchase of purchases) {
+      const assetId = purchase.assetId?.toString();
 
-    for (
-      const purchase
-      of purchases
-    ) {
-      const assetId =
-        purchase.assetId
-          ?.toString();
-
-
-      if (
-        assetId &&
-        !purchaseMap.has(
-          assetId
-        )
-      ) {
-        purchaseMap.set(
-          assetId,
-          purchase
-        );
+      if (assetId && !purchaseMap.has(assetId)) {
+        purchaseMap.set(assetId, purchase);
       }
     }
-
 
     // ========================================================
     // FORMAT OWNERSHIPS
     // ========================================================
 
-    const formattedOwnerships =
-      ownerships.map(
-        (ownership) => {
-          const assetId =
-            ownership
-              .assetId
-              ?._id
-              ?.toString();
+    const formattedOwnerships = ownerships.map((ownership) => {
+      const assetId = ownership.assetId?._id?.toString();
 
+      const purchase = assetId ? purchaseMap.get(assetId) : null;
 
-          const purchase =
-            assetId
-              ? purchaseMap.get(
-                  assetId
-                )
-              : null;
+      return {
+        ...ownership,
 
+        agreementUrl: purchase?.documents?.digitalAgreement?.url || null,
 
-          return {
-            ...ownership,
-
-            agreementUrl:
-              purchase
-                ?.documents
-                ?.digitalAgreement
-                ?.url ||
-              null,
-
-            paymentReceiptUrl:
-              purchase
-                ?.documents
-                ?.paymentReceipt
-                ?.url ||
-              null,
-          };
-        }
-      );
-
+        paymentReceiptUrl: purchase?.documents?.paymentReceipt?.url || null,
+      };
+    });
 
     return res.status(200).json({
       success: true,
 
-      count:
-        formattedOwnerships.length,
+      count: formattedOwnerships.length,
 
-      data:
-        formattedOwnerships,
+      data: formattedOwnerships,
     });
-
   } catch (error) {
-    console.error(
-      "Get My Ownerships Error:",
-      error
-    );
+    console.error("Get My Ownerships Error:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        error.message,
+      message: error.message,
     });
   }
 };
 
-
 export const getAssetInvestors = async (req, res) => {
   try {
     const { assetId } = req.params;
-
-    
 
     if (!assetId) {
       return res.status(400).json({
@@ -837,8 +721,7 @@ export const getAssetInvestors = async (req, res) => {
     const investorsWithRentalAmount = investors.map((investor) => {
       const fractionsOwned = Number(investor.fractionsOwned || 0);
 
-      const rentalAmountPerMonth =
-        fractionsOwned * rentalAmountPerFraction;
+      const rentalAmountPerMonth = fractionsOwned * rentalAmountPerFraction;
 
       return {
         ...investor,
@@ -909,7 +792,6 @@ export const delete_co_own = async (req, res) => {
     });
   }
 };
-
 
 // export const getPurchaseHistoryByUserId = async (req, res) => {
 //   try {
@@ -1006,8 +888,6 @@ export const delete_co_own = async (req, res) => {
 //     });
 //   }
 // };
-
-
 
 // export const getPurchaseHistoryByUserId = async (req, res) => {
 //   try {
@@ -1183,9 +1063,6 @@ export const delete_co_own = async (req, res) => {
 //   }
 // };
 
-
-
-
 export const getPurchaseHistoryByUserId = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1229,16 +1106,10 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
         transactionReference
         documents.digitalAgreement.url
         documents.paymentReceipt.url
-        `
+        `,
       )
-      .populate(
-        "userId",
-        "name"
-      )
-      .populate(
-        "assetId",
-        "assetName assetCode model specification"
-      )
+      .populate("userId", "name")
+      .populate("assetId", "assetName assetCode model specification")
       .sort({
         createdAt: -1,
       })
@@ -1250,7 +1121,6 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
 
     const formattedHistory = await Promise.all(
       purchaseHistory.map(async (purchase) => {
-
         // =====================================================
         // PAYMENT / PURCHASE DATE TIME
         //
@@ -1261,152 +1131,110 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
         // createdAt
         // =====================================================
 
-        const purchaseDateSource =
-          purchase.paidAt ||
-          purchase.createdAt;
+        const purchaseDateSource = purchase.paidAt || purchase.createdAt;
 
-        const paymentDateTime =
-          purchaseDateSource
-            ? new Date(purchaseDateSource)
-            : null;
+        const paymentDateTime = purchaseDateSource
+          ? new Date(purchaseDateSource)
+          : null;
 
         // =====================================================
         // FETCH PAYMENT DATA
         // =====================================================
 
-        const paymentData =
-          await paymentModel
-            .findOne({
-              userId: userId,
+        const paymentData = await paymentModel
+          .findOne({
+            userId: userId,
 
-              $or: [
-                {
-                  razorpayOrderId:
-                    purchase.razorpayOrderId,
-                },
-                {
-                  razorpayPaymentId:
-                    purchase.razorpayPaymentId,
-                },
-              ],
-            })
-            .select(
-              `
+            $or: [
+              {
+                razorpayOrderId: purchase.razorpayOrderId,
+              },
+              {
+                razorpayPaymentId: purchase.razorpayPaymentId,
+              },
+            ],
+          })
+          .select(
+            `
               razorpayOrderId
               razorpayPaymentId
               amount
               status
               createdAt
-              `
-            )
-            .lean();
+              `,
+          )
+          .lean();
 
         // =====================================================
         // INDIAN DATE
         // =====================================================
 
-        const paymentDate =
-          paymentDateTime
-            ? new Intl.DateTimeFormat(
-                "en-IN",
-                {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  timeZone: "Asia/Kolkata",
-                }
-              ).format(paymentDateTime)
-            : null;
+        const paymentDate = paymentDateTime
+          ? new Intl.DateTimeFormat("en-IN", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              timeZone: "Asia/Kolkata",
+            }).format(paymentDateTime)
+          : null;
 
         // =====================================================
         // INDIAN TIME
         // =====================================================
 
-        const paymentTime =
-          paymentDateTime
-            ? new Intl.DateTimeFormat(
-                "en-IN",
-                {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: true,
-                  timeZone: "Asia/Kolkata",
-                }
-              )
-                .format(paymentDateTime)
-                .toLowerCase()
-            : null;
+        const paymentTime = paymentDateTime
+          ? new Intl.DateTimeFormat("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+              timeZone: "Asia/Kolkata",
+            })
+              .format(paymentDateTime)
+              .toLowerCase()
+          : null;
 
         // =====================================================
         // RESPONSE ITEM
         // =====================================================
 
         return {
-          username:
-            purchase.userId?.name ||
-            "N/A",
+          username: purchase.userId?.name || "N/A",
 
-          assetName:
-            purchase.assetId?.assetName ||
-            "N/A",
+          assetName: purchase.assetId?.assetName || "N/A",
 
-          assetCode:
-            purchase.assetId?.assetCode ||
-            "N/A",
+          assetCode: purchase.assetId?.assetCode || "N/A",
 
           model:
-            purchase.assetId?.model ||
-            purchase.assetId?.specification ||
-            "N/A",
+            purchase.assetId?.model || purchase.assetId?.specification || "N/A",
 
           orderId:
-            paymentData?.razorpayOrderId ||
-            purchase.razorpayOrderId ||
-            "N/A",
+            paymentData?.razorpayOrderId || purchase.razorpayOrderId || "N/A",
 
           paymentDate,
 
           paymentTime,
 
-          amount:
-            purchase.totalAmount ||
-            paymentData?.amount ||
-            0,
+          amount: purchase.totalAmount || paymentData?.amount || 0,
 
-          fractionsPurchased:
-            purchase.fractionsPurchased ||
-            0,
+          fractionsPurchased: purchase.fractionsPurchased || 0,
 
-          paymentStatus:
-            purchase.paymentStatus ||
-            paymentData?.status ||
-            "N/A",
+          paymentStatus: purchase.paymentStatus || paymentData?.status || "N/A",
 
-          transactionReference:
-            purchase.transactionReference ||
-            null,
+          transactionReference: purchase.transactionReference || null,
 
           // ===============================================
           // AGREEMENT PDF URL
           // ===============================================
 
-          agreementUrl:
-            purchase.documents
-              ?.digitalAgreement
-              ?.url ||
-            null,
+          agreementUrl: purchase.documents?.digitalAgreement?.url || null,
 
           // ===============================================
           // PAYMENT RECEIPT PDF URL
           // ===============================================
 
-          paymentReceiptUrl:
-            purchase.documents
-              ?.paymentReceipt
-              ?.url ||
-            null,
+          paymentReceiptUrl: purchase.documents?.paymentReceipt?.url || null,
         };
-      })
+      }),
     );
 
     // =========================================================
@@ -1416,28 +1244,19 @@ export const getPurchaseHistoryByUserId = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message:
-        "User purchase history fetched successfully",
+      message: "User purchase history fetched successfully",
 
-      count:
-        formattedHistory.length,
+      count: formattedHistory.length,
 
-      data:
-        formattedHistory,
+      data: formattedHistory,
     });
-
   } catch (error) {
-    console.error(
-      "Admin Get User Purchase History Error:",
-      error
-    );
+    console.error("Admin Get User Purchase History Error:", error);
 
     return res.status(500).json({
       success: false,
 
-      message:
-        error.message ||
-        "Unable to fetch purchase history",
+      message: error.message || "Unable to fetch purchase history",
     });
   }
 };
