@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 import { Invoice } from "../model/invoiceModel.js";
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
@@ -30,7 +29,10 @@ const formatPaymentDateTime = (date) => {
     .format(paymentDateTime)
     .toLowerCase();
 
-  return { invoiceDate, invoiceTime };
+  return {
+    invoiceDate,
+    invoiceTime,
+  };
 };
 
 // ==========================================
@@ -65,35 +67,61 @@ export const createInvoice = async (req, res) => {
     // 2. VALIDATE INVOICE NUMBER
     // ========================================
 
-    if (
-      typeof invoiceNumber !== "string" ||
-      !invoiceNumber.trim()
-    ) {
+    if (typeof invoiceNumber !== "string" || !invoiceNumber.trim()) {
       return res.status(400).json({
         success: false,
         message: "Invoice number is required",
       });
     }
 
-    const normalizedInvoiceNumber = invoiceNumber
-      .trim()
-      .toUpperCase();
+    const normalizedInvoiceNumber = invoiceNumber.trim().toUpperCase();
 
     // ========================================
     // 3. VALIDATE HSN CODE
     // ========================================
 
-    if (
-      typeof hsnCode !== "string" ||
-      !hsnCode.trim()
-    ) {
+    const normalizedHsnCode =
+      typeof hsnCode === "string" || typeof hsnCode === "number"
+        ? String(hsnCode).trim()
+        : "";
+
+    if (!normalizedHsnCode) {
       return res.status(400).json({
         success: false,
         message: "HSN code is required",
       });
     }
 
-    const normalizedHsnCode = hsnCode.trim();
+    // ========================================
+    // CHECK DUPLICATE HSN CODE
+    // ========================================
+
+    const existingHsnCode = await Invoice.findOne({
+      hsnCode: normalizedHsnCode,
+    })
+      .select("_id invoiceNumber hsnCode")
+      .lean();
+
+    if (existingHsnCode) {
+      return res.status(409).json({
+        success: false,
+        message: "HSN code already exists",
+        hsnCode: normalizedHsnCode,
+        existingInvoice: {
+          invoiceId: existingHsnCode._id,
+          invoiceNumber: existingHsnCode.invoiceNumber,
+        },
+      });
+    }
+
+    // Allow 4, 6 or 8-digit HSN codes.
+    // if (!/^(?:\d{4}|\d{6}|\d{8})$/.test(normalizedHsnCode)) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message:
+    //       "HSN code must contain 4, 6 or 8 digits",
+    //   });
+    // }
 
     // ========================================
     // 4. VALIDATE GST PERCENTAGE
@@ -101,8 +129,7 @@ export const createInvoice = async (req, res) => {
 
     const parsedGstPercentage =
       typeof gstPercentage === "number" ||
-      (typeof gstPercentage === "string" &&
-        gstPercentage.trim() !== "")
+      (typeof gstPercentage === "string" && gstPercentage.trim() !== "")
         ? Number(gstPercentage)
         : NaN;
 
@@ -121,8 +148,6 @@ export const createInvoice = async (req, res) => {
     // 5. OPTIONAL CUSTOMER GST NUMBER
     // ========================================
 
-    // Missing, null or empty GSTIN => save null.
-
     if (
       customerGstNumber !== undefined &&
       customerGstNumber !== null &&
@@ -135,17 +160,13 @@ export const createInvoice = async (req, res) => {
     }
 
     const normalizedGstin =
-      typeof customerGstNumber === "string" &&
-      customerGstNumber.trim().length > 0
+      typeof customerGstNumber === "string" && customerGstNumber.trim()
         ? customerGstNumber.trim().toUpperCase()
         : null;
 
-    // Validate only when a GSTIN is provided.
     if (
       normalizedGstin &&
-      !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
-        normalizedGstin
-      )
+      !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(normalizedGstin)
     ) {
       return res.status(400).json({
         success: false,
@@ -154,7 +175,46 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 6. FETCH SUCCESSFUL PURCHASE
+    // 6. CHECK DUPLICATE INVOICE NUMBER
+    // ========================================
+
+    const existingInvoiceNumber = await Invoice.findOne({
+      invoiceNumber: normalizedInvoiceNumber,
+    })
+      .select("_id invoiceNumber")
+      .lean();
+
+    if (existingInvoiceNumber) {
+      return res.status(409).json({
+        success: false,
+        message: "Invoice number already exists",
+        invoiceNumber: normalizedInvoiceNumber,
+      });
+    }
+
+    // ========================================
+    // 7. CHECK DUPLICATE PURCHASE INVOICE
+    // ========================================
+
+    const existingPurchaseInvoice = await Invoice.findOne({
+      purchaseHistoryId,
+    })
+      .select("_id invoiceNumber purchaseHistoryId")
+      .lean();
+
+    if (existingPurchaseInvoice) {
+      return res.status(409).json({
+        success: false,
+        message: "Invoice has already been generated for this purchase",
+        existingInvoice: {
+          invoiceId: existingPurchaseInvoice._id,
+          invoiceNumber: existingPurchaseInvoice.invoiceNumber,
+        },
+      });
+    }
+
+    // ========================================
+    // 8. FETCH SUCCESSFUL PURCHASE
     // ========================================
 
     const purchase = await PurchaseHistory.findOne({
@@ -162,7 +222,7 @@ export const createInvoice = async (req, res) => {
       paymentStatus: "SUCCESS",
     })
       .select(
-        "orderId userId assetId paymentId totalAmount paidAt paymentStatus"
+        "orderId userId assetId paymentId totalAmount paidAt paymentStatus",
       )
       .lean();
 
@@ -174,7 +234,7 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 7. VALIDATE PURCHASE REFERENCES
+    // 9. VALIDATE PURCHASE REFERENCES
     // ========================================
 
     if (
@@ -185,13 +245,12 @@ export const createInvoice = async (req, res) => {
     ) {
       return res.status(422).json({
         success: false,
-        message:
-          "Purchase history contains incomplete reference details",
+        message: "Purchase history contains incomplete reference details",
       });
     }
 
     // ========================================
-    // 8. VALIDATE PAYMENT DATE
+    // 10. FORMAT PAYMENT DATE IN IST
     // ========================================
 
     if (!purchase.paidAt) {
@@ -201,9 +260,7 @@ export const createInvoice = async (req, res) => {
       });
     }
 
-    const formattedPayment = formatPaymentDateTime(
-      purchase.paidAt
-    );
+    const formattedPayment = formatPaymentDateTime(purchase.paidAt);
 
     if (!formattedPayment) {
       return res.status(422).json({
@@ -212,11 +269,10 @@ export const createInvoice = async (req, res) => {
       });
     }
 
-    const { invoiceDate, invoiceTime } =
-      formattedPayment;
+    const { invoiceDate, invoiceTime } = formattedPayment;
 
     // ========================================
-    // 9. VALIDATE TOTAL AMOUNT
+    // 11. VALIDATE PURCHASE AMOUNT
     // ========================================
 
     const totalAmount = purchase.totalAmount;
@@ -233,7 +289,7 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 10. CALCULATE GST-INCLUSIVE AMOUNT
+    // 12. GST-INCLUSIVE CALCULATION
     // ========================================
 
     const totalPaise = Math.round(totalAmount * 100);
@@ -245,10 +301,8 @@ export const createInvoice = async (req, res) => {
       });
     }
 
-    // Total includes GST.
     const taxablePaise = Math.round(
-      (totalPaise * 100) /
-        (100 + parsedGstPercentage)
+      (totalPaise * 100) / (100 + parsedGstPercentage),
     );
 
     const gstPaise = totalPaise - taxablePaise;
@@ -257,7 +311,7 @@ export const createInvoice = async (req, res) => {
     const gstAmount = gstPaise / 100;
 
     // ========================================
-    // 11. CREATE INVOICE
+    // 13. CREATE INVOICE
     // ========================================
 
     const invoice = await Invoice.create({
@@ -270,13 +324,11 @@ export const createInvoice = async (req, res) => {
 
       invoiceNumber: normalizedInvoiceNumber,
 
-      // Optional GST number
       customerGstNumber: normalizedGstin,
 
       hsnCode: normalizedHsnCode,
       gstPercentage: parsedGstPercentage,
 
-      // Indian date and time
       invoiceDate,
       invoiceTime,
 
@@ -286,7 +338,7 @@ export const createInvoice = async (req, res) => {
     });
 
     // ========================================
-    // 12. SUCCESS RESPONSE
+    // 14. SUCCESS RESPONSE
     // ========================================
 
     return res.status(201).json({
@@ -296,25 +348,35 @@ export const createInvoice = async (req, res) => {
     });
   } catch (error) {
     // ========================================
-    // DUPLICATE INVOICE
+    // HANDLE DATABASE UNIQUE CONSTRAINTS
     // ========================================
 
     if (error.code === 11000) {
+      if (error.keyPattern?.invoiceNumber) {
+        return res.status(409).json({
+          success: false,
+          message: "Invoice number already exists",
+        });
+      }
+
+      if (error.keyPattern?.purchaseHistoryId) {
+        return res.status(409).json({
+          success: false,
+          message: "Invoice has already been generated for this purchase",
+        });
+      }
+
       return res.status(409).json({
         success: false,
-        message:
-          "Invoice already exists for this purchase or invoice number",
+        message: "Duplicate invoice data",
       });
     }
 
     // ========================================
-    // MONGOOSE VALIDATION ERROR
+    // HANDLE VALIDATION ERRORS
     // ========================================
 
-    if (
-      error.name === "ValidationError" ||
-      error.name === "CastError"
-    ) {
+    if (error.name === "ValidationError" || error.name === "CastError") {
       return res.status(400).json({
         success: false,
         message: error.message,
@@ -330,7 +392,6 @@ export const createInvoice = async (req, res) => {
   }
 };
 
-
 export const getAllInvoiceEligiblePurchases = async (req, res) => {
   try {
     // ==========================================
@@ -340,7 +401,8 @@ export const getAllInvoiceEligiblePurchases = async (req, res) => {
     const purchases = await PurchaseHistory.find({
       paymentStatus: "SUCCESS",
     })
-      .select(`
+      .select(
+        `
         orderId
         userId
         assetId
@@ -358,7 +420,8 @@ export const getAllInvoiceEligiblePurchases = async (req, res) => {
         transactionReference
         paymentMethod
         currency
-      `)
+      `,
+      )
       .populate("userId", "name email phone")
       .populate("assetId", "assetName assetCode specification")
       .sort({ createdAt: -1 })
@@ -368,190 +431,149 @@ export const getAllInvoiceEligiblePurchases = async (req, res) => {
     // FETCH EXISTING INVOICES
     // ==========================================
 
-    const purchaseIds = purchases.map(
-      (purchase) => purchase._id
-    );
+    const purchaseIds = purchases.map((purchase) => purchase._id);
 
     const invoices = await Invoice.find({
       purchaseHistoryId: { $in: purchaseIds },
     }).lean();
 
     const invoiceMap = new Map(
-      invoices.map((invoice) => [
-        String(invoice.purchaseHistoryId),
-        invoice,
-      ])
+      invoices.map((invoice) => [String(invoice.purchaseHistoryId), invoice]),
     );
 
     // ==========================================
     // IST FORMATTERS
     // ==========================================
 
-    const dateFormatter = new Intl.DateTimeFormat(
-      "en-IN",
-      {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        timeZone: "Asia/Kolkata",
-      }
-    );
+    const dateFormatter = new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "Asia/Kolkata",
+    });
 
-    const timeFormatter = new Intl.DateTimeFormat(
-      "en-IN",
-      {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-        timeZone: "Asia/Kolkata",
-      }
-    );
+    const timeFormatter = new Intl.DateTimeFormat("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    });
 
     // ==========================================
     // FORMAT RESPONSE
     // ==========================================
 
-    const formattedPurchases = purchases.map(
-      (purchase) => {
-        const invoice = invoiceMap.get(
-          String(purchase._id)
-        );
+    const formattedPurchases = purchases.map((purchase) => {
+      const invoice = invoiceMap.get(String(purchase._id));
 
-        const paymentDateSource =
-          purchase.paidAt || purchase.createdAt;
+      const paymentDateSource = purchase.paidAt || purchase.createdAt;
 
-        const paymentDateTime = paymentDateSource
-          ? new Date(paymentDateSource)
-          : null;
+      const paymentDateTime = paymentDateSource
+        ? new Date(paymentDateSource)
+        : null;
 
-        return {
-          // ====================================
-          // ALL REQUIRED IDS
-          // ====================================
+      return {
+        // ====================================
+        // ALL REQUIRED IDS
+        // ====================================
 
-          purchaseHistoryId: purchase._id,
+        purchaseHistoryId: purchase._id,
 
-          orderId: purchase.orderId,
+        orderId: purchase.orderId,
 
-          userId: purchase.userId?._id || null,
+        userId: purchase.userId?._id || null,
 
-          assetId: purchase.assetId?._id || null,
+        assetId: purchase.assetId?._id || null,
 
-          paymentId: purchase.paymentId,
+        paymentId: purchase.paymentId,
 
-          // ====================================
-          // CUSTOMER DETAILS
-          // ====================================
+        // ====================================
+        // CUSTOMER DETAILS
+        // ====================================
 
-          customerName:
-            purchase.userSnapshot?.name ||
-            purchase.userId?.name ||
-            "N/A",
+        customerName:
+          purchase.userSnapshot?.name || purchase.userId?.name || "N/A",
 
-          email:
-            purchase.userSnapshot?.email ||
-            purchase.userId?.email ||
-            "N/A",
+        email: purchase.userSnapshot?.email || purchase.userId?.email || "N/A",
 
-          phone:
-            purchase.userSnapshot?.phone ||
-            purchase.userId?.phone ||
-            "N/A",
+        phone: purchase.userSnapshot?.phone || purchase.userId?.phone || "N/A",
 
-          // ====================================
-          // ASSET DETAILS
-          // ====================================
+        // ====================================
+        // ASSET DETAILS
+        // ====================================
 
-          assetName:
-            purchase.assetSnapshot?.assetName ||
-            purchase.assetId?.assetName ||
-            "N/A",
+        assetName:
+          purchase.assetSnapshot?.assetName ||
+          purchase.assetId?.assetName ||
+          "N/A",
 
-          assetCode:
-            purchase.assetSnapshot?.assetCode ||
-            purchase.assetId?.assetCode ||
-            "N/A",
+        assetCode:
+          purchase.assetSnapshot?.assetCode ||
+          purchase.assetId?.assetCode ||
+          "N/A",
 
-          specification:
-            purchase.assetSnapshot?.specification ||
-            purchase.assetId?.specification ||
-            "N/A",
+        specification:
+          purchase.assetSnapshot?.specification ||
+          purchase.assetId?.specification ||
+          "N/A",
 
-          fractionsPurchased:
-            purchase.fractionsPurchased,
+        fractionsPurchased: purchase.fractionsPurchased,
 
-          amountPerFraction:
-            purchase.amountPerFraction,
+        amountPerFraction: purchase.amountPerFraction,
 
-          // ====================================
-          // PAYMENT DETAILS
-          // ====================================
+        // ====================================
+        // PAYMENT DETAILS
+        // ====================================
 
-          totalAmount: purchase.totalAmount,
+        totalAmount: purchase.totalAmount,
 
-          paymentStatus: purchase.paymentStatus,
+        paymentStatus: purchase.paymentStatus,
 
-          paymentDate: paymentDateTime
-            ? dateFormatter.format(paymentDateTime)
-            : null,
+        paymentDate: paymentDateTime
+          ? dateFormatter.format(paymentDateTime)
+          : null,
 
-          paymentTime: paymentDateTime
-            ? timeFormatter
-                .format(paymentDateTime)
-                .toLowerCase()
-            : null,
+        paymentTime: paymentDateTime
+          ? timeFormatter.format(paymentDateTime).toLowerCase()
+          : null,
 
-          paidAt: purchase.paidAt || null,
+        paidAt: purchase.paidAt || null,
 
-          razorpayOrderId:
-            purchase.razorpayOrderId || null,
+        razorpayOrderId: purchase.razorpayOrderId || null,
 
-          transactionId:
-            purchase.razorpayPaymentId || null,
+        transactionId: purchase.razorpayPaymentId || null,
 
-          transactionReference:
-            purchase.transactionReference || null,
+        transactionReference: purchase.transactionReference || null,
 
-          paymentMethod:
-            purchase.paymentMethod || null,
+        paymentMethod: purchase.paymentMethod || null,
 
-          currency:
-            purchase.currency || "INR",
+        currency: purchase.currency || "INR",
 
-          // ====================================
-          // INVOICE STATUS AND DETAILS
-          // ====================================
+        // ====================================
+        // INVOICE STATUS AND DETAILS
+        // ====================================
 
-          invoiceCreated: Boolean(invoice),
+        invoiceCreated: Boolean(invoice),
 
-          invoiceId: invoice?._id || null,
+        invoiceId: invoice?._id || null,
 
-          invoiceNumber:
-            invoice?.invoiceNumber || null,
+        invoiceNumber: invoice?.invoiceNumber || null,
 
-          invoiceDate:
-            invoice?.invoiceDate || null,
+        invoiceDate: invoice?.invoiceDate || null,
 
-          customerGstNumber:
-            invoice?.customerGstNumber || null,
+        customerGstNumber: invoice?.customerGstNumber || null,
 
-          hsnCode:
-            invoice?.hsnCode || null,
+        hsnCode: invoice?.hsnCode || null,
 
-          gstPercentage:
-            invoice?.gstPercentage ?? null,
+        gstPercentage: invoice?.gstPercentage ?? null,
 
-          taxableAmount:
-            invoice?.taxableAmount ?? null,
+        taxableAmount: invoice?.taxableAmount ?? null,
 
-          gstAmount:
-            invoice?.gstAmount ?? null,
+        gstAmount: invoice?.gstAmount ?? null,
 
-          invoiceTotalAmount:
-            invoice?.totalAmount ?? null,
-        };
-      }
-    );
+        invoiceTotalAmount: invoice?.totalAmount ?? null,
+      };
+    });
 
     // ==========================================
     // SUCCESS RESPONSE
@@ -560,33 +582,26 @@ export const getAllInvoiceEligiblePurchases = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message:
-        "Successful purchases fetched for invoice management",
+      message: "Successful purchases fetched for invoice management",
 
       totalPurchases: formattedPurchases.length,
 
-      invoiceCreatedCount:
-        formattedPurchases.filter(
-          (item) => item.invoiceCreated
-        ).length,
+      invoiceCreatedCount: formattedPurchases.filter(
+        (item) => item.invoiceCreated,
+      ).length,
 
-      invoicePendingCount:
-        formattedPurchases.filter(
-          (item) => !item.invoiceCreated
-        ).length,
+      invoicePendingCount: formattedPurchases.filter(
+        (item) => !item.invoiceCreated,
+      ).length,
 
       data: formattedPurchases,
     });
   } catch (error) {
-    console.error(
-      "GET INVOICE ELIGIBLE PURCHASES ERROR:",
-      error
-    );
+    console.error("GET INVOICE ELIGIBLE PURCHASES ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to fetch purchases for invoice management",
+      message: "Unable to fetch purchases for invoice management",
     });
   }
 };
