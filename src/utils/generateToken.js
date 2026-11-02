@@ -18,7 +18,7 @@ export const generateToken = (user) => {
     },
     jwtSecret,
     {
-      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+      expiresIn: process.env.JWT_EXPIRES_IN || "30d",
       algorithm: "HS256",
       issuer: "bunndle-api",
       audience: "bunndle-app",
