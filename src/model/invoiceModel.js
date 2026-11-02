@@ -29,9 +29,9 @@ const invoiceSchema = new mongoose.Schema(
 
     customerGstNumber: {
       type: String,
-      uppercase: true,
-      trim: true,
       default: null,
+      trim: true,
+      uppercase: true,
     },
 
     hsnCode: {

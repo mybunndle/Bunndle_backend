@@ -1,21 +1,17 @@
+
 import mongoose from "mongoose";
-import {Invoice} from "../model/invoiceModel.js";
+import { Invoice } from "../model/invoiceModel.js";
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
 
-
-
-
-
-
 // ==========================================
-// FORMAT PAYMENT DATE AND TIME IN IST
+// FORMAT PAYMENT DATE & TIME IN IST
 // ==========================================
 
 const formatPaymentDateTime = (date) => {
   const paymentDateTime = new Date(date);
 
   if (Number.isNaN(paymentDateTime.getTime())) {
-    throw new Error("Invalid payment date");
+    return null;
   }
 
   const invoiceDate = new Intl.DateTimeFormat("en-GB", {
@@ -34,10 +30,7 @@ const formatPaymentDateTime = (date) => {
     .format(paymentDateTime)
     .toLowerCase();
 
-  return {
-    invoiceDate,
-    invoiceTime,
-  };
+  return { invoiceDate, invoiceTime };
 };
 
 // ==========================================
@@ -52,21 +45,25 @@ export const createInvoice = async (req, res) => {
       customerGstNumber,
       hsnCode,
       gstPercentage,
-    } = req.body;
+    } = req.body ?? {};
 
     // ========================================
-    // 1. VALIDATE INPUT
+    // 1. VALIDATE PURCHASE HISTORY ID
     // ========================================
 
     if (
       typeof purchaseHistoryId !== "string" ||
-      !mongoose.isValidObjectId(purchaseHistoryId)
+      !mongoose.isObjectIdOrHexString(purchaseHistoryId)
     ) {
       return res.status(400).json({
         success: false,
         message: "Valid purchase history ID is required",
       });
     }
+
+    // ========================================
+    // 2. VALIDATE INVOICE NUMBER
+    // ========================================
 
     if (
       typeof invoiceNumber !== "string" ||
@@ -78,6 +75,14 @@ export const createInvoice = async (req, res) => {
       });
     }
 
+    const normalizedInvoiceNumber = invoiceNumber
+      .trim()
+      .toUpperCase();
+
+    // ========================================
+    // 3. VALIDATE HSN CODE
+    // ========================================
+
     if (
       typeof hsnCode !== "string" ||
       !hsnCode.trim()
@@ -88,11 +93,23 @@ export const createInvoice = async (req, res) => {
       });
     }
 
+    const normalizedHsnCode = hsnCode.trim();
+
+    // ========================================
+    // 4. VALIDATE GST PERCENTAGE
+    // ========================================
+
+    const parsedGstPercentage =
+      typeof gstPercentage === "number" ||
+      (typeof gstPercentage === "string" &&
+        gstPercentage.trim() !== "")
+        ? Number(gstPercentage)
+        : NaN;
+
     if (
-      typeof gstPercentage !== "number" ||
-      !Number.isFinite(gstPercentage) ||
-      gstPercentage < 0 ||
-      gstPercentage > 100
+      !Number.isFinite(parsedGstPercentage) ||
+      parsedGstPercentage < 0 ||
+      parsedGstPercentage > 100
     ) {
       return res.status(400).json({
         success: false,
@@ -101,23 +118,14 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 2. NORMALIZE INPUT
+    // 5. OPTIONAL CUSTOMER GST NUMBER
     // ========================================
 
-    const normalizedInvoiceNumber = invoiceNumber
-      .trim()
-      .toUpperCase();
-
-    const normalizedGstin =
-      customerGstNumber == null ||
-      customerGstNumber === ""
-        ? null
-        : typeof customerGstNumber === "string"
-          ? customerGstNumber.trim().toUpperCase()
-          : null;
+    // Missing, null or empty GSTIN => save null.
 
     if (
-      customerGstNumber != null &&
+      customerGstNumber !== undefined &&
+      customerGstNumber !== null &&
       typeof customerGstNumber !== "string"
     ) {
       return res.status(400).json({
@@ -126,6 +134,13 @@ export const createInvoice = async (req, res) => {
       });
     }
 
+    const normalizedGstin =
+      typeof customerGstNumber === "string" &&
+      customerGstNumber.trim().length > 0
+        ? customerGstNumber.trim().toUpperCase()
+        : null;
+
+    // Validate only when a GSTIN is provided.
     if (
       normalizedGstin &&
       !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
@@ -139,7 +154,7 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 3. FETCH SUCCESSFUL PURCHASE HISTORY
+    // 6. FETCH SUCCESSFUL PURCHASE
     // ========================================
 
     const purchase = await PurchaseHistory.findOne({
@@ -147,15 +162,7 @@ export const createInvoice = async (req, res) => {
       paymentStatus: "SUCCESS",
     })
       .select(
-        `
-        orderId
-        userId
-        assetId
-        paymentId
-        totalAmount
-        paidAt
-        paymentStatus
-        `
+        "orderId userId assetId paymentId totalAmount paidAt paymentStatus"
       )
       .lean();
 
@@ -167,7 +174,7 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 4. CHECK REQUIRED PURCHASE REFERENCES
+    // 7. VALIDATE PURCHASE REFERENCES
     // ========================================
 
     if (
@@ -184,30 +191,32 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 5. CHECK PAYMENT DATE
+    // 8. VALIDATE PAYMENT DATE
     // ========================================
 
-    if (
-      !purchase.paidAt ||
-      Number.isNaN(new Date(purchase.paidAt).getTime())
-    ) {
+    if (!purchase.paidAt) {
       return res.status(422).json({
         success: false,
-        message: "Valid payment date is missing",
+        message: "Payment date is missing",
       });
     }
 
-    // ========================================
-    // 6. FORMAT DATE AND TIME IN IST
-    // ========================================
+    const formattedPayment = formatPaymentDateTime(
+      purchase.paidAt
+    );
 
-    const {
-      invoiceDate,
-      invoiceTime,
-    } = formatPaymentDateTime(purchase.paidAt);
+    if (!formattedPayment) {
+      return res.status(422).json({
+        success: false,
+        message: "Invalid payment date",
+      });
+    }
+
+    const { invoiceDate, invoiceTime } =
+      formattedPayment;
 
     // ========================================
-    // 7. GET TOTAL AMOUNT FROM PURCHASE
+    // 9. VALIDATE TOTAL AMOUNT
     // ========================================
 
     const totalAmount = purchase.totalAmount;
@@ -224,10 +233,9 @@ export const createInvoice = async (req, res) => {
     }
 
     // ========================================
-    // 8. GST-INCLUSIVE CALCULATION
+    // 10. CALCULATE GST-INCLUSIVE AMOUNT
     // ========================================
 
-    // Convert rupees to paise
     const totalPaise = Math.round(totalAmount * 100);
 
     if (!Number.isSafeInteger(totalPaise)) {
@@ -237,9 +245,10 @@ export const createInvoice = async (req, res) => {
       });
     }
 
-    // GST is already included in total amount
+    // Total includes GST.
     const taxablePaise = Math.round(
-      (totalPaise * 100) / (100 + gstPercentage)
+      (totalPaise * 100) /
+        (100 + parsedGstPercentage)
     );
 
     const gstPaise = totalPaise - taxablePaise;
@@ -248,35 +257,36 @@ export const createInvoice = async (req, res) => {
     const gstAmount = gstPaise / 100;
 
     // ========================================
-    // 9. CREATE AND SAVE INVOICE
+    // 11. CREATE INVOICE
     // ========================================
 
     const invoice = await Invoice.create({
-      // All IDs from PurchaseHistory
       purchaseHistoryId: purchase._id,
+
       orderId: purchase.orderId,
       userId: purchase.userId,
       assetId: purchase.assetId,
       paymentId: purchase.paymentId,
 
-      // Admin-entered fields
       invoiceNumber: normalizedInvoiceNumber,
-      customerGstNumber: normalizedGstin,
-      hsnCode: hsnCode.trim(),
-      gstPercentage,
 
-      // Date and time from payment, formatted in IST
+      // Optional GST number
+      customerGstNumber: normalizedGstin,
+
+      hsnCode: normalizedHsnCode,
+      gstPercentage: parsedGstPercentage,
+
+      // Indian date and time
       invoiceDate,
       invoiceTime,
 
-      // Calculated GST-inclusive amounts
       taxableAmount,
       gstAmount,
       totalAmount,
     });
 
     // ========================================
-    // 10. SUCCESS RESPONSE
+    // 12. SUCCESS RESPONSE
     // ========================================
 
     return res.status(201).json({
@@ -285,7 +295,10 @@ export const createInvoice = async (req, res) => {
       data: invoice,
     });
   } catch (error) {
-    // Duplicate invoice number or purchase
+    // ========================================
+    // DUPLICATE INVOICE
+    // ========================================
+
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -294,7 +307,14 @@ export const createInvoice = async (req, res) => {
       });
     }
 
-    if (error.name === "ValidationError") {
+    // ========================================
+    // MONGOOSE VALIDATION ERROR
+    // ========================================
+
+    if (
+      error.name === "ValidationError" ||
+      error.name === "CastError"
+    ) {
       return res.status(400).json({
         success: false,
         message: error.message,
