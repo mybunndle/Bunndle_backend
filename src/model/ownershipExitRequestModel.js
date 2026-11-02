@@ -45,7 +45,7 @@ const ownershipExitRequestSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["PENDING", "APPROVED", "REJECTED"],
+      enum: ["PENDING", "APPROVED","INREVIEW", "REJECTED" ],
       default: "PENDING",
       required: true,
       index: true,
