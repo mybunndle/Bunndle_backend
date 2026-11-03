@@ -96,23 +96,6 @@ export const createInvoice = async (req, res) => {
     // CHECK DUPLICATE HSN CODE
     // ========================================
 
-    const existingHsnCode = await Invoice.findOne({
-      hsnCode: normalizedHsnCode,
-    })
-      .select("_id invoiceNumber hsnCode")
-      .lean();
-
-    if (existingHsnCode) {
-      return res.status(409).json({
-        success: false,
-        message: "HSN code already exists",
-        hsnCode: normalizedHsnCode,
-        existingInvoice: {
-          invoiceId: existingHsnCode._id,
-          invoiceNumber: existingHsnCode.invoiceNumber,
-        },
-      });
-    }
 
     // Allow 4, 6 or 8-digit HSN codes.
     // if (!/^(?:\d{4}|\d{6}|\d{8})$/.test(normalizedHsnCode)) {
