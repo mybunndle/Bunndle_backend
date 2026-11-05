@@ -230,7 +230,7 @@ export const createOrder = async (req, res) => {
 
               status: "PENDING_PAYMENT",
 
-              expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+              expiresAt: new Date(Date.now() + 15 * 60 * 1000),
             },
           ],
           {
