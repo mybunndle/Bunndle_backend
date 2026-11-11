@@ -50,7 +50,7 @@ const _config = {
 
   cashfree_key: process.env.CASHFREE_CLIENT_ID,
   cashfree_secret: process.env.CASHFREE_CLIENT_SECRET,
-  cashfree_mode: process.env.CASHFREE_ENV || "SANDBOX",
+  cashfree_mode: process.env.CASHFREE_ENV ,
   cashfree_api_version: process.env.CASHFREE_API_VERSION || "2025-01-01",
 };
 
