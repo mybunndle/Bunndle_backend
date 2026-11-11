@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 
-
 const getIndianTime = () => {
   const istOffset = 5.5 * 60 * 60 * 1000;
   return new Date(Date.now() + istOffset);
@@ -18,6 +17,13 @@ const orderSchema = new mongoose.Schema(
     assetId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Asset",
+      required: true,
+      index: true,
+    },
+    paymentGateway: {
+      type: String,
+      enum: ["RAZORPAY", "CASHFREE"],
+      default: "RAZORPAY",
       required: true,
       index: true,
     },
@@ -44,7 +50,13 @@ const orderSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["PENDING_PAYMENT", "PAYMENT_SUCCESS", "COMPLETED", "FAILED", "EXPIRED"],
+      enum: [
+        "PENDING_PAYMENT",
+        "PAYMENT_SUCCESS",
+        "COMPLETED",
+        "FAILED",
+        "EXPIRED",
+      ],
       default: "PENDING_PAYMENT",
     },
   },
