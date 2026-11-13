@@ -229,6 +229,7 @@ export const getAllOwnershipExitRequests = async (req, res) => {
       "PENDING",
       "APPROVED",
       "REJECTED",
+      "INREVIEW",
     ];
 
     const status = req.query.status;
@@ -423,6 +424,68 @@ export const getAllOwnershipExitRequests = async (req, res) => {
 };
 
 
+// export const reviewOwnershipExitRequest = async (req, res) => {
+//   try {
+//     const adminId = getUserId(req);
+
+//     if (!isValidId(adminId)) {
+//       return sendError(res, 401, "Unauthorized admin");
+//     }
+
+//     const { requestId } = req.params;
+//     const { status, adminRemark = "" } = req.body || {};
+
+//     if (!isValidId(requestId)) {
+//       return sendError(res, 400, "Invalid exit request ID");
+//     }
+
+   
+
+//     if (typeof adminRemark !== "string" || adminRemark.length > 1000) {
+//       return sendError(res, 400, "Invalid admin remark");
+//     }
+
+//     const updatedRequest = await OwnershipExitRequest.findOneAndUpdate(
+//       {
+//         _id: requestId,
+//         status: "PENDING",
+//       },
+//       {
+//         $set: {
+//           status,
+//           reviewedBy: adminId,
+//           reviewedAt: new Date(),
+//           adminRemark: adminRemark.trim(),
+//         },
+//       },
+//       {
+//         new: true,
+//         runValidators: true,
+//       },
+//     );
+
+//     if (!updatedRequest) {
+//       return sendError(res, 409, "Request not found or already reviewed");
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message:
+//         status === "APPROVED"
+//           ? "Exit request approved successfully"
+//           : "Exit request rejected successfully",
+//       data: updatedRequest,
+//     });
+//   } catch (error) {
+//     console.error("REVIEW EXIT REQUEST ERROR:", error);
+
+//     return sendError(res, 500, "Unable to review exit request");
+//   }
+// };
+
+
+
+
 export const reviewOwnershipExitRequest = async (req, res) => {
   try {
     const adminId = getUserId(req);
@@ -434,52 +497,103 @@ export const reviewOwnershipExitRequest = async (req, res) => {
     const { requestId } = req.params;
     const { status, adminRemark = "" } = req.body || {};
 
+    // ==========================================
+    // VALIDATE REQUEST ID
+    // ==========================================
+
     if (!isValidId(requestId)) {
       return sendError(res, 400, "Invalid exit request ID");
     }
 
-    if (!["APPROVED", "REJECTED"].includes(status)) {
-      return sendError(res, 400, "Status must be APPROVED or REJECTED");
+    // ==========================================
+    // VALIDATE STATUS
+    // ==========================================
+
+    const allowedStatuses = ["APPROVED", "REJECTED", "INREVIEW", "PENDING"];
+
+    if (!allowedStatuses.includes(status)) {
+      return sendError(
+        res,
+        400,
+        "Status must be APPROVED, REJECTED, INREVIEW, or PENDING"
+      );
     }
 
-    if (typeof adminRemark !== "string" || adminRemark.length > 1000) {
-      return sendError(res, 400, "Invalid admin remark");
+    // ==========================================
+    // VALIDATE ADMIN REMARK
+    // ==========================================
+
+    if (
+      typeof adminRemark !== "string" ||
+      adminRemark.length > 1000
+    ) {
+      return sendError(
+        res,
+        400,
+        "Invalid admin remark"
+      );
     }
 
-    const updatedRequest = await OwnershipExitRequest.findOneAndUpdate(
-      {
-        _id: requestId,
-        status: "PENDING",
-      },
-      {
-        $set: {
-          status,
-          reviewedBy: adminId,
-          reviewedAt: new Date(),
-          adminRemark: adminRemark.trim(),
+    // ==========================================
+    // UPDATE EXIT REQUEST
+    // ==========================================
+
+    const updatedRequest =
+      await OwnershipExitRequest.findOneAndUpdate(
+        {
+          _id: requestId,
+
+          // PENDING or REJECTED can be reviewed
+          status: {
+            $in: ["PENDING", "REJECTED", "INREVIEW", "APPROVED"],
+          },
         },
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    );
+        {
+          $set: {
+            status,
+            reviewedBy: adminId,
+            reviewedAt: new Date(),
+            adminRemark: adminRemark.trim(),
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        }
+      );
 
     if (!updatedRequest) {
-      return sendError(res, 409, "Request not found or already reviewed");
+      return sendError(
+        res,
+        409,
+        "Request not found, already approved, or cannot be updated"
+      );
     }
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
 
     return res.status(200).json({
       success: true,
+
       message:
         status === "APPROVED"
           ? "Exit request approved successfully"
           : "Exit request rejected successfully",
+
       data: updatedRequest,
     });
   } catch (error) {
-    console.error("REVIEW EXIT REQUEST ERROR:", error);
+    console.error(
+      "REVIEW EXIT REQUEST ERROR:",
+      error
+    );
 
-    return sendError(res, 500, "Unable to review exit request");
+    return sendError(
+      res,
+      500,
+      "Unable to review exit request"
+    );
   }
 };
