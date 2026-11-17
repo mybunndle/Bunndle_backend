@@ -781,6 +781,7 @@ const expireAndReleaseOrder = async (orderId) => {
 export const createOrder = async (req, res) => {
   let order = null;
   let asset = null;
+   
 
   try {
     const userId = req.user.id;
@@ -790,7 +791,12 @@ export const createOrder = async (req, res) => {
     // =========================
     // VALIDATION
     // =========================
-
+     if (["RAZORPAY", "CASHFREE"].includes(paymentGateway)) {
+      return res.status(400).json({
+        success: false,
+        message: "we are under maintenance for payment gateway, please try after some time",
+      });
+    }
     if (!assetId || fractions === undefined) {
       return res.status(400).json({
         success: false,
