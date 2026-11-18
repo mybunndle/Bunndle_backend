@@ -781,7 +781,6 @@ const expireAndReleaseOrder = async (orderId) => {
 export const createOrder = async (req, res) => {
   let order = null;
   let asset = null;
-   
 
   try {
     const userId = req.user.id;
@@ -791,10 +790,12 @@ export const createOrder = async (req, res) => {
     // =========================
     // VALIDATION
     // =========================
-     if (["RAZORPAY", "CASHFREE"].includes(paymentGateway)) {
+
+    if (["RAZORPAY", "CASHFREE"].includes(paymentGateway)) {
       return res.status(400).json({
         success: false,
-        message: "we are under maintenance for payment gateway, please try after some time",
+        message:
+          "Our payment gateway is currently under maintenance. Please try again after some time. For any queries, feel free to call or WhatsApp us at +91 8882370955.",
       });
     }
     if (!assetId || fractions === undefined) {
