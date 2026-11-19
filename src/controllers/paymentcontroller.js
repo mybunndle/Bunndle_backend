@@ -2805,6 +2805,619 @@ const validatePayUSpecialHash = ({
 // GENERATE PAYU HASH
 // ==========================================
 
+// export const generatePayUHash = async (req, res) => {
+//   try {
+//     // ======================================
+//     // 1. AUTHENTICATION
+//     // ======================================
+
+//     const userId = getUserId(req);
+
+//     if (!mongoose.isValidObjectId(userId)) {
+//       return res.status(401).json({
+//         success: false,
+//         message: "Unauthorized user",
+//       });
+//     }
+
+//     // ======================================
+//     // 2. REQUEST VALIDATION
+//     // ======================================
+
+//     const {
+//       orderId,
+//       hashName,
+//       hashString,
+//       hashType,
+//       postSalt,
+//     } = req.body || {};
+
+//     if (!mongoose.isValidObjectId(orderId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Valid orderId is required",
+//       });
+//     }
+
+//     if (
+//       typeof hashName !== "string" ||
+//       !hashName.trim() ||
+//       typeof hashString !== "string" ||
+//       !hashString.trim() ||
+//       hashName.length > 128 ||
+//       hashString.length > 4096
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "hashName and hashString are required",
+//       });
+//     }
+
+//     if (
+//       hashType != null &&
+//       hashType !== "" &&
+//       hashType !== "V1" &&
+//       hashType !== "V2"
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Unsupported PayU hash type",
+//       });
+//     }
+
+//     if (
+//       postSalt != null &&
+//       typeof postSalt !== "string"
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid PayU postSalt",
+//       });
+//     }
+
+//     // ======================================
+//     // 3. ACTIVE PAYU ORDER
+//     // ======================================
+
+//     const order = await Order.findOne({
+//       _id: orderId,
+//       userId,
+//       paymentGateway: "PAYU",
+//       status: "PENDING_PAYMENT",
+//       expiresAt: { $gt: new Date() },
+//     });
+
+//     if (!order) {
+//       return res.status(404).json({
+//         success: false,
+//         message:
+//           "Active PayU order not found or expired",
+//       });
+//     }
+
+//     // ======================================
+//     // 4. TRANSACTION ID
+//     // ======================================
+
+//     const transactionId = String(
+//       order.payuTxnId || ""
+//     );
+
+//     if (!/^BN[a-f0-9]{20}$/.test(transactionId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid PayU transaction ID",
+//       });
+//     }
+
+//     // ======================================
+//     // 5. PENDING PAYMENT RECORD
+//     // ======================================
+
+//     const payment = await Payment.findOne({
+//       orderId: order._id,
+//       userId,
+//       paymentGateway: "PAYU",
+//       payuTxnId: transactionId,
+//       status: "PENDING",
+//     });
+
+//     if (!payment) {
+//       return res.status(409).json({
+//         success: false,
+//         message:
+//           "Pending PayU payment not found",
+//       });
+//     }
+
+//     // ======================================
+//     // 6. AMOUNT CHECK
+//     // ======================================
+
+//     const orderAmount = Number(
+//       order.totalAmount
+//     );
+
+//     const paymentAmount = Number(
+//       payment.amount
+//     );
+
+//     if (
+//       !Number.isFinite(orderAmount) ||
+//       !Number.isFinite(paymentAmount) ||
+//       orderAmount <= 0 ||
+//       paymentAmount <= 0
+//     ) {
+//       return res.status(409).json({
+//         success: false,
+//         message: "Invalid payment amount",
+//       });
+//     }
+
+//     const amount = orderAmount.toFixed(2);
+//     const orderPaise = toPaise(amount);
+
+//     if (
+//       orderPaise === null ||
+//       orderPaise !==
+//         toPaise(paymentAmount.toFixed(2))
+//     ) {
+//       return res.status(409).json({
+//         success: false,
+//         message:
+//           "Order and payment amount mismatch",
+//       });
+//     }
+
+//     // ======================================
+//     // 7. PAYU LIVE CONFIGURATION
+//     // ======================================
+
+//     const merchantKey =
+//       process.env.PAYU_MERCHANT_KEY;
+
+//     const merchantSalt =
+//       process.env.PAYU_MERCHANT_SALT;
+
+//     if (
+//       process.env.PAYU_ENV !== "PRODUCTION" ||
+//       !merchantKey ||
+//       !merchantSalt
+//     ) {
+//       return res.status(503).json({
+//         success: false,
+//         message:
+//           "PayU LIVE configuration missing",
+//       });
+//     }
+
+//     // ======================================
+//     // 8. CUSTOMER DETAILS
+//     // ======================================
+
+//     const user = await User.findById(
+//       order.userId
+//     ).select(
+//       "name email phone phoneNumber mobile mobileNumber"
+//     );
+
+//     if (!user?.name || !user?.email) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Customer details missing",
+//       });
+//     }
+
+//     const firstname = String(
+//       user.name
+//     ).trim();
+
+//     const email = String(
+//       user.email
+//     ).trim();
+
+//     const registeredPhone =
+//       normalizePayUPhone(
+//         user.phoneNumber ??
+//         user.mobileNumber ??
+//         user.mobile ??
+//         user.phone
+//       );
+
+//     // ======================================
+//     // 9. BLOCK UNSUPPORTED TYPES
+//     // ======================================
+
+//     if (hashName === "mcpLookup") {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "MCP hash generation is not configured",
+//       });
+//     }
+
+//     if (postSalt) {
+//       return res.status(400).json({
+//         success: false,
+//         message:
+//           "Post-salt hash requests are not enabled",
+//       });
+//     }
+
+//     // ======================================
+//     // 10. SPECIAL SDK HASH REQUESTS
+//     // ======================================
+
+//     const specialValidation =
+//       validatePayUSpecialHash({
+//         hashName,
+//         hashString,
+//         merchantKey,
+//         order,
+//         user,
+//       });
+
+//     if (specialValidation.handled) {
+//       if (
+//         !specialValidation.valid ||
+//         hashType === "V2"
+//       ) {
+//         return res.status(400).json({
+//           success: false,
+//           message:
+//             "Invalid PayU special hash request",
+//         });
+//       }
+//     } else {
+//       // ====================================
+//       // 11. STANDARD HASH VALIDATION
+//       // ====================================
+
+//       const parts = hashString.split("|");
+
+//       if (parts[0] !== merchantKey) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "PayU merchant key mismatch",
+//         });
+//       }
+
+//       // ====================================
+//       // 12. PAYMENT / PAYMENT_SOURCE
+//       // ====================================
+
+//       if (
+//         hashName === "payment" ||
+//         hashName === "payment_source"
+//       ) {
+//         if (hashType === "V2") {
+//           return res.status(400).json({
+//             success: false,
+//             message:
+//               "V2 payment hash is not configured",
+//           });
+//         }
+
+//         // Standard PayU hash input:
+//         //
+//         // key|txnid|amount|productinfo|
+//         // firstname|email|udf1|...|udf5||||||
+//         //
+//         // Eleven empty fields after email
+//         // produce the required delimiters.
+
+//         const expectedHashString = [
+//           merchantKey,
+//           transactionId,
+//           amount,
+//           PAYU_PRODUCT_INFO,
+//           firstname,
+//           email,
+//           "", "", "", "", "",
+//           "", "", "", "", "", "",
+//         ].join("|");
+
+//         if (
+//           hashString !== expectedHashString
+//         ) {
+//           console.warn(
+//             "PAYU PAYMENT HASH MISMATCH:",
+//             {
+//               orderId: String(order._id),
+//               hashName,
+//             }
+//           );
+
+//           return res.status(400).json({
+//             success: false,
+//             message:
+//               "PayU payment parameters do not match order",
+//           });
+//         }
+//       } else {
+//         // ==================================
+//         // 13. SDK COMMAND VALIDATION
+//         // ==================================
+
+//         const allowedCommands =
+//           PAYU_SDK_COMMANDS[hashName];
+
+//         if (
+//           !Array.isArray(allowedCommands) ||
+//           parts.length < 3 ||
+//           !allowedCommands.includes(
+//             parts[1]
+//           )
+//         ) {
+//           return res.status(400).json({
+//             success: false,
+//             message:
+//               "Unsupported or invalid PayU SDK hash request",
+//           });
+//         }
+
+//         // Reject different Bunndle txn IDs.
+//         const txnIds =
+//           hashString.match(
+//             /BN[a-f0-9]{20}/g
+//           ) || [];
+
+//         if (
+//           txnIds.some(
+//             (id) => id !== transactionId
+//           )
+//         ) {
+//           return res.status(400).json({
+//             success: false,
+//             message:
+//               "PayU transaction ID mismatch",
+//           });
+//         }
+
+//         // ==================================
+//         // 14. SDK CONFIGURATION
+//         // ==================================
+
+//         if (
+//           hashName === "get_sdk_configuration"
+//         ) {
+//           if (
+//             hashString !==
+//               `${merchantKey}|get_sdk_configuration|GET|`
+//           ) {
+//             return res.status(400).json({
+//               success: false,
+//               message:
+//                 "Invalid SDK configuration request",
+//             });
+//           }
+//         }
+
+//         // ==================================
+//         // 15. CHECKOUT DETAILS
+//         // ==================================
+
+//         if (
+//           hashName === "get_checkout_details"
+//         ) {
+//           if (
+//             parts.length !== 4 ||
+//             parts[3] !== ""
+//           ) {
+//             return res.status(400).json({
+//               success: false,
+//               message:
+//                 "Invalid checkout details format",
+//             });
+//           }
+
+//           let checkout;
+
+//           try {
+//             checkout = JSON.parse(
+//               parts[2]
+//             );
+//           } catch {
+//             return res.status(400).json({
+//               success: false,
+//               message:
+//                 "Invalid checkout details JSON",
+//             });
+//           }
+
+//           const transactionDetails =
+//             checkout?.transactionDetails;
+
+//           const customerDetails =
+//             checkout?.customerDetails;
+
+//           const sdkTxnId =
+//             transactionDetails?.txnId;
+
+//           const sdkAmount =
+//             transactionDetails?.amount;
+
+//           const sdkPhone =
+//             normalizePayUPhone(
+//               customerDetails?.mobile
+//             );
+
+//           if (
+//             sdkTxnId !== transactionId ||
+//             sdkAmount === undefined ||
+//             toPaise(String(sdkAmount)) !==
+//               orderPaise ||
+//             sdkPhone !== registeredPhone ||
+//             transactionDetails?.source !==
+//               "Android_SDK" ||
+//             checkout?.isSITxn !== false ||
+//             typeof checkout?.requestId !==
+//               "string" ||
+//             !new RegExp(
+//               `^${transactionId}\\d{10,16}$`
+//             ).test(checkout.requestId)
+//           ) {
+//             return res.status(400).json({
+//               success: false,
+//               message:
+//                 "PayU checkout details do not match order",
+//             });
+//           }
+
+//           const allowedUseCases = new Set([
+//             "getAdditionalCharges",
+//             "getTaxSpecification",
+//             "checkDownStatus",
+//             "getExtendedPaymentDetails",
+//             "checkCustomerEligibility",
+//             "getMerchantDetails",
+//             "getPaymentDetailsWithExtraFields",
+//             "getSdkDetails",
+//           ]);
+
+//           if (
+//             !checkout.useCase ||
+//             typeof checkout.useCase !== "object" ||
+//             Array.isArray(checkout.useCase) ||
+//             Object.entries(
+//               checkout.useCase
+//             ).some(
+//               ([key, value]) =>
+//                 !allowedUseCases.has(key) ||
+//                 typeof value !== "boolean"
+//             )
+//           ) {
+//             return res.status(400).json({
+//               success: false,
+//               message:
+//                 "Invalid checkout use-case parameters",
+//             });
+//           }
+
+//           const allowedCheckoutKeys =
+//             new Set([
+//               "requestId",
+//               "transactionDetails",
+//               "customerDetails",
+//               "useCase",
+//               "isSITxn",
+//             ]);
+
+//           if (
+//             Object.keys(checkout).some(
+//               (key) =>
+//                 !allowedCheckoutKeys.has(key)
+//             ) ||
+//             Object.keys(
+//               transactionDetails
+//             ).some(
+//               (key) =>
+//                 !["amount", "txnId", "source"]
+//                   .includes(key)
+//             ) ||
+//             Object.keys(
+//               customerDetails
+//             ).some(
+//               (key) => key !== "mobile"
+//             )
+//           ) {
+//             return res.status(400).json({
+//               success: false,
+//               message:
+//                 "Unexpected checkout details fields",
+//             });
+//           }
+//         }
+
+//         // Other SDK commands must have their
+//         // own exact argument validation before
+//         // being enabled in LIVE mode.
+//         if (
+//           hashName !== "get_sdk_configuration" &&
+//           hashName !== "get_checkout_details"
+//         ) {
+//           return res.status(400).json({
+//             success: false,
+//             message:
+//               "SDK command needs additional validation",
+//           });
+//         }
+//       }
+//     }
+
+//     // ======================================
+//     // 16. GENERATE HASH
+//     // ======================================
+
+//     let generatedHash;
+
+//     if (hashType === "V2") {
+//       generatedHash = crypto
+//         .createHmac(
+//           "sha256",
+//           merchantSalt
+//         )
+//         .update(
+//           hashString,
+//           "utf8"
+//         )
+//         .digest("hex");
+//     } else {
+//       generatedHash = crypto
+//         .createHash("sha512")
+//         .update(
+//           `${hashString}${merchantSalt}`,
+//           "utf8"
+//         )
+//         .digest("hex");
+//     }
+
+//     // ======================================
+//     // 17. SAFE LOG
+//     // ======================================
+
+//     console.log(
+//       "PAYU HASH GENERATED:",
+//       {
+//         orderId: String(order._id),
+//         hashName,
+//         hashType: hashType || "V1",
+//         specialHash:
+//           specialValidation.handled,
+//       }
+//     );
+
+//     // ======================================
+//     // 18. SUCCESS RESPONSE
+//     // ======================================
+
+//     return res.status(200).json({
+//       success: true,
+//       message:
+//         "PayU hash generated successfully",
+//       data: {
+//         orderId: String(order._id),
+//         transactionId,
+//         hashName,
+//         hash: generatedHash,
+//       },
+//     });
+//   } catch (error) {
+//     console.error(
+//       "GENERATE PAYU HASH ERROR:",
+//       error
+//     );
+
+//     return res.status(500).json({
+//       success: false,
+//       message:
+//         "Unable to generate PayU hash",
+//     });
+//   }
+// };
+
+
 export const generatePayUHash = async (req, res) => {
   try {
     // ======================================
@@ -2849,8 +3462,7 @@ export const generatePayUHash = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "hashName and hashString are required",
+        message: "hashName and hashString are required",
       });
     }
 
@@ -2891,8 +3503,7 @@ export const generatePayUHash = async (req, res) => {
     if (!order) {
       return res.status(404).json({
         success: false,
-        message:
-          "Active PayU order not found or expired",
+        message: "Active PayU order not found or expired",
       });
     }
 
@@ -2912,7 +3523,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 5. PENDING PAYMENT RECORD
+    // 5. PENDING PAYMENT
     // ======================================
 
     const payment = await Payment.findOne({
@@ -2926,22 +3537,16 @@ export const generatePayUHash = async (req, res) => {
     if (!payment) {
       return res.status(409).json({
         success: false,
-        message:
-          "Pending PayU payment not found",
+        message: "Pending PayU payment not found",
       });
     }
 
     // ======================================
-    // 6. AMOUNT CHECK
+    // 6. AMOUNT VALIDATION
     // ======================================
 
-    const orderAmount = Number(
-      order.totalAmount
-    );
-
-    const paymentAmount = Number(
-      payment.amount
-    );
+    const orderAmount = Number(order.totalAmount);
+    const paymentAmount = Number(payment.amount);
 
     if (
       !Number.isFinite(orderAmount) ||
@@ -2960,13 +3565,11 @@ export const generatePayUHash = async (req, res) => {
 
     if (
       orderPaise === null ||
-      orderPaise !==
-        toPaise(paymentAmount.toFixed(2))
+      orderPaise !== toPaise(paymentAmount.toFixed(2))
     ) {
       return res.status(409).json({
         success: false,
-        message:
-          "Order and payment amount mismatch",
+        message: "Order and payment amount mismatch",
       });
     }
 
@@ -2974,11 +3577,8 @@ export const generatePayUHash = async (req, res) => {
     // 7. PAYU LIVE CONFIGURATION
     // ======================================
 
-    const merchantKey =
-      process.env.PAYU_MERCHANT_KEY;
-
-    const merchantSalt =
-      process.env.PAYU_MERCHANT_SALT;
+    const merchantKey = process.env.PAYU_MERCHANT_KEY;
+    const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
     if (
       process.env.PAYU_ENV !== "PRODUCTION" ||
@@ -2987,8 +3587,7 @@ export const generatePayUHash = async (req, res) => {
     ) {
       return res.status(503).json({
         success: false,
-        message:
-          "PayU LIVE configuration missing",
+        message: "PayU LIVE configuration missing",
       });
     }
 
@@ -2996,9 +3595,7 @@ export const generatePayUHash = async (req, res) => {
     // 8. CUSTOMER DETAILS
     // ======================================
 
-    const user = await User.findById(
-      order.userId
-    ).select(
+    const user = await User.findById(order.userId).select(
       "name email phone phoneNumber mobile mobileNumber"
     );
 
@@ -3009,54 +3606,187 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    const firstname = String(
-      user.name
-    ).trim();
+    const firstname = String(user.name).trim();
+    const email = String(user.email).trim();
 
-    const email = String(
-      user.email
-    ).trim();
+    const registeredPhone = normalizePayUPhone(
+      user.phoneNumber ??
+      user.mobileNumber ??
+      user.mobile ??
+      user.phone
+    );
 
-    const registeredPhone =
-      normalizePayUPhone(
-        user.phoneNumber ??
-        user.mobileNumber ??
-        user.mobile ??
-        user.phone
-      );
+    if (!registeredPhone) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer phone missing",
+      });
+    }
 
     // ======================================
-    // 9. BLOCK UNSUPPORTED TYPES
+    // 9. BLOCK UNSUPPORTED HASH TYPES
     // ======================================
 
     if (hashName === "mcpLookup") {
       return res.status(400).json({
         success: false,
-        message:
-          "MCP hash generation is not configured",
+        message: "MCP hash generation is not configured",
       });
     }
 
     if (postSalt) {
       return res.status(400).json({
         success: false,
-        message:
-          "Post-salt hash requests are not enabled",
+        message: "Post-salt hash requests are not enabled",
       });
     }
 
+    // Common safe JSON parser
+    const parseObject = (value) => {
+      try {
+        const parsed = JSON.parse(value);
+
+        if (
+          !parsed ||
+          typeof parsed !== "object" ||
+          Array.isArray(parsed)
+        ) {
+          return null;
+        }
+
+        return parsed;
+      } catch {
+        return null;
+      }
+    };
+
+    const hasOnlyKeys = (value, allowedKeys) => {
+      return (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.keys(value).every((key) =>
+          allowedKeys.has(key)
+        )
+      );
+    };
+
+    const amountMatches = (value) => {
+      if (
+        typeof value !== "string" &&
+        typeof value !== "number"
+      ) {
+        return false;
+      }
+
+      const paise = toPaise(String(value));
+
+      return paise !== null && paise === orderPaise;
+    };
+
     // ======================================
-    // 10. SPECIAL SDK HASH REQUESTS
+    // 10. IOS QUICK PAY HASH VALIDATION
     // ======================================
 
-    const specialValidation =
-      validatePayUSpecialHash({
+    let specialValidation = {
+      handled: false,
+      valid: false,
+    };
+
+    if (hashName === "fetch_quick_pay_option") {
+      specialValidation.handled = true;
+
+      if (hashType === "V2") {
+        return res.status(400).json({
+          success: false,
+          message: "Unsupported iOS quick-pay hash type",
+        });
+      }
+
+      // iOS format:
+      // JSON|Thu, 19 Nov 2026 14:43:19|
+      const match = hashString.match(
+        /^(\{[^\r\n]*\})\|([^|\r\n]+)\|$/
+      );
+
+      if (!match) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid iOS quick-pay format",
+        });
+      }
+
+      const quickPay = parseObject(match[1]);
+      const timestamp = match[2];
+
+      const allowedQuickPayKeys = new Set([
+        "phone",
+        "userCredential",
+        "userToken",
+        "amount",
+        "deviceId",
+      ]);
+
+      const timestampValid =
+        /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2}(?: GMT)?$/.test(
+          timestamp
+        );
+
+      // Interpret the SDK timestamp as UTC.
+      const requestTime = timestampValid
+        ? Date.parse(
+            timestamp.endsWith(" GMT")
+              ? timestamp
+              : `${timestamp} GMT`
+          )
+        : NaN;
+
+      const recentTimestamp =
+        Number.isFinite(requestTime) &&
+        Math.abs(Date.now() - requestTime) <=
+          15 * 60 * 1000;
+
+      const validQuickPay =
+        hasOnlyKeys(quickPay, allowedQuickPayKeys) &&
+        typeof quickPay.phone === "string" &&
+        normalizePayUPhone(quickPay.phone) ===
+          registeredPhone &&
+        quickPay.userCredential ===
+          `${merchantKey}:${email}` &&
+        quickPay.userToken === "" &&
+        amountMatches(quickPay.amount) &&
+        typeof quickPay.deviceId === "string" &&
+        /^[A-Za-z0-9-]{8,128}$/.test(
+          quickPay.deviceId
+        ) &&
+        recentTimestamp;
+
+      if (!validQuickPay) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "iOS quick-pay parameters do not match order",
+        });
+      }
+
+      specialValidation.valid = true;
+    } else {
+      // ====================================
+      // 11. EXISTING ANDROID SPECIAL HASHES
+      // ====================================
+
+      specialValidation = validatePayUSpecialHash({
         hashName,
         hashString,
         merchantKey,
         order,
         user,
       });
+    }
+
+    // ======================================
+    // 12. SPECIAL HASH RESULT
+    // ======================================
 
     if (specialValidation.handled) {
       if (
@@ -3065,13 +3795,12 @@ export const generatePayUHash = async (req, res) => {
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Invalid PayU special hash request",
+          message: "Invalid PayU special hash request",
         });
       }
     } else {
       // ====================================
-      // 11. STANDARD HASH VALIDATION
+      // 13. STANDARD HASH
       // ====================================
 
       const parts = hashString.split("|");
@@ -3084,7 +3813,7 @@ export const generatePayUHash = async (req, res) => {
       }
 
       // ====================================
-      // 12. PAYMENT / PAYMENT_SOURCE
+      // 14. PAYMENT / PAYMENT_SOURCE
       // ====================================
 
       if (
@@ -3094,18 +3823,9 @@ export const generatePayUHash = async (req, res) => {
         if (hashType === "V2") {
           return res.status(400).json({
             success: false,
-            message:
-              "V2 payment hash is not configured",
+            message: "V2 payment hash is not configured",
           });
         }
-
-        // Standard PayU hash input:
-        //
-        // key|txnid|amount|productinfo|
-        // firstname|email|udf1|...|udf5||||||
-        //
-        // Eleven empty fields after email
-        // produce the required delimiters.
 
         const expectedHashString = [
           merchantKey,
@@ -3118,17 +3838,7 @@ export const generatePayUHash = async (req, res) => {
           "", "", "", "", "", "",
         ].join("|");
 
-        if (
-          hashString !== expectedHashString
-        ) {
-          console.warn(
-            "PAYU PAYMENT HASH MISMATCH:",
-            {
-              orderId: String(order._id),
-              hashName,
-            }
-          );
-
+        if (hashString !== expectedHashString) {
           return res.status(400).json({
             success: false,
             message:
@@ -3137,7 +3847,7 @@ export const generatePayUHash = async (req, res) => {
         }
       } else {
         // ==================================
-        // 13. SDK COMMAND VALIDATION
+        // 15. SDK COMMAND VALIDATION
         // ==================================
 
         const allowedCommands =
@@ -3146,9 +3856,7 @@ export const generatePayUHash = async (req, res) => {
         if (
           !Array.isArray(allowedCommands) ||
           parts.length < 3 ||
-          !allowedCommands.includes(
-            parts[1]
-          )
+          !allowedCommands.includes(parts[1])
         ) {
           return res.status(400).json({
             success: false,
@@ -3157,106 +3865,126 @@ export const generatePayUHash = async (req, res) => {
           });
         }
 
-        // Reject different Bunndle txn IDs.
         const txnIds =
-          hashString.match(
-            /BN[a-f0-9]{20}/g
-          ) || [];
+          hashString.match(/BN[a-f0-9]{20}/g) || [];
 
         if (
-          txnIds.some(
-            (id) => id !== transactionId
-          )
+          txnIds.some((id) => id !== transactionId)
         ) {
           return res.status(400).json({
             success: false,
-            message:
-              "PayU transaction ID mismatch",
+            message: "PayU transaction ID mismatch",
           });
         }
 
         // ==================================
-        // 14. SDK CONFIGURATION
+        // 16. SDK CONFIGURATION
         // ==================================
 
-        if (
-          hashName === "get_sdk_configuration"
-        ) {
+        if (hashName === "get_sdk_configuration") {
           if (
             hashString !==
-              `${merchantKey}|get_sdk_configuration|GET|`
+            `${merchantKey}|get_sdk_configuration|GET|`
           ) {
             return res.status(400).json({
               success: false,
-              message:
-                "Invalid SDK configuration request",
+              message: "Invalid SDK configuration request",
             });
           }
         }
 
         // ==================================
-        // 15. CHECKOUT DETAILS
+        // 17. CHECKOUT DETAILS
+        // ANDROID + IOS
         // ==================================
 
-        if (
-          hashName === "get_checkout_details"
-        ) {
+        if (hashName === "get_checkout_details") {
           if (
             parts.length !== 4 ||
             parts[3] !== ""
           ) {
             return res.status(400).json({
               success: false,
-              message:
-                "Invalid checkout details format",
+              message: "Invalid checkout details format",
             });
           }
 
-          let checkout;
+          const checkout = parseObject(parts[2]);
 
-          try {
-            checkout = JSON.parse(
-              parts[2]
-            );
-          } catch {
+          if (!checkout) {
             return res.status(400).json({
               success: false,
-              message:
-                "Invalid checkout details JSON",
+              message: "Invalid checkout details JSON",
             });
           }
 
           const transactionDetails =
-            checkout?.transactionDetails;
+            checkout.transactionDetails;
 
           const customerDetails =
-            checkout?.customerDetails;
+            checkout.customerDetails;
 
-          const sdkTxnId =
-            transactionDetails?.txnId;
+          if (
+            !transactionDetails ||
+            typeof transactionDetails !== "object" ||
+            Array.isArray(transactionDetails) ||
+            !customerDetails ||
+            typeof customerDetails !== "object" ||
+            Array.isArray(customerDetails)
+          ) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid checkout details",
+            });
+          }
 
-          const sdkAmount =
-            transactionDetails?.amount;
+          const source = transactionDetails.source;
 
-          const sdkPhone =
-            normalizePayUPhone(
-              customerDetails?.mobile
-            );
+          const isAndroid = source === "Android_SDK";
+          const isIOS = source === "IOS_SDK";
+
+          if (!isAndroid && !isIOS) {
+            return res.status(400).json({
+              success: false,
+              message: "Unsupported PayU SDK platform",
+            });
+          }
+
+          const sdkTxnId = transactionDetails.txnId;
+          const sdkAmount = transactionDetails.amount;
+
+          const sdkPhone = normalizePayUPhone(
+            customerDetails.mobile
+          );
+
+          // Android:
+          // BN... + numeric request suffix
+          //
+          // iOS:
+          // Request ID equals PayU transaction ID
+
+          const requestId = checkout.requestId;
+
+          const validRequestId = isAndroid
+            ? typeof requestId === "string" &&
+              new RegExp(
+                `^${transactionId}\\d{10,16}$`
+              ).test(requestId)
+            : requestId === transactionId;
+
+          // Android includes isSITxn: false.
+          // iOS may omit isSITxn entirely.
+          const validSIField = isAndroid
+            ? checkout.isSITxn === false
+            : checkout.isSITxn === undefined ||
+              checkout.isSITxn === false;
 
           if (
             sdkTxnId !== transactionId ||
-            sdkAmount === undefined ||
-            toPaise(String(sdkAmount)) !==
-              orderPaise ||
+            !amountMatches(sdkAmount) ||
             sdkPhone !== registeredPhone ||
-            transactionDetails?.source !==
-              "Android_SDK" ||
-            checkout?.isSITxn !== false ||
-            typeof checkout?.requestId !==
-              "string" ||
-            !new RegExp(
-              `^${transactionId}\\d{10,16}$`
-            ).test(checkout.requestId)
+            !validRequestId ||
+            !validSIField
           ) {
             return res.status(400).json({
               success: false,
@@ -3280,9 +4008,7 @@ export const generatePayUHash = async (req, res) => {
             !checkout.useCase ||
             typeof checkout.useCase !== "object" ||
             Array.isArray(checkout.useCase) ||
-            Object.entries(
-              checkout.useCase
-            ).some(
+            Object.entries(checkout.useCase).some(
               ([key, value]) =>
                 !allowedUseCases.has(key) ||
                 typeof value !== "boolean"
@@ -3295,31 +4021,33 @@ export const generatePayUHash = async (req, res) => {
             });
           }
 
-          const allowedCheckoutKeys =
-            new Set([
-              "requestId",
-              "transactionDetails",
-              "customerDetails",
-              "useCase",
-              "isSITxn",
-            ]);
+          const allowedCheckoutKeys = new Set([
+            "requestId",
+            "transactionDetails",
+            "customerDetails",
+            "useCase",
+            "isSITxn",
+          ]);
+
+          const allowedTxnKeys = new Set([
+            "amount",
+            "txnId",
+            "source",
+          ]);
+
+          const allowedCustomerKeys = new Set([
+            "mobile",
+          ]);
 
           if (
-            Object.keys(checkout).some(
-              (key) =>
-                !allowedCheckoutKeys.has(key)
+            !hasOnlyKeys(checkout, allowedCheckoutKeys) ||
+            !hasOnlyKeys(
+              transactionDetails,
+              allowedTxnKeys
             ) ||
-            Object.keys(
-              transactionDetails
-            ).some(
-              (key) =>
-                !["amount", "txnId", "source"]
-                  .includes(key)
-            ) ||
-            Object.keys(
-              customerDetails
-            ).some(
-              (key) => key !== "mobile"
+            !hasOnlyKeys(
+              customerDetails,
+              allowedCustomerKeys
             )
           ) {
             return res.status(400).json({
@@ -3330,9 +4058,8 @@ export const generatePayUHash = async (req, res) => {
           }
         }
 
-        // Other SDK commands must have their
-        // own exact argument validation before
-        // being enabled in LIVE mode.
+        // Other SDK commands require specific
+        // validation before enabling in LIVE.
         if (
           hashName !== "get_sdk_configuration" &&
           hashName !== "get_checkout_details"
@@ -3347,21 +4074,15 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 16. GENERATE HASH
+    // 18. GENERATE REQUESTED HASH
     // ======================================
 
     let generatedHash;
 
     if (hashType === "V2") {
       generatedHash = crypto
-        .createHmac(
-          "sha256",
-          merchantSalt
-        )
-        .update(
-          hashString,
-          "utf8"
-        )
+        .createHmac("sha256", merchantSalt)
+        .update(hashString, "utf8")
         .digest("hex");
     } else {
       generatedHash = crypto
@@ -3374,28 +4095,23 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 17. SAFE LOG
+    // 19. SAFE LOGGING
     // ======================================
 
-    console.log(
-      "PAYU HASH GENERATED:",
-      {
-        orderId: String(order._id),
-        hashName,
-        hashType: hashType || "V1",
-        specialHash:
-          specialValidation.handled,
-      }
-    );
+    console.log("PAYU HASH GENERATED:", {
+      orderId: String(order._id),
+      hashName,
+      hashType: hashType || "V1",
+      specialHash: specialValidation.handled,
+    });
 
     // ======================================
-    // 18. SUCCESS RESPONSE
+    // 20. RESPONSE
     // ======================================
 
     return res.status(200).json({
       success: true,
-      message:
-        "PayU hash generated successfully",
+      message: "PayU hash generated successfully",
       data: {
         orderId: String(order._id),
         transactionId,
@@ -3411,11 +4127,13 @@ export const generatePayUHash = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to generate PayU hash",
+      message: "Unable to generate PayU hash",
     });
   }
 };
+
+
+
 
 
 // ============================================================
