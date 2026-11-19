@@ -3421,10 +3421,11 @@ const validatePayUSpecialHash = ({
 
 
 
+
 export const generatePayUHash = async (req, res) => {
   try {
     // ======================================
-    // AUTHENTICATION + REQUEST VALIDATION
+    // 1. AUTHENTICATION
     // ======================================
 
     const userId = getUserId(req);
@@ -3487,8 +3488,7 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    // Only documented V1 requests are enabled
-    // in this checkout configuration.
+    // Only V1 hashes are enabled.
     if (hashType === "V2" || postSalt) {
       return res.status(400).json({
         success: false,
@@ -3504,7 +3504,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // ACTIVE ORDER + PAYMENT
+    // 2. ACTIVE PAYU ORDER
     // ======================================
 
     const order = await Order.findOne({
@@ -3533,6 +3533,10 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
+    // ======================================
+    // 3. PENDING PAYMENT
+    // ======================================
+
     const payment = await Payment.findOne({
       orderId: order._id,
       userId,
@@ -3547,6 +3551,10 @@ export const generatePayUHash = async (req, res) => {
         message: "Pending PayU payment not found",
       });
     }
+
+    // ======================================
+    // 4. AMOUNT VALIDATION
+    // ======================================
 
     const orderAmount = Number(order.totalAmount);
     const paymentAmount = Number(payment.amount);
@@ -3578,7 +3586,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // LIVE PAYU CREDENTIALS
+    // 5. PAYU CONFIGURATION
     // ======================================
 
     const merchantKey =
@@ -3599,7 +3607,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // CUSTOMER DETAILS
+    // 6. CUSTOMER DETAILS
     // ======================================
 
     const user = await User.findById(
@@ -3633,7 +3641,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // VALIDATION HELPERS
+    // 7. VALIDATION HELPERS
     // ======================================
 
     const fail = (message) =>
@@ -3674,16 +3682,22 @@ export const generatePayUHash = async (req, res) => {
 
       const paise = toPaise(String(value));
 
-      return paise !== null &&
-        paise === orderPaise;
+      return (
+        paise !== null &&
+        paise === orderPaise
+      );
     };
 
-    // Matches the SDK timestamp already
-    // observed in Android/iOS logs.
+    // ======================================
+    // 8. SDK TIMESTAMP VALIDATION
+    // ======================================
+
     const validSdkTimestamp = (value) => {
       if (
         typeof value !== "string" ||
-        !/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2}(?: GMT)?$/.test(value)
+        !/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2}(?: GMT)?$/.test(
+          value
+        )
       ) {
         return false;
       }
@@ -3706,7 +3720,9 @@ export const generatePayUHash = async (req, res) => {
         /^(\{[^\r\n]*\})\|([^|\r\n]+)\|$/
       );
 
-      if (!match) return null;
+      if (!match) {
+        return null;
+      }
 
       const body = parseObject(match[1]);
 
@@ -3720,6 +3736,10 @@ export const generatePayUHash = async (req, res) => {
       return body;
     };
 
+    // ======================================
+    // 9. CARD NUMBER VALIDATION
+    // ======================================
+
     const isValidCardNumber = (value) => {
       if (
         typeof value !== "string" ||
@@ -3728,7 +3748,6 @@ export const generatePayUHash = async (req, res) => {
         return false;
       }
 
-      // Luhn verification.
       let sum = 0;
       let doubleDigit = false;
 
@@ -3741,7 +3760,10 @@ export const generatePayUHash = async (req, res) => {
 
         if (doubleDigit) {
           digit *= 2;
-          if (digit > 9) digit -= 9;
+
+          if (digit > 9) {
+            digit -= 9;
+          }
         }
 
         sum += digit;
@@ -3752,13 +3774,13 @@ export const generatePayUHash = async (req, res) => {
     };
 
     // ======================================
-    // HASH TYPE DISPATCH
+    // 10. HASH VALIDATION
     // ======================================
 
     let validated = false;
 
     // ======================================
-    // IOS: fetch_quick_pay_option
+    // IOS QUICK PAY
     // ======================================
 
     if (hashName === "fetch_quick_pay_option") {
@@ -3794,13 +3816,29 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // IOS: getBinBasedDetails
+    // CARD BIN HASH - ANDROID + IOS
     // ======================================
 
-    else if (hashName === "getBinBasedDetails") {
+    else if (
+      hashName === "getBinBasedDetails" ||
+      hashName === "binBaseDetails"
+    ) {
       const data = parseTimedJson(hashString);
 
-      const allowed = new Set([
+      if (!data) {
+        return fail(
+          "Invalid PayU BIN hash format"
+        );
+      }
+
+      const isAndroid =
+        hashName === "binBaseDetails";
+
+      const expectedSource = isAndroid
+        ? "ANDROID_SDK"
+        : "IOS_SDK";
+
+      const allowedKeys = new Set([
         "txnId",
         "cardNumber",
         "merchantKey",
@@ -3808,36 +3846,55 @@ export const generatePayUHash = async (req, res) => {
         "source",
         "isPricingCFEnable",
         "disableConvFeeCompounding",
+        "isSITxn",
       ]);
 
-      const validFlag = (value) =>
+      const validBoolean = (value) =>
+        value === true ||
+        value === false ||
         value === "true" ||
         value === "false";
 
+      // Android sends isSITxn: false.
+      // iOS may omit this field.
+      const validSIField = isAndroid
+        ? data.isSITxn === false
+        : data.isSITxn === undefined ||
+          data.isSITxn === false;
+
+      // Android: actual booleans.
+      // iOS: string booleans.
+      const validFlags = isAndroid
+        ? typeof data.isPricingCFEnable ===
+            "boolean" &&
+          typeof data.disableConvFeeCompounding ===
+            "boolean"
+        : validBoolean(data.isPricingCFEnable) &&
+          validBoolean(
+            data.disableConvFeeCompounding
+          );
+
       if (
-        !onlyKeys(data, allowed) ||
+        !onlyKeys(data, allowedKeys) ||
         data.txnId !== transactionId ||
         data.merchantKey !== merchantKey ||
         !amountMatches(data.amount) ||
-        data.source !== "IOS_SDK" ||
+        data.source !== expectedSource ||
         !isValidCardNumber(data.cardNumber) ||
-        !validFlag(data.isPricingCFEnable) ||
-        !validFlag(
-          data.disableConvFeeCompounding
-        )
+        !validFlags ||
+        !validSIField
       ) {
         return fail(
-          "Invalid PayU card BIN details request"
+          "PayU BIN details do not match order"
         );
       }
 
-      // Never log or store cardNumber.
-      // Sign only the validated SDK string.
+      // Never log cardNumber or hashString.
       validated = true;
     }
 
     // ======================================
-    // IOS/ANDROID: validateVPA
+    // UPI VALIDATION
     // ======================================
 
     else if (hashName === "validateVPA") {
@@ -3855,17 +3912,21 @@ export const generatePayUHash = async (req, res) => {
         );
 
       if (!valid) {
-        return fail("Invalid PayU VPA request");
+        return fail(
+          "Invalid PayU VPA request"
+        );
       }
 
       validated = true;
     }
 
     // ======================================
-    // IOS: eligibleBinsForEMI
+    // EMI ELIGIBILITY
     // ======================================
 
-    else if (hashName === "eligibleBinsForEMI") {
+    else if (
+      hashName === "eligibleBinsForEMI"
+    ) {
       if (
         hashString !==
           `${merchantKey}|eligibleBinsForEMI|default|`
@@ -3879,7 +3940,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // EXISTING ANDROID SPECIAL HASHES
+    // EXISTING SPECIAL HASHES
     // ======================================
 
     if (!validated) {
@@ -3910,11 +3971,13 @@ export const generatePayUHash = async (req, res) => {
       const parts = hashString.split("|");
 
       if (parts[0] !== merchantKey) {
-        return fail("PayU merchant key mismatch");
+        return fail(
+          "PayU merchant key mismatch"
+        );
       }
 
       // ====================================
-      // STANDARD PAYMENT SOURCE
+      // PAYMENT / PAYMENT_SOURCE
       // ====================================
 
       if (
@@ -3961,7 +4024,7 @@ export const generatePayUHash = async (req, res) => {
       }
 
       // ====================================
-      // ANDROID + IOS CHECKOUT DETAILS
+      // CHECKOUT DETAILS - ANDROID + IOS
       // ====================================
 
       else if (
@@ -3981,7 +4044,9 @@ export const generatePayUHash = async (req, res) => {
           );
         }
 
-        const checkout = parseObject(parts[2]);
+        const checkout = parseObject(
+          parts[2]
+        );
 
         if (!checkout) {
           return fail(
@@ -3989,8 +4054,11 @@ export const generatePayUHash = async (req, res) => {
           );
         }
 
-        const txn = checkout.transactionDetails;
-        const customer = checkout.customerDetails;
+        const txn =
+          checkout.transactionDetails;
+
+        const customer =
+          checkout.customerDetails;
 
         const checkoutKeys = new Set([
           "requestId",
@@ -4011,9 +4079,18 @@ export const generatePayUHash = async (req, res) => {
         ]);
 
         if (
-          !onlyKeys(checkout, checkoutKeys) ||
-          !onlyKeys(txn, txnKeys) ||
-          !onlyKeys(customer, customerKeys)
+          !onlyKeys(
+            checkout,
+            checkoutKeys
+          ) ||
+          !onlyKeys(
+            txn,
+            txnKeys
+          ) ||
+          !onlyKeys(
+            customer,
+            customerKeys
+          )
         ) {
           return fail(
             "Unexpected checkout details fields"
@@ -4038,7 +4115,8 @@ export const generatePayUHash = async (req, res) => {
             new RegExp(
               `^${transactionId}\\d{10,16}$`
             ).test(checkout.requestId)
-          : checkout.requestId === transactionId;
+          : checkout.requestId ===
+            transactionId;
 
         const validSI = isAndroid
           ? checkout.isSITxn === false
@@ -4048,8 +4126,9 @@ export const generatePayUHash = async (req, res) => {
         if (
           txn.txnId !== transactionId ||
           !amountMatches(txn.amount) ||
-          normalizePayUPhone(customer.mobile) !==
-            registeredPhone ||
+          normalizePayUPhone(
+            customer.mobile
+          ) !== registeredPhone ||
           !validRequestId ||
           !validSI
         ) {
@@ -4091,7 +4170,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // NEVER SIGN UNKNOWN SDK REQUESTS
+    // BLOCK UNKNOWN HASH REQUESTS
     // ======================================
 
     if (!validated) {
@@ -4101,7 +4180,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // GENERATE V1 HASH
+    // GENERATE PAYU V1 HASH
     // ======================================
 
     const generatedHash = crypto
@@ -4112,16 +4191,24 @@ export const generatePayUHash = async (req, res) => {
       )
       .digest("hex");
 
-    // Do not log hashString, PAN, CVV
-    // or merchant salt.
-    console.log("PAYU HASH GENERATED:", {
-      orderId: String(order._id),
-      hashName,
-    });
+    // Do not log card details,
+    // credentials or hashString.
+    console.log(
+      "PAYU HASH GENERATED:",
+      {
+        orderId: String(order._id),
+        hashName,
+      }
+    );
+
+    // ======================================
+    // SUCCESS RESPONSE
+    // ======================================
 
     return res.status(200).json({
       success: true,
-      message: "PayU hash generated successfully",
+      message:
+        "PayU hash generated successfully",
       data: {
         orderId: String(order._id),
         transactionId,
@@ -4137,7 +4224,8 @@ export const generatePayUHash = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Unable to generate PayU hash",
+      message:
+        "Unable to generate PayU hash",
     });
   }
 };
