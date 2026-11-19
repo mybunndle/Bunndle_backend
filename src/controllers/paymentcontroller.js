@@ -3418,6 +3418,8 @@ const validatePayUSpecialHash = ({
 // };
 
 
+
+
 export const generatePayUHash = async (req, res) => {
   try {
     // ======================================
@@ -3850,8 +3852,12 @@ export const generatePayUHash = async (req, res) => {
         // 15. SDK COMMAND VALIDATION
         // ==================================
 
+        // iOS additionally requests
+        // eligibleBinsForEMI.
         const allowedCommands =
-          PAYU_SDK_COMMANDS[hashName];
+          hashName === "eligibleBinsForEMI"
+            ? ["eligibleBinsForEMI"]
+            : PAYU_SDK_COMMANDS[hashName];
 
         if (
           !Array.isArray(allowedCommands) ||
@@ -3889,6 +3895,23 @@ export const generatePayUHash = async (req, res) => {
             return res.status(400).json({
               success: false,
               message: "Invalid SDK configuration request",
+            });
+          }
+        }
+
+        // ==================================
+        // 16A. IOS EMI ELIGIBILITY HASH
+        // ==================================
+
+        if (hashName === "eligibleBinsForEMI") {
+          if (
+            hashType === "V2" ||
+            hashString !==
+              `${merchantKey}|eligibleBinsForEMI|default|`
+          ) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid eligibleBinsForEMI request",
             });
           }
         }
@@ -3957,11 +3980,8 @@ export const generatePayUHash = async (req, res) => {
             customerDetails.mobile
           );
 
-          // Android:
-          // BN... + numeric request suffix
-          //
-          // iOS:
-          // Request ID equals PayU transaction ID
+          // Android: BN... + numeric suffix
+          // iOS: requestId equals txnId
 
           const requestId = checkout.requestId;
 
@@ -3972,8 +3992,8 @@ export const generatePayUHash = async (req, res) => {
               ).test(requestId)
             : requestId === transactionId;
 
-          // Android includes isSITxn: false.
-          // iOS may omit isSITxn entirely.
+          // Android requires isSITxn: false.
+          // iOS may omit this field.
           const validSIField = isAndroid
             ? checkout.isSITxn === false
             : checkout.isSITxn === undefined ||
@@ -4058,11 +4078,12 @@ export const generatePayUHash = async (req, res) => {
           }
         }
 
-        // Other SDK commands require specific
-        // validation before enabling in LIVE.
+        // Only explicitly validated commands
+        // are enabled for LIVE signing.
         if (
           hashName !== "get_sdk_configuration" &&
-          hashName !== "get_checkout_details"
+          hashName !== "get_checkout_details" &&
+          hashName !== "eligibleBinsForEMI"
         ) {
           return res.status(400).json({
             success: false,
@@ -4106,7 +4127,7 @@ export const generatePayUHash = async (req, res) => {
     });
 
     // ======================================
-    // 20. RESPONSE
+    // 20. SUCCESS RESPONSE
     // ======================================
 
     return res.status(200).json({
@@ -4131,6 +4152,7 @@ export const generatePayUHash = async (req, res) => {
     });
   }
 };
+
 
 
 
