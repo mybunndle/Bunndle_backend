@@ -891,7 +891,7 @@ export const createOrder = async (req, res) => {
 
     const allowedGateways = [
       // "RAZORPAY",
-      "CASHFREE",
+      // "CASHFREE",
       "PAYU",
     ];
     if (!allowedGateways.includes(paymentGateway)) {
