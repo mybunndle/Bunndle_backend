@@ -2606,29 +2606,66 @@ const reconcilePayUOrder = async ({
 // 1. GENERATE PAYU PAYMENT HASH
 // ============================================================
 
+
+const PAYU_SDK_COMMANDS = {
+  get_sdk_configuration: [
+    "get_sdk_configuration",
+  ],
+  get_checkout_details: [
+    "get_checkout_details",
+  ],
+  getBinInfo: [
+    "getBinInfo",
+    "get_bin_info",
+  ],
+  validateVPA: [
+    "validateVPA",
+    "validate_vpa",
+  ],
+  vas_for_mobile_sdk: [
+    "vas_for_mobile_sdk",
+  ],
+  payment_related_details_for_mobile_sdk: [
+    "payment_related_details_for_mobile_sdk",
+  ],
+  get_eligible_payment_options: [
+    "get_eligible_payment_options",
+  ],
+};
+
+// These dynamic command formats must be
+// validated against the SDK payload used
+// by your installed PayU version.
+// Do not add arbitrary hash names.
+
 export const generatePayUHash = async (req, res) => {
   try {
-    const { orderId } = req.body || {};
+    const {
+      orderId,
+      hashName,
+      hashString,
+      hashType,
+      postSalt,
+    } = req.body || {};
 
-    const userId = getUserId(req);
+    // ======================================
+    // AUTHENTICATION / ORDER OWNERSHIP
+    // ======================================
 
-    // ======================================================
-    // VALIDATE USER AND ORDER
-    // ======================================================
+    const userId =
+      req.user?.id ||
+      req.user?._id ||
+      req.user?.userId;
 
     if (
-      !mongoose.isValidObjectId(orderId) ||
-      !mongoose.isValidObjectId(userId)
+      !mongoose.isValidObjectId(userId) ||
+      !mongoose.isValidObjectId(orderId)
     ) {
       return res.status(400).json({
         success: false,
         message: "Invalid user or order ID",
       });
     }
-
-    // ======================================================
-    // FIND ACTIVE PAYU ORDER
-    // ======================================================
 
     const order = await Order.findOne({
       _id: orderId,
@@ -2645,19 +2682,9 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    if (!PAYU_TXN_REGEX.test(order.payuTxnId || "")) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid PayU transaction ID",
-      });
-    }
-
-    // ======================================================
-    // FIND PENDING PAYMENT
-    // ======================================================
-
     const payment = await Payment.findOne({
       orderId: order._id,
+      userId,
       paymentGateway: "PAYU",
       payuTxnId: order.payuTxnId,
       status: "PENDING",
@@ -2670,104 +2697,281 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    // ======================================================
-    // FIND CUSTOMER
-    // ======================================================
-
-    const user = await User.findById(order.userId).select(
-      "name email",
-    );
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "Customer not found",
-      });
-    }
-
-    const firstName = String(
-      user.name ?? "",
-    ).trim();
-
-    const email = String(
-      user.email ?? "",
-    ).trim();
-
     if (
-      !firstName ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      !/^BN[a-f0-9]{20}$/.test(
+        String(order.payuTxnId || "")
+      )
     ) {
       return res.status(400).json({
         success: false,
-        message: "Valid customer name and email required",
+        message: "Invalid PayU transaction ID",
       });
     }
 
-    // ======================================================
-    // CALCULATE AMOUNT
-    // ======================================================
-
-    const amount = getAmount(order.totalAmount);
+    const amount = Number(
+      order.totalAmount
+    ).toFixed(2);
 
     if (
+      !Number.isFinite(Number(order.totalAmount)) ||
+      Number(order.totalAmount) <= 0 ||
       toPaise(amount) !==
-      toPaise(getAmount(payment.amount))
+        toPaise(
+          Number(payment.amount).toFixed(2)
+        )
     ) {
       return res.status(409).json({
         success: false,
-        message: "Order and payment amount mismatch",
+        message: "Payment amount mismatch",
       });
     }
 
-    // ======================================================
-    // GENERATE PAYMENT HASH
-    // ======================================================
+    // ======================================
+    // LIVE PAYU CONFIGURATION
+    // ======================================
 
-    const hash = createPayUPaymentHash({
-      txnid: order.payuTxnId,
+    const merchantKey =
+      process.env.PAYU_MERCHANT_KEY;
 
-      amount,
+    const merchantSalt =
+      process.env.PAYU_MERCHANT_SALT;
 
-      productinfo: PRODUCT_INFO,
+    if (!merchantKey || !merchantSalt) {
+      return res.status(503).json({
+        success: false,
+        message: "PayU configuration missing",
+      });
+    }
 
-      firstname: firstName,
+    // ======================================
+    // CUSTOMER DETAILS
+    // ======================================
 
-      email,
-    });
+    const user = await User.findById(
+      order.userId
+    ).select("name email");
 
-    // ======================================================
-    // RESPONSE
-    // ======================================================
+    if (!user?.name || !user?.email) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer details missing",
+      });
+    }
+
+    const firstname = String(
+      user.name
+    ).trim();
+
+    const email = String(
+      user.email
+    ).trim();
+
+    // ======================================
+    // LEGACY INITIAL PAYMENT HASH
+    // ======================================
+    // Supports existing initial hash request:
+    // { orderId }
+    //
+    // Dynamic SDK calls use the branch below.
+    // ======================================
+
+    if (
+      hashName === undefined &&
+      hashString === undefined
+    ) {
+      const hash = createPayUPaymentHash({
+        txnid: order.payuTxnId,
+        amount,
+        productinfo: "Bunndle Asset Purchase",
+        firstname,
+        email,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "PayU payment hash generated",
+        data: {
+          orderId: String(order._id),
+          hashName: "payment",
+          hash,
+        },
+      });
+    }
+
+    // ======================================
+    // SDK DYNAMIC HASH VALIDATION
+    // ======================================
+
+    if (
+      typeof hashName !== "string" ||
+      typeof hashString !== "string" ||
+      !hashName ||
+      !hashString ||
+      hashString.length > 4096
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid PayU hash parameters",
+      });
+    }
+
+    if (
+      hashType != null &&
+      hashType !== "" &&
+      hashType !== "V1" &&
+      hashType !== "V2"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Unsupported hash type",
+      });
+    }
+
+    // MCP uses a separate merchant secret.
+    // Reject until MCP integration is configured.
+    if (hashName === "mcpLookup") {
+      return res.status(400).json({
+        success: false,
+        message: "MCP hashing not configured",
+      });
+    }
+
+    if (
+      postSalt != null &&
+      postSalt !== ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Post-salt transactions are not enabled",
+      });
+    }
+
+    // ======================================
+    // VALIDATE HASH NAME AND COMMAND
+    // ======================================
+
+    if (hashName === "payment") {
+      // Standard payment hash must match
+      // the exact authenticated order.
+
+      if (hashType === "V2") {
+        return res.status(400).json({
+          success: false,
+          message:
+            "V2 payment hash is not configured",
+        });
+      }
+
+      const expectedString = [
+        merchantKey,
+        order.payuTxnId,
+        amount,
+        "Bunndle Asset Purchase",
+        firstname,
+        email,
+        "", "", "", "", "",
+        "", "", "", "", "",
+      ].join("|");
+
+      if (hashString !== expectedString) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Payment hash does not match order",
+        });
+      }
+    } else {
+      const allowedCommands =
+        PAYU_SDK_COMMANDS[hashName];
+
+      if (!allowedCommands) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Unsupported PayU SDK hash name",
+        });
+      }
+
+      const parts = hashString.split("|");
+
+      if (
+        parts[0] !== merchantKey ||
+        !allowedCommands.includes(parts[1]) ||
+        parts.length < 3
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid PayU SDK hash command",
+        });
+      }
+
+      // Reject references to any different
+      // Bunndle transaction ID.
+      const txnIds =
+        hashString.match(
+          /BN[a-f0-9]{20}/g
+        ) || [];
+
+      if (
+        txnIds.some(
+          (txnid) =>
+            txnid !== order.payuTxnId
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Hash transaction ID mismatch",
+        });
+      }
+    }
+
+    // ======================================
+    // GENERATE REQUESTED HASH
+    // ======================================
+
+    let generatedHash;
+
+    if (hashType === "V2") {
+      generatedHash = crypto
+        .createHmac(
+          "sha256",
+          merchantSalt
+        )
+        .update(hashString, "utf8")
+        .digest("hex");
+    } else {
+      generatedHash = crypto
+        .createHash("sha512")
+        .update(
+          `${hashString}${merchantSalt}`,
+          "utf8"
+        )
+        .digest("hex");
+    }
 
     return res.status(200).json({
       success: true,
-      message: "PayU payment hash generated successfully",
-
+      message:
+        "PayU hash generated successfully",
       data: {
         orderId: String(order._id),
-
-        transactionId: order.payuTxnId,
-
-        amount,
-
-        hashName: "payment",
-
-        hash,
+        hashName,
+        hash: generatedHash,
       },
     });
   } catch (error) {
     console.error(
       "GENERATE PAYU HASH ERROR:",
-      error,
+      error
     );
 
-    return res.status(
-      error.statusCode || 500,
-    ).json({
+    return res.status(500).json({
       success: false,
-      message: error.statusCode
-        ? error.message
-        : "Unable to generate PayU payment hash",
+      message:
+        "Unable to generate PayU hash",
     });
   }
 };
