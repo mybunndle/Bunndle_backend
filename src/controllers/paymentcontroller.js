@@ -2658,6 +2658,168 @@ const PAYU_SDK_COMMANDS = Object.freeze({
 // GENERATE PAYU HASH - CHECKOUT PRO
 // ==========================================
 
+const validatePayUSpecialHash = ({
+  hashName,
+  hashString,
+  merchantKey,
+  order,
+  user,
+}) => {
+  // These two SDK requests do not start
+  // with the merchant key.
+  if (
+    hashName !== "quickPayEvent" &&
+    hashName !== "get_all_offer_details"
+  ) {
+    return {
+      handled: false,
+      valid: false,
+    };
+  }
+
+  // Actual SDK format:
+  // JSON_PAYLOAD|HTTP_DATE|
+  const firstPipe = hashString.indexOf("|");
+  const lastPipe = hashString.lastIndexOf("|");
+
+  if (
+    firstPipe <= 0 ||
+    lastPipe !== hashString.length - 1 ||
+    firstPipe === lastPipe
+  ) {
+    return {
+      handled: true,
+      valid: false,
+    };
+  }
+
+  const jsonPart = hashString.slice(
+    0,
+    firstPipe
+  );
+
+  const datePart = hashString.slice(
+    firstPipe + 1,
+    lastPipe
+  );
+
+  if (
+    !datePart ||
+    !Number.isFinite(Date.parse(datePart))
+  ) {
+    return {
+      handled: true,
+      valid: false,
+    };
+  }
+
+  let payload;
+
+  try {
+    payload = JSON.parse(jsonPart);
+  } catch {
+    return {
+      handled: true,
+      valid: false,
+    };
+  }
+
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    return {
+      handled: true,
+      valid: false,
+    };
+  }
+
+  const expectedAmount = Number(
+    order.totalAmount
+  );
+
+  if (
+    typeof payload.amount !== "number" ||
+    !Number.isFinite(payload.amount) ||
+    payload.amount !== expectedAmount
+  ) {
+    return {
+      handled: true,
+      valid: false,
+    };
+  }
+
+  if (hashName === "get_all_offer_details") {
+    // Confirmed SDK payload shape from logs.
+    if (
+      Object.keys(payload).length !== 1
+    ) {
+      return {
+        handled: true,
+        valid: false,
+      };
+    }
+
+    return {
+      handled: true,
+      valid: true,
+    };
+  }
+
+  // quickPayEvent
+  const expectedCredential =
+    `${merchantKey}:${String(user.email).trim()}`;
+
+  if (
+    payload.requestType !== "quickpay" ||
+    payload.userCredential !== expectedCredential ||
+    typeof payload.requestId !== "string" ||
+    !payload.requestId.startsWith(
+      order.payuTxnId
+    ) ||
+    typeof payload.deviceId !== "string" ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(
+      payload.deviceId
+    ) ||
+    typeof payload.phone !== "string" ||
+    typeof payload.userToken !== "string" &&
+      payload.userToken !== undefined
+  ) {
+    return {
+      handled: true,
+      valid: false,
+    };
+  }
+
+  // The SDK sometimes sends empty phone.
+  // A non-empty value must match the user's
+  // registered number.
+  const registeredPhone = String(
+    user.phoneNumber ??
+    user.mobileNumber ??
+    user.mobile ??
+    user.phone ??
+    ""
+  ).replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
+
+  if (
+    payload.phone &&
+    payload.phone !== registeredPhone
+  ) {
+    return {
+      handled: true,
+      valid: false,
+    };
+  }
+
+  return {
+    handled: true,
+    valid: true,
+  };
+};
+
+
 export const generatePayUHash = async (req, res) => {
   try {
     // ======================================
@@ -2692,9 +2854,6 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    // No legacy fallback.
-    // SDK hash name and hash string required.
-
     if (
       typeof hashName !== "string" ||
       !hashName.trim() ||
@@ -2724,10 +2883,7 @@ export const generatePayUHash = async (req, res) => {
 
     if (
       postSalt != null &&
-      (
-        typeof postSalt !== "string" ||
-        postSalt.length > 2048
-      )
+      typeof postSalt !== "string"
     ) {
       return res.status(400).json({
         success: false,
@@ -2736,7 +2892,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 3. FIND USER'S ACTIVE PAYU ORDER
+    // 3. FIND ACTIVE PAYU ORDER
     // ======================================
 
     const order = await Order.findOne({
@@ -2758,11 +2914,12 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 4. VALIDATE PAYU TRANSACTION ID
+    // 4. VALIDATE TRANSACTION ID
     // ======================================
 
-    const transactionId =
-      String(order.payuTxnId || "");
+    const transactionId = String(
+      order.payuTxnId || ""
+    );
 
     if (!/^BN[a-f0-9]{20}$/.test(transactionId)) {
       return res.status(400).json({
@@ -2817,9 +2974,12 @@ export const generatePayUHash = async (req, res) => {
 
     const amount = orderAmount.toFixed(2);
 
+    const orderPaise = toPaise(amount);
+
     if (
-      toPaise(amount) !==
-      toPaise(paymentAmount.toFixed(2))
+      orderPaise === null ||
+      orderPaise !==
+        toPaise(paymentAmount.toFixed(2))
     ) {
       return res.status(409).json({
         success: false,
@@ -2829,7 +2989,7 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 7. MERCHANT CONFIGURATION
+    // 7. LIVE PAYU CONFIGURATION
     // ======================================
 
     const merchantKey =
@@ -2843,54 +3003,52 @@ export const generatePayUHash = async (req, res) => {
       !merchantKey ||
       !merchantSalt
     ) {
-      console.error(
-        "PAYU LIVE CONFIGURATION MISSING"
-      );
-
       return res.status(503).json({
         success: false,
         message:
-          "PayU payment service is unavailable",
+          "PayU LIVE configuration missing",
       });
     }
 
     // ======================================
-    // 8. DIAGNOSTIC LOGGING
+    // 8. CUSTOMER DETAILS
     // ======================================
 
-    // Never print hashString, merchantSalt,
-    // or complete sensitive SDK parameters.
+    const user = await User.findById(
+      order.userId
+    ).select(
+      "name email phone phoneNumber mobile mobileNumber"
+    );
 
-    const parts = hashString.split("|");
-
-    console.log("PAYU HASH REQUEST:", {
-      orderId: String(order._id),
-      hashName,
-      hashType: hashType || "V1",
-      hasPostSalt: Boolean(postSalt),
-      command: parts[1] || null,
-      merchantKeyMatches:
-        parts[0] === merchantKey,
-      hashStringLength: hashString.length,
-    });
-
-    // ======================================
-    // 9. MERCHANT KEY VALIDATION
-    // ======================================
-
-    if (parts[0] !== merchantKey) {
+    if (!user?.name || !user?.email) {
       return res.status(400).json({
         success: false,
-        message: "PayU merchant key mismatch",
+        message:
+          "PayU customer details missing",
       });
     }
 
-    // ======================================
-    // 10. MCP VALIDATION
-    // ======================================
+    const firstname = String(
+      user.name
+    ).trim();
 
-    // MCP requires a separate merchant
-    // secret. Not configured for Bunndle.
+    const email = String(
+      user.email
+    ).trim();
+
+    const registeredPhone = String(
+      user.phoneNumber ??
+      user.mobileNumber ??
+      user.mobile ??
+      user.phone ??
+      ""
+    )
+      .replace(/\D/g, "")
+      .replace(/^91(?=\d{10}$)/, "");
+
+    // ======================================
+    // 9. BLOCK UNSUPPORTED HASH TYPES
+    // ======================================
 
     if (hashName === "mcpLookup") {
       return res.status(400).json({
@@ -2900,15 +3058,8 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    // ======================================
-    // 11. POST-SALT VALIDATION
-    // ======================================
-
-    // Split payments / additional charges
-    // require additional validation.
-    // Do not permit arbitrary postSalt
-    // from a client in LIVE mode.
-
+    // Untrusted postSalt must not be
+    // appended in LIVE payment mode.
     if (postSalt) {
       return res.status(400).json({
         success: false,
@@ -2918,154 +3069,292 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 12. VALIDATE PAYMENT HASH
+    // 10. DETECT SPECIAL SDK HASH
     // ======================================
 
-    if (hashName === "payment") {
-      if (hashType === "V2") {
-        return res.status(400).json({
-          success: false,
-          message:
-            "V2 payment hash is not configured",
-        });
-      }
+    // The helper was added above this
+    // controller in paymentcontroller.js.
 
-      const user = await User.findById(
-        order.userId
-      ).select("name email");
-
-      if (!user?.name || !user?.email) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "PayU customer details missing",
-        });
-      }
-
-      const firstname = String(
-        user.name
-      ).trim();
-
-      const email = String(
-        user.email
-      ).trim();
-
-      // Standard PayU payment hash input:
-      // key|txnid|amount|productinfo|
-      // firstname|email|udf1|...|udf5||||||
-
-      const expectedHashString = [
+    const specialHashValidation =
+      validatePayUSpecialHash({
+        hashName,
+        hashString,
         merchantKey,
-        transactionId,
-        amount,
-        "Bunndle Asset Purchase",
-        firstname,
-        email,
-        "", "", "", "", "",
-        "", "", "", "", "",
-      ].join("|");
+        order,
+        user,
+      });
 
-      if (hashString !== expectedHashString) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "PayU payment parameters do not match the order",
-        });
-      }
-    } else {
-      // ====================================
-      // 13. VALIDATE SDK COMMAND
-      // ====================================
-
-      const allowedCommands =
-        PAYU_SDK_COMMANDS[hashName];
-
-      if (!allowedCommands) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Unsupported PayU SDK hash name",
-        });
-      }
-
-      // This is the current Bunndle
-      // integration's command restriction.
-      // Compare it against real PayU SDK
-      // hash requests before expanding.
-
-      const command = parts[1];
-
+    if (specialHashValidation.handled) {
       if (
-        !command ||
-        !allowedCommands.includes(command) ||
-        parts.length < 3
-      ) {
-        console.warn(
-          "PAYU SDK COMMAND REJECTED:",
-          {
-            orderId: String(order._id),
-            hashName,
-            command: command || null,
-          }
-        );
-
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid PayU SDK hash command",
-        });
-      }
-
-      // Reject another Bunndle
-      // transaction identifier.
-
-      const transactionIds =
-        hashString.match(
-          /BN[a-f0-9]{20}/g
-        ) || [];
-
-      if (
-        transactionIds.some(
-          (id) => id !== transactionId
-        )
+        !specialHashValidation.valid ||
+        hashType === "V2"
       ) {
         return res.status(400).json({
           success: false,
           message:
-            "PayU transaction ID mismatch",
+            "Invalid PayU special hash request",
         });
       }
 
-      // NOTE:
-      // Passing these checks alone does not
-      // prove that command arguments belong
-      // to this order. Before real-money
-      // launch, add per-command field
-      // validation and rate limiting.
+      // quickPayEvent / offer-details use
+      // JSON_PAYLOAD|HTTP_DATE| format.
+      //
+      // Reject stale or future-dated
+      // signed requests.
+
+      const finalPipe =
+        hashString.lastIndexOf("|");
+
+      const firstPipe =
+        hashString.indexOf("|");
+
+      const requestDate = hashString.slice(
+        firstPipe + 1,
+        finalPipe
+      );
+
+      const timestamp = Date.parse(
+        requestDate
+      );
+
+      const maxClockSkewMs =
+        5 * 60 * 1000;
+
+      if (
+        !Number.isFinite(timestamp) ||
+        Math.abs(Date.now() - timestamp) >
+          maxClockSkewMs
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Expired or invalid PayU hash timestamp",
+        });
+      }
     }
 
     // ======================================
-    // 14. GENERATE HASH
+    // 11. STANDARD SDK VALIDATION
+    // ======================================
+
+    if (!specialHashValidation.handled) {
+      const parts = hashString.split("|");
+
+      if (parts[0] !== merchantKey) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "PayU merchant key mismatch",
+        });
+      }
+
+      // ====================================
+      // STANDARD PAYMENT HASH
+      // ====================================
+
+      if (hashName === "payment") {
+        if (hashType === "V2") {
+          return res.status(400).json({
+            success: false,
+            message:
+              "V2 payment hash is not configured",
+          });
+        }
+
+        const expectedHashString = [
+          merchantKey,
+          transactionId,
+          amount,
+          "Bunndle Asset Purchase",
+          firstname,
+          email,
+          "", "", "", "", "",
+          "", "", "", "", "",
+        ].join("|");
+
+        if (
+          hashString !== expectedHashString
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "PayU payment parameters do not match the order",
+          });
+        }
+      } else {
+        // ==================================
+        // SDK COMMAND ALLOWLIST
+        // ==================================
+
+        const allowedCommands =
+          PAYU_SDK_COMMANDS[hashName];
+
+        if (
+          !Array.isArray(allowedCommands)
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Unsupported PayU SDK hash name",
+          });
+        }
+
+        const command = parts[1];
+
+        if (
+          parts.length < 3 ||
+          !allowedCommands.includes(command)
+        ) {
+          console.warn(
+            "PAYU SDK COMMAND REJECTED:",
+            {
+              hashName,
+              command: command || null,
+            }
+          );
+
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid PayU SDK hash command",
+          });
+        }
+
+        // ==================================
+        // TRANSACTION ID MATCHING
+        // ==================================
+
+        const txnIds =
+          hashString.match(
+            /BN[a-f0-9]{20}/g
+          ) || [];
+
+        if (
+          txnIds.some(
+            (id) => id !== transactionId
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "PayU transaction ID mismatch",
+          });
+        }
+
+        // ==================================
+        // CHECKOUT DETAILS VALIDATION
+        // ==================================
+
+        if (
+          hashName === "get_checkout_details"
+        ) {
+          // Observed SDK format:
+          // key|get_checkout_details|JSON|
+
+          if (
+            parts.length !== 4 ||
+            parts[3] !== ""
+          ) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Invalid checkout details format",
+            });
+          }
+
+          let checkoutDetails;
+
+          try {
+            checkoutDetails = JSON.parse(
+              parts[2]
+            );
+          } catch {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Invalid checkout details JSON",
+            });
+          }
+
+          const txnDetails =
+            checkoutDetails?.transactionDetails;
+
+          const sdkTxnId =
+            txnDetails?.txnId;
+
+          const sdkAmount =
+            txnDetails?.amount;
+
+          const sdkMobile = String(
+            checkoutDetails
+              ?.customerDetails
+              ?.mobile ?? ""
+          ).replace(/\D/g, "")
+           .replace(/^91(?=\d{10}$)/, "");
+
+          if (
+            sdkTxnId !== transactionId ||
+            toPaise(
+              Number(sdkAmount).toFixed(2)
+            ) !== orderPaise ||
+            sdkMobile !== registeredPhone ||
+            txnDetails?.source !==
+              "Android_SDK" ||
+            checkoutDetails?.isSITxn !==
+              false ||
+            typeof checkoutDetails?.requestId !==
+              "string" ||
+            !checkoutDetails.requestId.startsWith(
+              transactionId
+            )
+          ) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "PayU checkout details do not match order",
+            });
+          }
+        }
+
+        // ==================================
+        // SDK CONFIGURATION VALIDATION
+        // ==================================
+
+        if (
+          hashName === "get_sdk_configuration"
+        ) {
+          // Observed exact SDK format:
+          // key|get_sdk_configuration|GET|
+
+          if (
+            hashString !==
+            `${merchantKey}|get_sdk_configuration|GET|`
+          ) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Invalid SDK configuration hash request",
+            });
+          }
+        }
+      }
+    }
+
+    // ======================================
+    // 12. GENERATE HASH
     // ======================================
 
     let generatedHash;
 
     if (hashType === "V2") {
-      // PayU V2: HMAC SHA-256
-
       generatedHash = crypto
         .createHmac(
           "sha256",
           merchantSalt
         )
-        .update(
-          hashString,
-          "utf8"
-        )
+        .update(hashString, "utf8")
         .digest("hex");
     } else {
-      // PayU V1: SHA-512
-
       generatedHash = crypto
         .createHash("sha512")
         .update(
@@ -3076,21 +3365,28 @@ export const generatePayUHash = async (req, res) => {
     }
 
     // ======================================
-    // 15. RETURN HASH TO FLUTTER
+    // 13. SAFE DEBUG LOG
     // ======================================
 
-    console.log("PAYU HASH GENERATED:", {
-      orderId: String(order._id),
-      hashName,
-      hashType: hashType || "V1",
-    });
+    console.log(
+      "PAYU HASH GENERATED:",
+      {
+        orderId: String(order._id),
+        hashName,
+        hashType: hashType || "V1",
+        specialHash:
+          specialHashValidation.handled,
+      }
+    );
+
+    // ======================================
+    // 14. RETURN RESPONSE
+    // ======================================
 
     return res.status(200).json({
       success: true,
-
       message:
         "PayU hash generated successfully",
-
       data: {
         orderId: String(order._id),
         transactionId,
@@ -3111,6 +3407,7 @@ export const generatePayUHash = async (req, res) => {
     });
   }
 };
+
 
 // ============================================================
 // 2. VERIFY PAYU PAYMENT
