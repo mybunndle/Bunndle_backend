@@ -342,10 +342,6 @@
 
 // export default mongoose.model("PurchaseHistory", purchaseHistorySchema);
 
-
-
-
-
 import mongoose from "mongoose";
 
 const getIndianTime = () => {
@@ -570,7 +566,7 @@ const purchaseHistorySchema = new mongoose.Schema(
 
     paymentGateway: {
       type: String,
-      enum: ["RAZORPAY", "CASHFREE"],
+      enum: ["RAZORPAY", "CASHFREE", "PAYU"],
       default: "RAZORPAY",
       required: true,
     },
@@ -612,6 +608,19 @@ const purchaseHistorySchema = new mongoose.Schema(
     cashfreePaymentId: {
       type: String,
       default: null,
+    },
+    // ==================================================
+    // PAYU DETAILS
+    payuTxnId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    payuMihpayId: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     // ==================================================
@@ -676,12 +685,7 @@ const purchaseHistorySchema = new mongoose.Schema(
     documentGenerationStatus: {
       type: String,
 
-      enum: [
-        "NOT_STARTED",
-        "PROCESSING",
-        "COMPLETED",
-        "FAILED",
-      ],
+      enum: ["NOT_STARTED", "PROCESSING", "COMPLETED", "FAILED"],
 
       default: "NOT_STARTED",
     },
@@ -750,12 +754,37 @@ purchaseHistorySchema.index(
     },
   },
 );
+// ==========================================
+// PAYU TRANSACTION ID UNIQUE INDEX
+// ==========================================
+
+purchaseHistorySchema.index(
+  { payuTxnId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      payuTxnId: { $type: "string" },
+    },
+  }
+);
+
+// ==========================================
+// PAYU PAYMENT ID UNIQUE INDEX
+// ==========================================
+
+purchaseHistorySchema.index(
+  { payuMihpayId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      payuMihpayId: { $type: "string" },
+    },
+  }
+);
 
 // ==================================================
 // MODEL
 // ==================================================
 
-export default mongoose.model(
-  "PurchaseHistory",
-  purchaseHistorySchema,
-);
+
+export default mongoose.model("PurchaseHistory", purchaseHistorySchema);

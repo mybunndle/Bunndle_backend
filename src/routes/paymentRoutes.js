@@ -29,6 +29,10 @@ import {
   verifyCashfreePayment,
   razorpayWebhook,
   cashfreeWebhook,
+  generatePayUHash,
+  verifyPayUPayment,
+  payuPaymentReturn,
+  payuWebhook,
   getAllOrders,
 } from "../controllers/paymentcontroller.js";
 
@@ -36,12 +40,15 @@ import adminAuthMiddleware from "../middleware/admin_validate.js";
 
 const router = express.Router();
 
-
-
 router.post("/create-order", authMiddleware, createOrder);
 router.post("/verify-payment", authMiddleware, verifyPayment);
 router.post("/cashfree/verify-payment", authMiddleware, verifyCashfreePayment);
 router.post("/webhook", razorpayWebhook);
+
+router.post("/payu/generate-hash", authMiddleware, generatePayUHash);
+router.post("/payu/verify", authMiddleware, verifyPayUPayment);
+router.post("/payu/return", payuPaymentReturn);
+router.post("/payu/webhook", payuWebhook);
 
 router.post(
   "/cashfree/webhook",

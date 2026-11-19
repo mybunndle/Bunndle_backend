@@ -687,6 +687,7 @@ import Order from "../model/OrderModel.js";
 import Payment from "../model/PaymentModel.js";
 import Asset from "../model/coAssetModel.js";
 
+
 import razorpay from "../config/razorpay.js";
 import cashfree from "../config/cashfree.js";
 import crypto from "node:crypto";
@@ -695,7 +696,12 @@ import { allocateFractions } from "../services/ownerShipService.js";
 
 import User from "../model/userModel.js";
 import mongoose from "mongoose";
-
+import {
+  createPayUPaymentHash,
+  verifyPayUResponseHash,
+  fetchPayUTransaction,
+  toPaise,
+} from "../services/payu_sevice.js";
 import {
   verifyRazorpayPaymentSignature,
   verifyRazorpayWebhookSignature,
@@ -703,18 +709,92 @@ import {
 
 import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPaymentService.js";
 
+
+
+// const expireAndReleaseOrder = async (orderId) => {
+//   const session = await mongoose.startSession();
+
+//   try {
+//     await session.withTransaction(async () => {
+//       const order = await Order.findOneAndUpdate(
+//         {
+//           _id: orderId,
+//           status: "PENDING_PAYMENT",
+//         },
+//         {
+//           $set: {
+//             status: "EXPIRED",
+//           },
+//         },
+//         {
+//           returnDocument: "after",
+//           session,
+//         },
+//       );
+
+//       if (!order) {
+//         return;
+//       }
+
+//       const assetResult = await Asset.updateOne(
+//         {
+//           _id: order.assetId,
+//           reservedFractions: {
+//             $gte: order.fractions,
+//           },
+//         },
+//         {
+//           $inc: {
+//             availableFractions: order.fractions,
+//             reservedFractions: -order.fractions,
+//           },
+//         },
+//         {
+//           session,
+//         },
+//       );
+
+//       if (assetResult.modifiedCount !== 1) {
+//         throw new Error(`Unable to release fractions for order ${order._id}`);
+//       }
+
+//       await Payment.updateMany(
+//         {
+//           orderId: order._id,
+//           status: "PENDING",
+//         },
+//         {
+//           $set: {
+//             status: "EXPIRED",
+//           },
+//         },
+//         {
+//           session,
+//         },
+//       );
+//     });
+//   } finally {
+//     await session.endSession();
+//   }
+// };
+
+
 // ============================================================
-// HELPER: EXPIRE ORDER AND RELEASE RESERVED FRACTIONS
+// CREATE ORDER - RAZORPAY + CASHFREE
 // ============================================================
+
 
 const expireAndReleaseOrder = async (orderId) => {
   const session = await mongoose.startSession();
 
   try {
     await session.withTransaction(async () => {
+      // Only expire Razorpay orders when
+      // gateway initialization has failed.
       const order = await Order.findOneAndUpdate(
         {
           _id: orderId,
+          paymentGateway: "RAZORPAY",
           status: "PENDING_PAYMENT",
         },
         {
@@ -728,10 +808,12 @@ const expireAndReleaseOrder = async (orderId) => {
         },
       );
 
+      // Already processed or not a Razorpay order.
       if (!order) {
         return;
       }
 
+      // Release reserved fractions.
       const assetResult = await Asset.updateOne(
         {
           _id: order.assetId,
@@ -751,9 +833,12 @@ const expireAndReleaseOrder = async (orderId) => {
       );
 
       if (assetResult.modifiedCount !== 1) {
-        throw new Error(`Unable to release fractions for order ${order._id}`);
+        throw new Error(
+          `Unable to release fractions for order ${order._id}`,
+        );
       }
 
+      // Expire pending payment records.
       await Payment.updateMany(
         {
           orderId: order._id,
@@ -773,11 +858,6 @@ const expireAndReleaseOrder = async (orderId) => {
     await session.endSession();
   }
 };
-
-// ============================================================
-// CREATE ORDER - RAZORPAY + CASHFREE
-// ============================================================
-
 export const createOrder = async (req, res) => {
   let order = null;
   let asset = null;
@@ -785,19 +865,12 @@ export const createOrder = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { assetId, fractions, paymentGateway = "RAZORPAY" } = req.body;
+    const { assetId, fractions, paymentGateway =  "PAYU" } = req.body;
 
-    // =========================
+    // ==========================================
     // VALIDATION
-    // =========================
+    // ==========================================
 
-    if (["RAZORPAY", "CASHFREE"].includes(paymentGateway)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Our payment gateway is currently under maintenance. Please try again after some time. For any queries, feel free to call or WhatsApp us at +91 8882370955.",
-      });
-    }
     if (!assetId || fractions === undefined) {
       return res.status(400).json({
         success: false,
@@ -812,12 +885,23 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    if (!["RAZORPAY", "CASHFREE"].includes(paymentGateway)) {
+    // ==========================================
+    // ALL THREE PAYMENT GATEWAYS ENABLED
+    // ==========================================
+
+    const allowedGateways = [
+      // "RAZORPAY",
+      "CASHFREE",
+      "PAYU",
+    ];
+    if (!allowedGateways.includes(paymentGateway)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid payment gateway",
+        message: "This payment gateway is currently unavailable.",
       });
     }
+
+   
 
     const fractionCount = Number(fractions);
 
@@ -828,12 +912,33 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // =========================
+    // ==========================================
+    // PAYU CONFIGURATION VALIDATION
+    // ==========================================
+
+    if (paymentGateway === "PAYU") {
+      if (
+        process.env.PAYU_ENV !== "PRODUCTION" ||
+        !process.env.PAYU_MERCHANT_KEY ||
+        !process.env.PAYU_MERCHANT_SALT ||
+        !process.env.PAYU_SUCCESS_URL ||
+        !process.env.PAYU_FAILURE_URL
+      ) {
+        console.error("PAYU PRODUCTION CONFIGURATION MISSING");
+
+        return res.status(503).json({
+          success: false,
+          message: "PayU payment service is currently unavailable.",
+        });
+      }
+    }
+
+    // ==========================================
     // KYC CHECK
-    // =========================
+    // ==========================================
 
     const user = await User.findById(userId).select(
-      "kycStatus isKycVerified email phone mobile mobileNumber phoneNumber",
+      "name kycStatus isKycVerified email phone mobile mobileNumber phoneNumber",
     );
 
     if (!user) {
@@ -850,13 +955,17 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // =========================
-    // CASHFREE MOBILE VALIDATION
-    // =========================
+    // ==========================================
+    // CUSTOMER DETAILS
+    // ==========================================
 
     let customerPhone = null;
+    let customerName = null;
+    let customerEmail = null;
 
-    if (paymentGateway === "CASHFREE") {
+    // Cashfree and PayU require phone details.
+
+    if (paymentGateway === "CASHFREE" || paymentGateway === "PAYU") {
       const rawPhone =
         user.phoneNumber ?? user.mobileNumber ?? user.mobile ?? user.phone;
 
@@ -870,16 +979,52 @@ export const createOrder = async (req, res) => {
       if (!/^[6-9]\d{9}$/.test(customerPhone)) {
         return res.status(400).json({
           success: false,
-          message:
-            "A valid registered mobile number is required for Cashfree payment.",
+          message: "A valid registered mobile number is required for payment.",
         });
       }
     }
 
-    // =========================
+    // ==========================================
+    // PAYU CUSTOMER VALIDATION
+    // ==========================================
+
+    if (paymentGateway === "PAYU") {
+      customerName = String(user.name ?? "").trim();
+
+      customerEmail = String(user.email ?? "").trim();
+
+      if (!customerName) {
+        return res.status(400).json({
+          success: false,
+          message: "Customer name is required for PayU payment.",
+        });
+      }
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid customer email is required for PayU payment.",
+        });
+      }
+    }
+
+    // ==========================================
+    // GENERATE PAYU TRANSACTION ID
+    // ==========================================
+
+    let payuTxnId = null;
+
+    if (paymentGateway === "PAYU") {
+      // 22 characters, alphanumeric.
+      // PayU Checkout Pro allows up to 25.
+
+      payuTxnId = "BN" + crypto.randomBytes(10).toString("hex");
+    }
+
+    // ==========================================
     // RESERVE FRACTIONS +
     // CREATE INTERNAL ORDER
-    // =========================
+    // ==========================================
 
     const session = await mongoose.startSession();
 
@@ -895,7 +1040,8 @@ export const createOrder = async (req, res) => {
               $gte: fractionCount,
             },
 
-            // Maximum 80% available for public purchase.
+            // Maximum 80% public purchase.
+
             $expr: {
               $lte: [
                 {
@@ -932,18 +1078,38 @@ export const createOrder = async (req, res) => {
           );
 
           error.statusCode = 400;
+
           throw error;
         }
 
+        // ======================================
+        // CALCULATE AMOUNT
+        // ======================================
+
         const amount = fractionCount * asset.amountPerFraction;
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+          const error = new Error("Invalid asset payment amount");
+
+          error.statusCode = 400;
+
+          throw error;
+        }
+
+        // ======================================
+        // CREATE INTERNAL ORDER
+        // ======================================
 
         const createdOrders = await Order.create(
           [
             {
               userId,
+
               assetId,
 
               paymentGateway,
+
+              payuTxnId: paymentGateway === "PAYU" ? payuTxnId : null,
 
               fractions: fractionCount,
 
@@ -962,19 +1128,61 @@ export const createOrder = async (req, res) => {
         );
 
         order = createdOrders[0];
+
+        // ======================================
+        // CREATE PAYU PENDING PAYMENT
+        // ======================================
+        // PayU does not require an additional
+        // gateway order creation API.
+        //
+        // Creating its pending payment inside
+        // the transaction prevents orphaned
+        // reservations if database creation fails.
+
+        if (paymentGateway === "PAYU") {
+          await Payment.create(
+            [
+              {
+                userId,
+
+                orderId: order._id,
+
+                paymentGateway: "PAYU",
+
+                payuTxnId,
+
+                payuMihpayId: null,
+
+                amount: order.totalAmount,
+
+                currency: "INR",
+
+                status: "PENDING",
+              },
+            ],
+            {
+              session,
+            },
+          );
+        }
       });
     } finally {
       await session.endSession();
     }
 
-    // =========================
+    // ==========================================
     // CREATE PAYMENT GATEWAY ORDER
-    // =========================
+    // ==========================================
 
-    let razorpayOrder;
-    let cashfreeOrder;
+    let razorpayOrder = null;
+    let cashfreeOrder = null;
+    let payuOrder = null;
 
     try {
+      // ======================================
+      // RAZORPAY
+      // ======================================
+
       if (paymentGateway === "RAZORPAY") {
         razorpayOrder = await razorpay.orders.create({
           amount: Math.round(order.totalAmount * 100),
@@ -983,7 +1191,12 @@ export const createOrder = async (req, res) => {
 
           receipt: `receipt_${order._id}`,
         });
-      } else {
+      }
+
+      // ======================================
+      // CASHFREE
+      // ======================================
+      else if (paymentGateway === "CASHFREE") {
         const cashfreeResponse = await cashfree.PGCreateOrder({
           order_id: `BUNNDLE_${order._id}`,
 
@@ -996,7 +1209,11 @@ export const createOrder = async (req, res) => {
 
             customer_phone: customerPhone,
 
-            ...(user.email ? { customer_email: user.email } : {}),
+            ...(user.email
+              ? {
+                  customer_email: user.email,
+                }
+              : {}),
           },
 
           order_expiry_time: order.expiresAt.toISOString(),
@@ -1010,6 +1227,47 @@ export const createOrder = async (req, res) => {
           throw new Error("Invalid Cashfree order response");
         }
       }
+
+      // ======================================
+      // PAYU LIVE
+      // ======================================
+      else if (paymentGateway === "PAYU") {
+        const amount = Number(order.totalAmount).toFixed(2);
+
+        // Merchant-generated checkout parameters.
+        // Flutter uses these with Checkout Pro.
+        //
+        // Hashes must be generated securely
+        // by a separate backend endpoint.
+
+        payuOrder = {
+          orderId: String(order._id),
+
+          transactionId: payuTxnId,
+
+          merchantKey: process.env.PAYU_MERCHANT_KEY,
+
+          amount,
+
+          currency: "INR",
+
+          productInfo: "Bunndle Asset Purchase",
+
+          firstName: customerName,
+
+          email: customerEmail,
+
+          phone: customerPhone,
+
+          surl: process.env.PAYU_SUCCESS_URL,
+
+          furl: process.env.PAYU_FAILURE_URL,
+
+          environment: "0",
+
+          isProduction: true,
+        };
+      }
     } catch (gatewayError) {
       console.error(`${paymentGateway} Order Creation Error:`, gatewayError);
 
@@ -1017,9 +1275,8 @@ export const createOrder = async (req, res) => {
         await expireAndReleaseOrder(order._id);
       }
 
-      // Cashfree may have created the order even if
-      // the API request timed out. Reconcile before
-      // releasing reserved fractions.
+      // Cashfree may have created its order
+      // despite a timeout. Reconcile first.
 
       return res.status(502).json({
         success: false,
@@ -1028,46 +1285,49 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // =========================
+    // ==========================================
     // CREATE PAYMENT RECORD
-    // =========================
+    // ==========================================
+    // PayU Payment already created in transaction.
 
-    try {
-      await Payment.create({
-        userId,
+    if (paymentGateway !== "PAYU") {
+      try {
+        await Payment.create({
+          userId,
 
-        orderId: order._id,
+          orderId: order._id,
 
-        paymentGateway,
+          paymentGateway,
 
-        razorpayOrderId: razorpayOrder?.id ?? null,
+          razorpayOrderId: razorpayOrder?.id ?? null,
 
-        cashfreeOrderId: cashfreeOrder?.order_id ?? null,
+          cashfreeOrderId: cashfreeOrder?.order_id ?? null,
 
-        cashfreeCfOrderId: cashfreeOrder?.cf_order_id
-          ? String(cashfreeOrder.cf_order_id)
-          : null,
+          cashfreeCfOrderId: cashfreeOrder?.cf_order_id
+            ? String(cashfreeOrder.cf_order_id)
+            : null,
 
-        amount: order.totalAmount,
+          amount: order.totalAmount,
 
-        status: "PENDING",
-      });
-    } catch (paymentError) {
-      console.error("Payment Record Creation Error:", paymentError);
+          status: "PENDING",
+        });
+      } catch (paymentError) {
+        console.error("Payment Record Creation Error:", paymentError);
 
-      if (paymentGateway === "RAZORPAY") {
-        await expireAndReleaseOrder(order._id);
+        if (paymentGateway === "RAZORPAY") {
+          await expireAndReleaseOrder(order._id);
+        }
+
+        return res.status(500).json({
+          success: false,
+          message: "Unable to initialize payment. Please try again.",
+        });
       }
-
-      return res.status(500).json({
-        success: false,
-        message: "Unable to initialize payment. Please try again.",
-      });
     }
 
-    // =========================
+    // ==========================================
     // PUBLIC / COMPANY FRACTIONS
-    // =========================
+    // ==========================================
 
     const publicLimit = Math.floor(asset.totalFractions * 0.8);
 
@@ -1077,9 +1337,9 @@ export const createOrder = async (req, res) => {
 
     const publicAvailableFractions = Math.max(0, publicLimit - publicUsed);
 
-    // =========================
+    // ==========================================
     // RESPONSE
-    // =========================
+    // ==========================================
 
     return res.status(201).json({
       success: true,
@@ -1089,6 +1349,10 @@ export const createOrder = async (req, res) => {
       order,
 
       razorpayOrder,
+
+      // ======================================
+      // CASHFREE RESPONSE
+      // ======================================
 
       ...(paymentGateway === "CASHFREE"
         ? {
@@ -1101,6 +1365,16 @@ export const createOrder = async (req, res) => {
 
               order_status: cashfreeOrder.order_status,
             },
+          }
+        : {}),
+
+      // ======================================
+      // PAYU RESPONSE
+      // ======================================
+
+      ...(paymentGateway === "PAYU"
+        ? {
+            payuOrder,
           }
         : {}),
 
@@ -1925,6 +2199,887 @@ export const cashfreeWebhook = async (req, res) => {
     });
   }
 };
+
+
+
+
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
+const PRODUCT_INFO = "Bunndle Asset Purchase";
+
+const PAYU_TXN_REGEX = /^BN[a-f0-9]{20}$/;
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const createError = (statusCode, message) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const getUserId = (req) => {
+  return (
+    req.user?.id ||
+    req.user?._id ||
+    req.user?.userId ||
+    null
+  );
+};
+
+const getAmount = (amount) => {
+  const value = Number(amount);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw createError(409, "Invalid payment amount");
+  }
+
+  return value.toFixed(2);
+};
+
+const getPurchaseDateTime = (paidAt) => {
+  const date = new Date(paidAt);
+
+  return {
+    paidAt: date,
+
+    purchaseDate: new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "Asia/Kolkata",
+    }).format(date),
+
+    purchaseTime: new Intl.DateTimeFormat("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    })
+      .format(date)
+      .toLowerCase(),
+  };
+};
+
+// ============================================================
+// SHARED PAYU RECONCILIATION
+// ============================================================
+// Called by:
+// 1. Customer verification
+// 2. Payment return callback
+// 3. Payment webhook
+//
+// IMPORTANT:
+// Payment is independently verified using
+// PayU's server-side Verify Payment API.
+// ============================================================
+
+const reconcilePayUOrder = async ({
+  order,
+  webhookVerified = false,
+  callbackMihpayId = null,
+}) => {
+  // ========================================================
+  // 1. VALIDATE ORDER
+  // ========================================================
+
+  if (
+    !order ||
+    order.paymentGateway !== "PAYU" ||
+    !PAYU_TXN_REGEX.test(order.payuTxnId || "")
+  ) {
+    throw createError(400, "Invalid PayU order");
+  }
+
+  // ========================================================
+  // 2. FIND PAYMENT RECORD
+  // ========================================================
+
+  const payment = await Payment.findOne({
+    orderId: order._id,
+    paymentGateway: "PAYU",
+    payuTxnId: order.payuTxnId,
+  });
+
+  if (!payment) {
+    throw createError(
+      404,
+      "PayU payment record not found",
+    );
+  }
+
+  if (
+    String(payment.userId) !== String(order.userId)
+  ) {
+    throw createError(
+      409,
+      "Order and payment customer mismatch",
+    );
+  }
+
+  // ========================================================
+  // 3. CHECK STORED PAYMENT AMOUNT
+  // ========================================================
+
+  const orderAmount = toPaise(
+    getAmount(order.totalAmount),
+  );
+
+  const paymentAmount = toPaise(
+    getAmount(payment.amount),
+  );
+
+  if (
+    orderAmount === null ||
+    paymentAmount === null ||
+    orderAmount !== paymentAmount
+  ) {
+    throw createError(
+      409,
+      "Stored order and payment amount mismatch",
+    );
+  }
+
+  if (
+    String(payment.currency || "INR").toUpperCase() !==
+    "INR"
+  ) {
+    throw createError(
+      409,
+      "Invalid payment currency",
+    );
+  }
+
+  // ========================================================
+  // 4. FETCH TRANSACTION DIRECTLY FROM PAYU
+  // ========================================================
+
+  const gateway = await fetchPayUTransaction(
+    order.payuTxnId,
+  );
+
+  if (!gateway.transaction) {
+    return {
+      status: gateway.status || "NOT_CONFIRMED",
+      orderId: String(order._id),
+      payuTxnId: order.payuTxnId,
+    };
+  }
+
+  const transaction = gateway.transaction;
+
+  // ========================================================
+  // 5. VERIFY TRANSACTION ID
+  // ========================================================
+
+  if (
+    transaction.txnid != null &&
+    String(transaction.txnid) !==
+      String(order.payuTxnId)
+  ) {
+    throw createError(
+      409,
+      "PayU transaction ID mismatch",
+    );
+  }
+
+  // ========================================================
+  // 6. VERIFY PAYMENT AMOUNT
+  // ========================================================
+
+  const receivedAmount = toPaise(
+    transaction.transaction_amount ??
+      transaction.amt,
+  );
+
+  if (
+    receivedAmount === null ||
+    receivedAmount !== orderAmount
+  ) {
+    throw createError(
+      409,
+      "PayU payment amount mismatch",
+    );
+  }
+
+  // ========================================================
+  // 7. VERIFY MERCHANT KEY
+  // ========================================================
+
+  if (
+    transaction.key != null &&
+    String(transaction.key) !==
+      String(process.env.PAYU_MERCHANT_KEY)
+  ) {
+    throw createError(
+      409,
+      "PayU merchant key mismatch",
+    );
+  }
+
+  // ========================================================
+  // 8. VERIFY PRODUCT INFORMATION
+  // ========================================================
+
+  if (
+    transaction.productinfo != null &&
+    String(transaction.productinfo) !==
+      PRODUCT_INFO
+  ) {
+    throw createError(
+      409,
+      "PayU product information mismatch",
+    );
+  }
+
+  // ========================================================
+  // 9. VERIFY CURRENCY
+  // ========================================================
+
+  if (
+    transaction.currency != null &&
+    String(transaction.currency).toUpperCase() !==
+      "INR"
+  ) {
+    throw createError(
+      409,
+      "PayU currency mismatch",
+    );
+  }
+
+  // ========================================================
+  // 10. PAYMENT MUST BE SUCCESSFUL
+  // ========================================================
+
+  if (!gateway.verified) {
+    return {
+      status: gateway.status || "NOT_CONFIRMED",
+      orderId: String(order._id),
+      payuTxnId: order.payuTxnId,
+    };
+  }
+
+  // ========================================================
+  // 11. VERIFY PAYU PAYMENT ID
+  // ========================================================
+
+  const payuMihpayId = String(
+    transaction.mihpayid ?? "",
+  ).trim();
+
+  if (
+    !payuMihpayId ||
+    payuMihpayId === "Not Found"
+  ) {
+    throw createError(
+      409,
+      "PayU payment ID not found",
+    );
+  }
+
+  // ========================================================
+  // 12. COMPARE CALLBACK PAYMENT ID
+  // ========================================================
+
+  if (
+    callbackMihpayId != null &&
+    String(callbackMihpayId) !== payuMihpayId
+  ) {
+    throw createError(
+      409,
+      "PayU callback payment ID mismatch",
+    );
+  }
+
+  // ========================================================
+  // 13. VERIFY STORED PAYMENT ID
+  // ========================================================
+
+  if (
+    payment.payuMihpayId &&
+    String(payment.payuMihpayId) !==
+      payuMihpayId
+  ) {
+    throw createError(
+      409,
+      "PayU payment reference mismatch",
+    );
+  }
+
+  // ========================================================
+  // 14. CHECK DUPLICATE PAYMENT REFERENCE
+  // ========================================================
+
+  const duplicatePayment = await Payment.findOne({
+    _id: { $ne: payment._id },
+    payuMihpayId,
+  });
+
+  if (duplicatePayment) {
+    throw createError(
+      409,
+      "PayU payment reference already used",
+    );
+  }
+
+  // ========================================================
+  // 15. CHECK EXPIRED OR RELEASED ORDER
+  // ========================================================
+
+  if (
+    order.status !== "COMPLETED" &&
+    (
+      order.status !== "PENDING_PAYMENT" ||
+      !Number.isFinite(
+        new Date(order.expiresAt).getTime(),
+      ) ||
+      new Date(order.expiresAt).getTime() <= Date.now()
+    )
+  ) {
+    return {
+      status: "RECONCILIATION_REQUIRED",
+      orderId: String(order._id),
+      payuTxnId: order.payuTxnId,
+      payuMihpayId,
+      message:
+        "Payment succeeded but order reservation is no longer active",
+    };
+  }
+
+  // ========================================================
+  // 16. FINALIZE SUCCESSFUL PAYMENT
+  // ========================================================
+  // Handles:
+  // - MongoDB transaction
+  // - Ownership allocation
+  // - Reserved fractions
+  // - Payment SUCCESS
+  // - Order COMPLETED
+  // - PurchaseHistory
+  // - Welcome email
+  // ========================================================
+
+  const result = await finalizeSuccessfulPayment({
+    paymentGateway: "PAYU",
+
+    payuTxnId: order.payuTxnId,
+
+    payuMihpayId,
+
+    paymentMethod: transaction.mode || null,
+
+    webhookVerified,
+
+    paidAt: new Date(),
+  });
+
+  // ========================================================
+  // 17. RETURN COMPLETED PURCHASE
+  // ========================================================
+
+  return {
+    status: "COMPLETED",
+
+    orderId: result.orderId,
+
+    paymentId: result.paymentId,
+
+    purchaseHistoryId: result.purchaseHistoryId,
+
+    paymentStatus: "SUCCESS",
+
+    alreadyProcessed: result.alreadyProcessed,
+
+    payuTxnId: order.payuTxnId,
+
+    payuMihpayId,
+
+    ...getPurchaseDateTime(result.paidAt),
+  };
+};
+
+// ============================================================
+// 1. GENERATE PAYU PAYMENT HASH
+// ============================================================
+
+export const generatePayUHash = async (req, res) => {
+  try {
+    const { orderId } = req.body || {};
+
+    const userId = getUserId(req);
+
+    // ======================================================
+    // VALIDATE USER AND ORDER
+    // ======================================================
+
+    if (
+      !mongoose.isValidObjectId(orderId) ||
+      !mongoose.isValidObjectId(userId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user or order ID",
+      });
+    }
+
+    // ======================================================
+    // FIND ACTIVE PAYU ORDER
+    // ======================================================
+
+    const order = await Order.findOne({
+      _id: orderId,
+      userId,
+      paymentGateway: "PAYU",
+      status: "PENDING_PAYMENT",
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Active PayU order not found",
+      });
+    }
+
+    if (!PAYU_TXN_REGEX.test(order.payuTxnId || "")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid PayU transaction ID",
+      });
+    }
+
+    // ======================================================
+    // FIND PENDING PAYMENT
+    // ======================================================
+
+    const payment = await Payment.findOne({
+      orderId: order._id,
+      paymentGateway: "PAYU",
+      payuTxnId: order.payuTxnId,
+      status: "PENDING",
+    });
+
+    if (!payment) {
+      return res.status(409).json({
+        success: false,
+        message: "Pending PayU payment not found",
+      });
+    }
+
+    // ======================================================
+    // FIND CUSTOMER
+    // ======================================================
+
+    const user = await User.findById(order.userId).select(
+      "name email",
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Customer not found",
+      });
+    }
+
+    const firstName = String(
+      user.name ?? "",
+    ).trim();
+
+    const email = String(
+      user.email ?? "",
+    ).trim();
+
+    if (
+      !firstName ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid customer name and email required",
+      });
+    }
+
+    // ======================================================
+    // CALCULATE AMOUNT
+    // ======================================================
+
+    const amount = getAmount(order.totalAmount);
+
+    if (
+      toPaise(amount) !==
+      toPaise(getAmount(payment.amount))
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "Order and payment amount mismatch",
+      });
+    }
+
+    // ======================================================
+    // GENERATE PAYMENT HASH
+    // ======================================================
+
+    const hash = createPayUPaymentHash({
+      txnid: order.payuTxnId,
+
+      amount,
+
+      productinfo: PRODUCT_INFO,
+
+      firstname: firstName,
+
+      email,
+    });
+
+    // ======================================================
+    // RESPONSE
+    // ======================================================
+
+    return res.status(200).json({
+      success: true,
+      message: "PayU payment hash generated successfully",
+
+      data: {
+        orderId: String(order._id),
+
+        transactionId: order.payuTxnId,
+
+        amount,
+
+        hashName: "payment",
+
+        hash,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "GENERATE PAYU HASH ERROR:",
+      error,
+    );
+
+    return res.status(
+      error.statusCode || 500,
+    ).json({
+      success: false,
+      message: error.statusCode
+        ? error.message
+        : "Unable to generate PayU payment hash",
+    });
+  }
+};
+
+// ============================================================
+// 2. VERIFY PAYU PAYMENT
+// ============================================================
+
+export const verifyPayUPayment = async (req, res) => {
+  try {
+    const { orderId } = req.body || {};
+
+    const userId = getUserId(req);
+
+    // ======================================================
+    // VALIDATION
+    // ======================================================
+
+    if (
+      !mongoose.isValidObjectId(orderId) ||
+      !mongoose.isValidObjectId(userId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user or order ID",
+      });
+    }
+
+    // ======================================================
+    // FIND CUSTOMER'S PAYU ORDER
+    // ======================================================
+
+    const order = await Order.findOne({
+      _id: orderId,
+      userId,
+      paymentGateway: "PAYU",
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "PayU order not found",
+      });
+    }
+
+    // ======================================================
+    // RECONCILE WITH PAYU
+    // ======================================================
+
+    const result = await reconcilePayUOrder({
+      order,
+      webhookVerified: false,
+    });
+
+    // ======================================================
+    // COMPLETED PURCHASE
+    // ======================================================
+
+    if (result.status === "COMPLETED") {
+      return res.status(200).json({
+        success: true,
+
+        message: result.alreadyProcessed
+          ? "Payment already verified and purchase completed"
+          : "Payment verified and purchase completed successfully",
+
+        data: result,
+      });
+    }
+
+    // ======================================================
+    // PENDING / FAILED / RECONCILIATION
+    // ======================================================
+
+    return res.status(200).json({
+      success: false,
+
+      message:
+        result.status === "RECONCILIATION_REQUIRED"
+          ? "Payment requires manual reconciliation"
+          : "PayU payment not completed",
+
+      data: result,
+    });
+  } catch (error) {
+    console.error(
+      "VERIFY PAYU PAYMENT ERROR:",
+      error,
+    );
+
+    return res.status(
+      error.statusCode || 502,
+    ).json({
+      success: false,
+
+      message: error.statusCode
+        ? error.message
+        : "Unable to verify PayU payment",
+    });
+  }
+};
+
+// ============================================================
+// SHARED PAYU CALLBACK HANDLER
+// ============================================================
+
+const handlePayUCallback = async (
+  req,
+  res,
+  source,
+) => {
+  try {
+    const body = req.body || {};
+
+    // ======================================================
+    // 1. VALIDATE TRANSACTION ID
+    // ======================================================
+
+    if (
+      typeof body.txnid !== "string" ||
+      !PAYU_TXN_REGEX.test(body.txnid)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid PayU transaction ID",
+      });
+    }
+
+    // ======================================================
+    // 2. VERIFY PAYU RESPONSE HASH
+    // ======================================================
+
+    if (!verifyPayUResponseHash(body)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid PayU response hash",
+      });
+    }
+
+    // ======================================================
+    // 3. FIND ORDER
+    // ======================================================
+
+    const order = await Order.findOne({
+      paymentGateway: "PAYU",
+      payuTxnId: body.txnid,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "PayU order not found",
+      });
+    }
+
+    // ======================================================
+    // 4. VERIFY CALLBACK AMOUNT
+    // ======================================================
+
+    const expectedAmount = toPaise(
+      getAmount(order.totalAmount),
+    );
+
+    const callbackAmount = toPaise(
+      body.amount,
+    );
+
+    if (
+      expectedAmount === null ||
+      callbackAmount === null ||
+      expectedAmount !== callbackAmount
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "PayU callback amount mismatch",
+      });
+    }
+
+    // ======================================================
+    // 5. VERIFY PRODUCT INFO
+    // ======================================================
+
+    if (body.productinfo !== PRODUCT_INFO) {
+      return res.status(409).json({
+        success: false,
+        message: "Invalid PayU product information",
+      });
+    }
+
+    // ======================================================
+    // 6. SERVER-SIDE VERIFICATION
+    // ======================================================
+
+    const result = await reconcilePayUOrder({
+      order,
+
+      webhookVerified: source === "WEBHOOK",
+
+      callbackMihpayId: body.mihpayid || null,
+    });
+
+    // ======================================================
+    // 7. SUCCESSFULLY COMPLETED
+    // ======================================================
+
+    if (result.status === "COMPLETED") {
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "PayU payment verified and purchase completed",
+
+        data: result,
+      });
+    }
+
+    // ======================================================
+    // 8. EXPIRED ORDER RECONCILIATION
+    // ======================================================
+
+    if (result.status === "RECONCILIATION_REQUIRED") {
+      console.error(
+        "PAYU PAYMENT RECONCILIATION REQUIRED:",
+        {
+          orderId: String(order._id),
+          payuTxnId: order.payuTxnId,
+          payuMihpayId: result.payuMihpayId,
+        },
+      );
+
+      return res.status(
+        source === "WEBHOOK" ? 503 : 202,
+      ).json({
+        success: false,
+
+        message:
+          "PayU payment succeeded but order requires reconciliation",
+
+        data: result,
+      });
+    }
+
+    // ======================================================
+    // 9. PENDING / FAILED PAYMENT
+    // ======================================================
+
+    return res.status(200).json({
+      success: false,
+
+      message: "PayU payment not completed",
+
+      data: result,
+    });
+  } catch (error) {
+    console.error(
+      `PAYU ${source} ERROR:`,
+      error,
+    );
+
+    return res.status(
+      error.statusCode || 503,
+    ).json({
+      success: false,
+
+      message: error.statusCode
+        ? error.message
+        : "Unable to process PayU callback",
+    });
+  }
+};
+
+// ============================================================
+// 3. PAYU SUCCESS / FAILURE RETURN CALLBACK
+// ============================================================
+
+export const payuPaymentReturn = async (
+  req,
+  res,
+) => {
+  return handlePayUCallback(
+    req,
+    res,
+    "RETURN",
+  );
+};
+
+// ============================================================
+// 4. PAYU WEBHOOK
+// ============================================================
+
+export const payuWebhook = async (
+  req,
+  res,
+) => {
+  return handlePayUCallback(
+    req,
+    res,
+    "WEBHOOK",
+  );
+};
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ============================================================
 // GET ALL ORDERS - EXISTING

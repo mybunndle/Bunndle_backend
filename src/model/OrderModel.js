@@ -22,10 +22,15 @@ const orderSchema = new mongoose.Schema(
     },
     paymentGateway: {
       type: String,
-      enum: ["RAZORPAY", "CASHFREE"],
+      enum: ["RAZORPAY", "CASHFREE","PAYU"],
       default: "RAZORPAY",
       required: true,
       index: true,
+    },
+      payuTxnId: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     fractions: {
@@ -67,5 +72,16 @@ const orderSchema = new mongoose.Schema(
     },
   },
 );
+
+orderSchema.index(
+  { payuTxnId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      payuTxnId: { $type: "string" },
+    },
+  },
+);
+
 
 export default mongoose.model("Order", orderSchema);

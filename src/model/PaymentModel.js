@@ -44,7 +44,7 @@ const paymentSchema = new mongoose.Schema(
 
     paymentGateway: {
       type: String,
-      enum: ["RAZORPAY", "CASHFREE"],
+      enum: ["RAZORPAY", "CASHFREE","PAYU"],
       default: "RAZORPAY",
       required: true,
       index: true,
@@ -80,6 +80,19 @@ const paymentSchema = new mongoose.Schema(
 
       // Do not return signature in normal queries
       select: false,
+    },
+    //payu details
+
+    payuTxnId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    payuMihpayId: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     // ========================================
