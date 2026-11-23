@@ -687,7 +687,6 @@ import Order from "../model/OrderModel.js";
 import Payment from "../model/PaymentModel.js";
 import Asset from "../model/coAssetModel.js";
 
-
 import razorpay from "../config/razorpay.js";
 import cashfree from "../config/cashfree.js";
 import crypto from "node:crypto";
@@ -709,16 +708,17 @@ import {
 
 import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPaymentService.js";
 
-
-
 // const expireAndReleaseOrder = async (orderId) => {
 //   const session = await mongoose.startSession();
 
 //   try {
 //     await session.withTransaction(async () => {
+//       // Only expire Razorpay orders when
+//       // gateway initialization has failed.
 //       const order = await Order.findOneAndUpdate(
 //         {
 //           _id: orderId,
+//           paymentGateway: "RAZORPAY",
 //           status: "PENDING_PAYMENT",
 //         },
 //         {
@@ -732,10 +732,12 @@ import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPayment
 //         },
 //       );
 
+//       // Already processed or not a Razorpay order.
 //       if (!order) {
 //         return;
 //       }
 
+//       // Release reserved fractions.
 //       const assetResult = await Asset.updateOne(
 //         {
 //           _id: order.assetId,
@@ -755,9 +757,12 @@ import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPayment
 //       );
 
 //       if (assetResult.modifiedCount !== 1) {
-//         throw new Error(`Unable to release fractions for order ${order._id}`);
+//         throw new Error(
+//           `Unable to release fractions for order ${order._id}`,
+//         );
 //       }
 
+//       // Expire pending payment records.
 //       await Payment.updateMany(
 //         {
 //           orderId: order._id,
@@ -779,22 +784,149 @@ import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPayment
 // };
 
 
-// ============================================================
-// CREATE ORDER - RAZORPAY + CASHFREE
-// ============================================================
-
-
-const expireAndReleaseOrder = async (orderId) => {
+const expireAndReleaseOrder = async (
+  orderId,
+  { initializationFailed = false, gatewayReconciled = false } = {},
+) => {
   const session = await mongoose.startSession();
 
   try {
-    await session.withTransaction(async () => {
-      // Only expire Razorpay orders when
-      // gateway initialization has failed.
-      const order = await Order.findOneAndUpdate(
+    return await session.withTransaction(async () => {
+      const now = new Date();
+
+      // ============================================
+      // 1. FIND ORDER
+      // ============================================
+
+      const order = await Order.findById(orderId).session(session);
+
+      if (!order) {
+        return {
+          expired: false,
+          reason: "ORDER_NOT_FOUND",
+        };
+      }
+
+      // Only pending orders can expire.
+      if (order.status !== "PENDING_PAYMENT") {
+        return {
+          expired: false,
+          reason: "ORDER_NOT_PENDING",
+        };
+      }
+
+      const isManual = order.paymentGateway === "MANUAL";
+
+      const isOnline = [
+        "RAZORPAY",
+        "CASHFREE",
+        "PAYU",
+      ].includes(order.paymentGateway);
+
+      if (!isManual && !isOnline) {
+        return {
+          expired: false,
+          reason: "INVALID_PAYMENT_GATEWAY",
+        };
+      }
+
+      // ============================================
+      // 2. CHECK EXPIRY CONDITIONS
+      // ============================================
+
+      if (initializationFailed) {
+        if (order.paymentGateway !== "RAZORPAY") {
+          return {
+            expired: false,
+            reason: "INVALID_INITIALIZATION_FAILURE",
+          };
+        }
+      } else {
+        if (
+          !order.expiresAt ||
+          new Date(order.expiresAt).getTime() > now.getTime()
+        ) {
+          return {
+            expired: false,
+            reason: "ORDER_NOT_EXPIRED",
+          };
+        }
+      }
+
+      // ============================================
+      // 3. CHECK PAYMENT RECORDS
+      // ============================================
+
+      const payments = await Payment.find({
+        orderId: order._id,
+      }).session(session);
+
+      // Never expire successful payments.
+      if (
+        payments.some(
+          (payment) => payment.status === "SUCCESS"
+        )
+      ) {
+        return {
+          expired: false,
+          reason: "PAYMENT_ALREADY_SUCCESSFUL",
+        };
+      }
+
+      // Manual payments under admin verification
+      // should not expire automatically.
+      if (
+        isManual &&
+        payments.some((payment) =>
+          [
+            "PENDING_VERIFICATION",
+            "REVIEW_REQUIRED",
+            "APPROVED",
+          ].includes(payment.manualVerificationStatus)
+        )
+      ) {
+        return {
+          expired: false,
+          reason: "MANUAL_PAYMENT_UNDER_REVIEW",
+        };
+      }
+
+      // Online payments must be reconciled with
+      // the provider before automatic release.
+      if (
+        isOnline &&
+        !initializationFailed &&
+        !gatewayReconciled
+      ) {
+        return {
+          expired: false,
+          reason: "GATEWAY_RECONCILIATION_REQUIRED",
+        };
+      }
+
+      // ============================================
+      // 4. CHECK PURCHASE HISTORY
+      // ============================================
+
+      const existingPurchase =
+        await PurchaseHistory.findOne({
+          orderId: order._id,
+        }).session(session);
+
+      if (existingPurchase) {
+        return {
+          expired: false,
+          reason: "PURCHASE_ALREADY_CREATED",
+        };
+      }
+
+      // ============================================
+      // 5. EXPIRE ORDER ATOMICALLY
+      // ============================================
+
+      const updatedOrder = await Order.findOneAndUpdate(
         {
-          _id: orderId,
-          paymentGateway: "RAZORPAY",
+          _id: order._id,
           status: "PENDING_PAYMENT",
         },
         {
@@ -803,61 +935,116 @@ const expireAndReleaseOrder = async (orderId) => {
           },
         },
         {
-          returnDocument: "after",
+          new: true,
           session,
         },
       );
 
-      // Already processed or not a Razorpay order.
-      if (!order) {
-        return;
+      if (!updatedOrder) {
+        return {
+          expired: false,
+          reason: "ORDER_STATUS_CHANGED",
+        };
       }
 
-      // Release reserved fractions.
-      const assetResult = await Asset.updateOne(
-        {
-          _id: order.assetId,
-          reservedFractions: {
-            $gte: order.fractions,
-          },
-        },
-        {
-          $inc: {
-            availableFractions: order.fractions,
-            reservedFractions: -order.fractions,
-          },
-        },
-        {
-          session,
-        },
-      );
+      // ============================================
+      // 6. RELEASE FRACTIONS - ONLINE ONLY
+      // ============================================
 
-      if (assetResult.modifiedCount !== 1) {
-        throw new Error(
-          `Unable to release fractions for order ${order._id}`,
+      let fractionsReleased = 0;
+
+      if (isOnline) {
+        const fractions = Number(order.fractions);
+
+        if (
+          !Number.isSafeInteger(fractions) ||
+          fractions <= 0
+        ) {
+          throw new Error(
+            `Invalid fractions for order ${order._id}`
+          );
+        }
+
+        const assetResult = await Asset.updateOne(
+          {
+            _id: order.assetId,
+
+            reservedFractions: {
+              $gte: fractions,
+            },
+          },
+          {
+            $inc: {
+              availableFractions: fractions,
+              reservedFractions: -fractions,
+            },
+          },
+          {
+            session,
+          },
         );
+
+        if (assetResult.modifiedCount !== 1) {
+          throw new Error(
+            `Unable to release reserved fractions for order ${order._id}`
+          );
+        }
+
+        fractionsReleased = fractions;
       }
 
-      // Expire pending payment records.
+      // ============================================
+      // 7. EXPIRE PENDING PAYMENT RECORDS
+      // ============================================
+
+      const paymentUpdate = {
+        status: "EXPIRED",
+      };
+
+      if (isManual) {
+        paymentUpdate.manualVerificationStatus =
+          "EXPIRED";
+      }
+
       await Payment.updateMany(
         {
           orderId: order._id,
           status: "PENDING",
         },
         {
-          $set: {
-            status: "EXPIRED",
-          },
+          $set: paymentUpdate,
         },
         {
           session,
         },
       );
+
+      console.log(
+        `[ORDER EXPIRED] ${order._id} | ` +
+        `Gateway: ${order.paymentGateway} | ` +
+        `Fractions released: ${fractionsReleased}`
+      );
+
+      return {
+        expired: true,
+        orderId: order._id,
+        gateway: order.paymentGateway,
+        fractionsReleased,
+      };
     });
+  } catch (error) {
+    console.error(
+      `ORDER EXPIRY ERROR: ${orderId}`,
+      error
+    );
+
+    throw error;
   } finally {
     await session.endSession();
   }
 };
+
+
 export const createOrder = async (req, res) => {
   let order = null;
   let asset = null;
@@ -865,7 +1052,7 @@ export const createOrder = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { assetId, fractions, paymentGateway =  "PAYU" } = req.body;
+    const { assetId, fractions, paymentGateway = "PAYU" } = req.body;
 
     // ==========================================
     // VALIDATION
@@ -891,7 +1078,7 @@ export const createOrder = async (req, res) => {
 
     const allowedGateways = [
       // "RAZORPAY",
-      // "CASHFREE",
+      "CASHFREE",
       "PAYU",
     ];
     if (!allowedGateways.includes(paymentGateway)) {
@@ -900,8 +1087,6 @@ export const createOrder = async (req, res) => {
         message: "This payment gateway is currently unavailable.",
       });
     }
-
-   
 
     const fractionCount = Number(fractions);
 
@@ -2200,9 +2385,6 @@ export const cashfreeWebhook = async (req, res) => {
   }
 };
 
-
-
-
 // ============================================================
 // CONFIGURATION
 // ============================================================
@@ -2222,12 +2404,7 @@ const createError = (statusCode, message) => {
 };
 
 const getUserId = (req) => {
-  return (
-    req.user?.id ||
-    req.user?._id ||
-    req.user?.userId ||
-    null
-  );
+  return req.user?.id || req.user?._id || req.user?.userId || null;
 };
 
 const getAmount = (amount) => {
@@ -2306,61 +2483,38 @@ const reconcilePayUOrder = async ({
   });
 
   if (!payment) {
-    throw createError(
-      404,
-      "PayU payment record not found",
-    );
+    throw createError(404, "PayU payment record not found");
   }
 
-  if (
-    String(payment.userId) !== String(order.userId)
-  ) {
-    throw createError(
-      409,
-      "Order and payment customer mismatch",
-    );
+  if (String(payment.userId) !== String(order.userId)) {
+    throw createError(409, "Order and payment customer mismatch");
   }
 
   // ========================================================
   // 3. CHECK STORED PAYMENT AMOUNT
   // ========================================================
 
-  const orderAmount = toPaise(
-    getAmount(order.totalAmount),
-  );
+  const orderAmount = toPaise(getAmount(order.totalAmount));
 
-  const paymentAmount = toPaise(
-    getAmount(payment.amount),
-  );
+  const paymentAmount = toPaise(getAmount(payment.amount));
 
   if (
     orderAmount === null ||
     paymentAmount === null ||
     orderAmount !== paymentAmount
   ) {
-    throw createError(
-      409,
-      "Stored order and payment amount mismatch",
-    );
+    throw createError(409, "Stored order and payment amount mismatch");
   }
 
-  if (
-    String(payment.currency || "INR").toUpperCase() !==
-    "INR"
-  ) {
-    throw createError(
-      409,
-      "Invalid payment currency",
-    );
+  if (String(payment.currency || "INR").toUpperCase() !== "INR") {
+    throw createError(409, "Invalid payment currency");
   }
 
   // ========================================================
   // 4. FETCH TRANSACTION DIRECTLY FROM PAYU
   // ========================================================
 
-  const gateway = await fetchPayUTransaction(
-    order.payuTxnId,
-  );
+  const gateway = await fetchPayUTransaction(order.payuTxnId);
 
   if (!gateway.transaction) {
     return {
@@ -2378,13 +2532,9 @@ const reconcilePayUOrder = async ({
 
   if (
     transaction.txnid != null &&
-    String(transaction.txnid) !==
-      String(order.payuTxnId)
+    String(transaction.txnid) !== String(order.payuTxnId)
   ) {
-    throw createError(
-      409,
-      "PayU transaction ID mismatch",
-    );
+    throw createError(409, "PayU transaction ID mismatch");
   }
 
   // ========================================================
@@ -2392,18 +2542,11 @@ const reconcilePayUOrder = async ({
   // ========================================================
 
   const receivedAmount = toPaise(
-    transaction.transaction_amount ??
-      transaction.amt,
+    transaction.transaction_amount ?? transaction.amt,
   );
 
-  if (
-    receivedAmount === null ||
-    receivedAmount !== orderAmount
-  ) {
-    throw createError(
-      409,
-      "PayU payment amount mismatch",
-    );
+  if (receivedAmount === null || receivedAmount !== orderAmount) {
+    throw createError(409, "PayU payment amount mismatch");
   }
 
   // ========================================================
@@ -2412,13 +2555,9 @@ const reconcilePayUOrder = async ({
 
   if (
     transaction.key != null &&
-    String(transaction.key) !==
-      String(process.env.PAYU_MERCHANT_KEY)
+    String(transaction.key) !== String(process.env.PAYU_MERCHANT_KEY)
   ) {
-    throw createError(
-      409,
-      "PayU merchant key mismatch",
-    );
+    throw createError(409, "PayU merchant key mismatch");
   }
 
   // ========================================================
@@ -2427,13 +2566,9 @@ const reconcilePayUOrder = async ({
 
   if (
     transaction.productinfo != null &&
-    String(transaction.productinfo) !==
-      PRODUCT_INFO
+    String(transaction.productinfo) !== PRODUCT_INFO
   ) {
-    throw createError(
-      409,
-      "PayU product information mismatch",
-    );
+    throw createError(409, "PayU product information mismatch");
   }
 
   // ========================================================
@@ -2442,13 +2577,9 @@ const reconcilePayUOrder = async ({
 
   if (
     transaction.currency != null &&
-    String(transaction.currency).toUpperCase() !==
-      "INR"
+    String(transaction.currency).toUpperCase() !== "INR"
   ) {
-    throw createError(
-      409,
-      "PayU currency mismatch",
-    );
+    throw createError(409, "PayU currency mismatch");
   }
 
   // ========================================================
@@ -2467,47 +2598,26 @@ const reconcilePayUOrder = async ({
   // 11. VERIFY PAYU PAYMENT ID
   // ========================================================
 
-  const payuMihpayId = String(
-    transaction.mihpayid ?? "",
-  ).trim();
+  const payuMihpayId = String(transaction.mihpayid ?? "").trim();
 
-  if (
-    !payuMihpayId ||
-    payuMihpayId === "Not Found"
-  ) {
-    throw createError(
-      409,
-      "PayU payment ID not found",
-    );
+  if (!payuMihpayId || payuMihpayId === "Not Found") {
+    throw createError(409, "PayU payment ID not found");
   }
 
   // ========================================================
   // 12. COMPARE CALLBACK PAYMENT ID
   // ========================================================
 
-  if (
-    callbackMihpayId != null &&
-    String(callbackMihpayId) !== payuMihpayId
-  ) {
-    throw createError(
-      409,
-      "PayU callback payment ID mismatch",
-    );
+  if (callbackMihpayId != null && String(callbackMihpayId) !== payuMihpayId) {
+    throw createError(409, "PayU callback payment ID mismatch");
   }
 
   // ========================================================
   // 13. VERIFY STORED PAYMENT ID
   // ========================================================
 
-  if (
-    payment.payuMihpayId &&
-    String(payment.payuMihpayId) !==
-      payuMihpayId
-  ) {
-    throw createError(
-      409,
-      "PayU payment reference mismatch",
-    );
+  if (payment.payuMihpayId && String(payment.payuMihpayId) !== payuMihpayId) {
+    throw createError(409, "PayU payment reference mismatch");
   }
 
   // ========================================================
@@ -2520,10 +2630,7 @@ const reconcilePayUOrder = async ({
   });
 
   if (duplicatePayment) {
-    throw createError(
-      409,
-      "PayU payment reference already used",
-    );
+    throw createError(409, "PayU payment reference already used");
   }
 
   // ========================================================
@@ -2532,21 +2639,16 @@ const reconcilePayUOrder = async ({
 
   if (
     order.status !== "COMPLETED" &&
-    (
-      order.status !== "PENDING_PAYMENT" ||
-      !Number.isFinite(
-        new Date(order.expiresAt).getTime(),
-      ) ||
-      new Date(order.expiresAt).getTime() <= Date.now()
-    )
+    (order.status !== "PENDING_PAYMENT" ||
+      !Number.isFinite(new Date(order.expiresAt).getTime()) ||
+      new Date(order.expiresAt).getTime() <= Date.now())
   ) {
     return {
       status: "RECONCILIATION_REQUIRED",
       orderId: String(order._id),
       payuTxnId: order.payuTxnId,
       payuMihpayId,
-      message:
-        "Payment succeeded but order reservation is no longer active",
+      message: "Payment succeeded but order reservation is no longer active",
     };
   }
 
@@ -2606,8 +2708,6 @@ const reconcilePayUOrder = async ({
 // 1. GENERATE PAYU PAYMENT HASH
 // ============================================================
 
-
-
 // These dynamic command formats must be
 // validated against the SDK payload used
 // by your installed PayU version.
@@ -2622,9 +2722,7 @@ const PAYU_SDK_COMMANDS = Object.freeze({
   payment_related_details_for_mobile_sdk: [
     "payment_related_details_for_mobile_sdk",
   ],
-  get_eligible_payment_options: [
-    "get_eligible_payment_options",
-  ],
+  get_eligible_payment_options: ["get_eligible_payment_options"],
 });
 
 const PAYU_PRODUCT_INFO = "Bunndle Asset Purchase";
@@ -2646,10 +2744,7 @@ const validatePayUSpecialHash = ({
   order,
   user,
 }) => {
-  if (
-    hashName !== "quickPayEvent" &&
-    hashName !== "get_all_offer_details"
-  ) {
+  if (hashName !== "quickPayEvent" && hashName !== "get_all_offer_details") {
     return { handled: false, valid: false };
   }
 
@@ -2668,10 +2763,7 @@ const validatePayUSpecialHash = ({
   }
 
   const jsonText = hashString.slice(0, firstPipe);
-  const httpDate = hashString.slice(
-    firstPipe + 1,
-    lastPipe
-  );
+  const httpDate = hashString.slice(firstPipe + 1, lastPipe);
 
   // Reject additional pipe delimiters
   // and stale request timestamps.
@@ -2683,8 +2775,7 @@ const validatePayUSpecialHash = ({
 
   if (
     !Number.isFinite(timestamp) ||
-    Math.abs(Date.now() - timestamp) >
-      PAYU_HASH_MAX_AGE_MS
+    Math.abs(Date.now() - timestamp) > PAYU_HASH_MAX_AGE_MS
   ) {
     return { handled: true, valid: false };
   }
@@ -2697,11 +2788,7 @@ const validatePayUSpecialHash = ({
     return { handled: true, valid: false };
   }
 
-  if (
-    !payload ||
-    typeof payload !== "object" ||
-    Array.isArray(payload)
-  ) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { handled: true, valid: false };
   }
 
@@ -2722,9 +2809,7 @@ const validatePayUSpecialHash = ({
 
     return {
       handled: true,
-      valid:
-        keys.length === 1 &&
-        keys[0] === "amount",
+      valid: keys.length === 1 && keys[0] === "amount",
     };
   }
 
@@ -2732,8 +2817,7 @@ const validatePayUSpecialHash = ({
   // QUICK PAY EVENT
   // ======================================
 
-  const expectedCredential =
-    `${merchantKey}:${String(user.email).trim()}`;
+  const expectedCredential = `${merchantKey}:${String(user.email).trim()}`;
 
   const requestId = payload.requestId;
 
@@ -2741,13 +2825,9 @@ const validatePayUSpecialHash = ({
     payload.requestType !== "quickpay" ||
     payload.userCredential !== expectedCredential ||
     typeof requestId !== "string" ||
-    !new RegExp(
-      `^${order.payuTxnId}\\d{10,16}$`
-    ).test(requestId) ||
+    !new RegExp(`^${order.payuTxnId}\\d{10,16}$`).test(requestId) ||
     typeof payload.deviceId !== "string" ||
-    !/^[a-zA-Z0-9_-]{1,128}$/.test(
-      payload.deviceId
-    )
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(payload.deviceId)
   ) {
     return { handled: true, valid: false };
   }
@@ -2755,28 +2835,17 @@ const validatePayUSpecialHash = ({
   // The SDK was observed sending either
   // empty phone or registered phone.
 
-  const sentPhone = normalizePayUPhone(
-    payload.phone ?? ""
-  );
+  const sentPhone = normalizePayUPhone(payload.phone ?? "");
 
   const registeredPhone = normalizePayUPhone(
-    user.phoneNumber ??
-      user.mobileNumber ??
-      user.mobile ??
-      user.phone
+    user.phoneNumber ?? user.mobileNumber ?? user.mobile ?? user.phone,
   );
 
-  if (
-    sentPhone &&
-    sentPhone !== registeredPhone
-  ) {
+  if (sentPhone && sentPhone !== registeredPhone) {
     return { handled: true, valid: false };
   }
 
-  if (
-    payload.userToken != null &&
-    typeof payload.userToken !== "string"
-  ) {
+  if (payload.userToken != null && typeof payload.userToken !== "string") {
     return { handled: true, valid: false };
   }
 
@@ -2790,11 +2859,7 @@ const validatePayUSpecialHash = ({
     "userCredential",
   ]);
 
-  if (
-    Object.keys(payload).some(
-      (key) => !allowedFields.has(key)
-    )
-  ) {
+  if (Object.keys(payload).some((key) => !allowedFields.has(key))) {
     return { handled: true, valid: false };
   }
 
@@ -3417,11 +3482,6 @@ const validatePayUSpecialHash = ({
 //   }
 // };
 
-
-
-
-
-
 export const generatePayUHash = async (req, res) => {
   try {
     // ======================================
@@ -3437,13 +3497,8 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    const {
-      orderId,
-      hashName,
-      hashString,
-      hashType,
-      postSalt,
-    } = req.body || {};
+    const { orderId, hashName, hashString, hashType, postSalt } =
+      req.body || {};
 
     if (!mongoose.isValidObjectId(orderId)) {
       return res.status(400).json({
@@ -3478,10 +3533,7 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    if (
-      postSalt != null &&
-      typeof postSalt !== "string"
-    ) {
+    if (postSalt != null && typeof postSalt !== "string") {
       return res.status(400).json({
         success: false,
         message: "Invalid postSalt",
@@ -3522,9 +3574,7 @@ export const generatePayUHash = async (req, res) => {
       });
     }
 
-    const transactionId = String(
-      order.payuTxnId || ""
-    );
+    const transactionId = String(order.payuTxnId || "");
 
     if (!/^BN[a-f0-9]{20}$/.test(transactionId)) {
       return res.status(400).json({
@@ -3576,8 +3626,7 @@ export const generatePayUHash = async (req, res) => {
 
     if (
       orderPaise === null ||
-      orderPaise !==
-        toPaise(paymentAmount.toFixed(2))
+      orderPaise !== toPaise(paymentAmount.toFixed(2))
     ) {
       return res.status(409).json({
         success: false,
@@ -3589,11 +3638,9 @@ export const generatePayUHash = async (req, res) => {
     // 5. PAYU CONFIGURATION
     // ======================================
 
-    const merchantKey =
-      process.env.PAYU_MERCHANT_KEY;
+    const merchantKey = process.env.PAYU_MERCHANT_KEY;
 
-    const merchantSalt =
-      process.env.PAYU_MERCHANT_SALT;
+    const merchantSalt = process.env.PAYU_MERCHANT_SALT;
 
     if (
       process.env.PAYU_ENV !== "PRODUCTION" ||
@@ -3610,10 +3657,8 @@ export const generatePayUHash = async (req, res) => {
     // 6. CUSTOMER DETAILS
     // ======================================
 
-    const user = await User.findById(
-      order.userId
-    ).select(
-      "name email phone phoneNumber mobile mobileNumber"
+    const user = await User.findById(order.userId).select(
+      "name email phone phoneNumber mobile mobileNumber",
     );
 
     if (!user?.name || !user?.email) {
@@ -3627,10 +3672,7 @@ export const generatePayUHash = async (req, res) => {
     const email = String(user.email).trim();
 
     const registeredPhone = normalizePayUPhone(
-      user.phoneNumber ??
-      user.mobileNumber ??
-      user.mobile ??
-      user.phone
+      user.phoneNumber ?? user.mobileNumber ?? user.mobile ?? user.phone,
     );
 
     if (!registeredPhone) {
@@ -3654,9 +3696,7 @@ export const generatePayUHash = async (req, res) => {
       try {
         const result = JSON.parse(value);
 
-        return result &&
-          typeof result === "object" &&
-          !Array.isArray(result)
+        return result && typeof result === "object" && !Array.isArray(result)
           ? result
           : null;
       } catch {
@@ -3668,24 +3708,16 @@ export const generatePayUHash = async (req, res) => {
       object !== null &&
       typeof object === "object" &&
       !Array.isArray(object) &&
-      Object.keys(object).every((key) =>
-        allowed.has(key)
-      );
+      Object.keys(object).every((key) => allowed.has(key));
 
     const amountMatches = (value) => {
-      if (
-        typeof value !== "string" &&
-        typeof value !== "number"
-      ) {
+      if (typeof value !== "string" && typeof value !== "number") {
         return false;
       }
 
       const paise = toPaise(String(value));
 
-      return (
-        paise !== null &&
-        paise === orderPaise
-      );
+      return paise !== null && paise === orderPaise;
     };
 
     // ======================================
@@ -3696,29 +3728,24 @@ export const generatePayUHash = async (req, res) => {
       if (
         typeof value !== "string" ||
         !/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2}(?: GMT)?$/.test(
-          value
+          value,
         )
       ) {
         return false;
       }
 
-      const normalized = value.endsWith(" GMT")
-        ? value
-        : `${value} GMT`;
+      const normalized = value.endsWith(" GMT") ? value : `${value} GMT`;
 
       const timestamp = Date.parse(normalized);
 
       return (
         Number.isFinite(timestamp) &&
-        Math.abs(Date.now() - timestamp) <=
-          15 * 60 * 1000
+        Math.abs(Date.now() - timestamp) <= 15 * 60 * 1000
       );
     };
 
     const parseTimedJson = (value) => {
-      const match = value.match(
-        /^(\{[^\r\n]*\})\|([^|\r\n]+)\|$/
-      );
+      const match = value.match(/^(\{[^\r\n]*\})\|([^|\r\n]+)\|$/);
 
       if (!match) {
         return null;
@@ -3726,10 +3753,7 @@ export const generatePayUHash = async (req, res) => {
 
       const body = parseObject(match[1]);
 
-      if (
-        !body ||
-        !validSdkTimestamp(match[2])
-      ) {
+      if (!body || !validSdkTimestamp(match[2])) {
         return null;
       }
 
@@ -3741,21 +3765,14 @@ export const generatePayUHash = async (req, res) => {
     // ======================================
 
     const isValidCardNumber = (value) => {
-      if (
-        typeof value !== "string" ||
-        !/^\d{12,19}$/.test(value)
-      ) {
+      if (typeof value !== "string" || !/^\d{12,19}$/.test(value)) {
         return false;
       }
 
       let sum = 0;
       let doubleDigit = false;
 
-      for (
-        let i = value.length - 1;
-        i >= 0;
-        i--
-      ) {
+      for (let i = value.length - 1; i >= 0; i--) {
         let digit = Number(value[i]);
 
         if (doubleDigit) {
@@ -3796,20 +3813,14 @@ export const generatePayUHash = async (req, res) => {
 
       if (
         !onlyKeys(data, allowed) ||
-        normalizePayUPhone(data.phone) !==
-          registeredPhone ||
-        data.userCredential !==
-          `${merchantKey}:${email}` ||
+        normalizePayUPhone(data.phone) !== registeredPhone ||
+        data.userCredential !== `${merchantKey}:${email}` ||
         data.userToken !== "" ||
         !amountMatches(data.amount) ||
         typeof data.deviceId !== "string" ||
-        !/^[A-Za-z0-9-]{8,128}$/.test(
-          data.deviceId
-        )
+        !/^[A-Za-z0-9-]{8,128}$/.test(data.deviceId)
       ) {
-        return fail(
-          "Invalid iOS quick-pay parameters"
-        );
+        return fail("Invalid iOS quick-pay parameters");
       }
 
       validated = true;
@@ -3818,7 +3829,6 @@ export const generatePayUHash = async (req, res) => {
     // ======================================
     // CARD BIN HASH - ANDROID + IOS
     // ======================================
-
     else if (
       hashName === "getBinBasedDetails" ||
       hashName === "binBaseDetails"
@@ -3826,17 +3836,12 @@ export const generatePayUHash = async (req, res) => {
       const data = parseTimedJson(hashString);
 
       if (!data) {
-        return fail(
-          "Invalid PayU BIN hash format"
-        );
+        return fail("Invalid PayU BIN hash format");
       }
 
-      const isAndroid =
-        hashName === "binBaseDetails";
+      const isAndroid = hashName === "binBaseDetails";
 
-      const expectedSource = isAndroid
-        ? "ANDROID_SDK"
-        : "IOS_SDK";
+      const expectedSource = isAndroid ? "ANDROID_SDK" : "IOS_SDK";
 
       const allowedKeys = new Set([
         "txnId",
@@ -3859,20 +3864,15 @@ export const generatePayUHash = async (req, res) => {
       // iOS may omit this field.
       const validSIField = isAndroid
         ? data.isSITxn === false
-        : data.isSITxn === undefined ||
-          data.isSITxn === false;
+        : data.isSITxn === undefined || data.isSITxn === false;
 
       // Android: actual booleans.
       // iOS: string booleans.
       const validFlags = isAndroid
-        ? typeof data.isPricingCFEnable ===
-            "boolean" &&
-          typeof data.disableConvFeeCompounding ===
-            "boolean"
+        ? typeof data.isPricingCFEnable === "boolean" &&
+          typeof data.disableConvFeeCompounding === "boolean"
         : validBoolean(data.isPricingCFEnable) &&
-          validBoolean(
-            data.disableConvFeeCompounding
-          );
+          validBoolean(data.disableConvFeeCompounding);
 
       if (
         !onlyKeys(data, allowedKeys) ||
@@ -3884,9 +3884,7 @@ export const generatePayUHash = async (req, res) => {
         !validFlags ||
         !validSIField
       ) {
-        return fail(
-          "PayU BIN details do not match order"
-        );
+        return fail("PayU BIN details do not match order");
       }
 
       // Never log cardNumber or hashString.
@@ -3896,7 +3894,6 @@ export const generatePayUHash = async (req, res) => {
     // ======================================
     // UPI VALIDATION
     // ======================================
-
     else if (hashName === "validateVPA") {
       const parts = hashString.split("|");
 
@@ -3907,14 +3904,10 @@ export const generatePayUHash = async (req, res) => {
         parts[3] === "" &&
         typeof parts[2] === "string" &&
         parts[2].length <= 255 &&
-        /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$/.test(
-          parts[2]
-        );
+        /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$/.test(parts[2]);
 
       if (!valid) {
-        return fail(
-          "Invalid PayU VPA request"
-        );
+        return fail("Invalid PayU VPA request");
       }
 
       validated = true;
@@ -3923,17 +3916,9 @@ export const generatePayUHash = async (req, res) => {
     // ======================================
     // EMI ELIGIBILITY
     // ======================================
-
-    else if (
-      hashName === "eligibleBinsForEMI"
-    ) {
-      if (
-        hashString !==
-          `${merchantKey}|eligibleBinsForEMI|default|`
-      ) {
-        return fail(
-          "Invalid eligibleBinsForEMI request"
-        );
+    else if (hashName === "eligibleBinsForEMI") {
+      if (hashString !== `${merchantKey}|eligibleBinsForEMI|default|`) {
+        return fail("Invalid eligibleBinsForEMI request");
       }
 
       validated = true;
@@ -3954,9 +3939,7 @@ export const generatePayUHash = async (req, res) => {
 
       if (special.handled) {
         if (!special.valid) {
-          return fail(
-            "Invalid PayU special hash request"
-          );
+          return fail("Invalid PayU special hash request");
         }
 
         validated = true;
@@ -3971,19 +3954,14 @@ export const generatePayUHash = async (req, res) => {
       const parts = hashString.split("|");
 
       if (parts[0] !== merchantKey) {
-        return fail(
-          "PayU merchant key mismatch"
-        );
+        return fail("PayU merchant key mismatch");
       }
 
       // ====================================
       // PAYMENT / PAYMENT_SOURCE
       // ====================================
 
-      if (
-        hashName === "payment" ||
-        hashName === "payment_source"
-      ) {
+      if (hashName === "payment" || hashName === "payment_source") {
         const expected = [
           merchantKey,
           transactionId,
@@ -3991,14 +3969,21 @@ export const generatePayUHash = async (req, res) => {
           PAYU_PRODUCT_INFO,
           firstname,
           email,
-          "", "", "", "", "",
-          "", "", "", "", "", "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
         ].join("|");
 
         if (hashString !== expected) {
-          return fail(
-            "PayU payment parameters do not match order"
-          );
+          return fail("PayU payment parameters do not match order");
         }
 
         validated = true;
@@ -4007,17 +3992,9 @@ export const generatePayUHash = async (req, res) => {
       // ====================================
       // SDK CONFIGURATION
       // ====================================
-
-      else if (
-        hashName === "get_sdk_configuration"
-      ) {
-        if (
-          hashString !==
-          `${merchantKey}|get_sdk_configuration|GET|`
-        ) {
-          return fail(
-            "Invalid SDK configuration request"
-          );
+      else if (hashName === "get_sdk_configuration") {
+        if (hashString !== `${merchantKey}|get_sdk_configuration|GET|`) {
+          return fail("Invalid SDK configuration request");
         }
 
         validated = true;
@@ -4026,12 +4003,8 @@ export const generatePayUHash = async (req, res) => {
       // ====================================
       // CHECKOUT DETAILS - ANDROID + IOS
       // ====================================
-
-      else if (
-        hashName === "get_checkout_details"
-      ) {
-        const allowedCommands =
-          PAYU_SDK_COMMANDS[hashName];
+      else if (hashName === "get_checkout_details") {
+        const allowedCommands = PAYU_SDK_COMMANDS[hashName];
 
         if (
           !Array.isArray(allowedCommands) ||
@@ -4039,26 +4012,18 @@ export const generatePayUHash = async (req, res) => {
           parts.length !== 4 ||
           parts[3] !== ""
         ) {
-          return fail(
-            "Invalid checkout command format"
-          );
+          return fail("Invalid checkout command format");
         }
 
-        const checkout = parseObject(
-          parts[2]
-        );
+        const checkout = parseObject(parts[2]);
 
         if (!checkout) {
-          return fail(
-            "Invalid checkout details JSON"
-          );
+          return fail("Invalid checkout details JSON");
         }
 
-        const txn =
-          checkout.transactionDetails;
+        const txn = checkout.transactionDetails;
 
-        const customer =
-          checkout.customerDetails;
+        const customer = checkout.customerDetails;
 
         const checkoutKeys = new Set([
           "requestId",
@@ -4068,73 +4033,43 @@ export const generatePayUHash = async (req, res) => {
           "isSITxn",
         ]);
 
-        const txnKeys = new Set([
-          "amount",
-          "txnId",
-          "source",
-        ]);
+        const txnKeys = new Set(["amount", "txnId", "source"]);
 
-        const customerKeys = new Set([
-          "mobile",
-        ]);
+        const customerKeys = new Set(["mobile"]);
 
         if (
-          !onlyKeys(
-            checkout,
-            checkoutKeys
-          ) ||
-          !onlyKeys(
-            txn,
-            txnKeys
-          ) ||
-          !onlyKeys(
-            customer,
-            customerKeys
-          )
+          !onlyKeys(checkout, checkoutKeys) ||
+          !onlyKeys(txn, txnKeys) ||
+          !onlyKeys(customer, customerKeys)
         ) {
-          return fail(
-            "Unexpected checkout details fields"
-          );
+          return fail("Unexpected checkout details fields");
         }
 
-        const isAndroid =
-          txn.source === "Android_SDK";
+        const isAndroid = txn.source === "Android_SDK";
 
-        const isIOS =
-          txn.source === "IOS_SDK";
+        const isIOS = txn.source === "IOS_SDK";
 
         if (!isAndroid && !isIOS) {
-          return fail(
-            "Unsupported PayU SDK platform"
-          );
+          return fail("Unsupported PayU SDK platform");
         }
 
         const validRequestId = isAndroid
-          ? typeof checkout.requestId ===
-              "string" &&
-            new RegExp(
-              `^${transactionId}\\d{10,16}$`
-            ).test(checkout.requestId)
-          : checkout.requestId ===
-            transactionId;
+          ? typeof checkout.requestId === "string" &&
+            new RegExp(`^${transactionId}\\d{10,16}$`).test(checkout.requestId)
+          : checkout.requestId === transactionId;
 
         const validSI = isAndroid
           ? checkout.isSITxn === false
-          : checkout.isSITxn === undefined ||
-            checkout.isSITxn === false;
+          : checkout.isSITxn === undefined || checkout.isSITxn === false;
 
         if (
           txn.txnId !== transactionId ||
           !amountMatches(txn.amount) ||
-          normalizePayUPhone(
-            customer.mobile
-          ) !== registeredPhone ||
+          normalizePayUPhone(customer.mobile) !== registeredPhone ||
           !validRequestId ||
           !validSI
         ) {
-          return fail(
-            "Checkout parameters do not match order"
-          );
+          return fail("Checkout parameters do not match order");
         }
 
         const useCaseKeys = new Set([
@@ -4149,20 +4084,12 @@ export const generatePayUHash = async (req, res) => {
         ]);
 
         if (
-          !onlyKeys(
-            checkout.useCase,
-            useCaseKeys
-          ) ||
-          Object.values(
-            checkout.useCase
-          ).some(
-            (value) =>
-              typeof value !== "boolean"
+          !onlyKeys(checkout.useCase, useCaseKeys) ||
+          Object.values(checkout.useCase).some(
+            (value) => typeof value !== "boolean",
           )
         ) {
-          return fail(
-            "Invalid checkout use-case"
-          );
+          return fail("Invalid checkout use-case");
         }
 
         validated = true;
@@ -4174,9 +4101,7 @@ export const generatePayUHash = async (req, res) => {
     // ======================================
 
     if (!validated) {
-      return fail(
-        "Unsupported PayU SDK hash request"
-      );
+      return fail("Unsupported PayU SDK hash request");
     }
 
     // ======================================
@@ -4185,21 +4110,15 @@ export const generatePayUHash = async (req, res) => {
 
     const generatedHash = crypto
       .createHash("sha512")
-      .update(
-        `${hashString}${merchantSalt}`,
-        "utf8"
-      )
+      .update(`${hashString}${merchantSalt}`, "utf8")
       .digest("hex");
 
     // Do not log card details,
     // credentials or hashString.
-    console.log(
-      "PAYU HASH GENERATED:",
-      {
-        orderId: String(order._id),
-        hashName,
-      }
-    );
+    console.log("PAYU HASH GENERATED:", {
+      orderId: String(order._id),
+      hashName,
+    });
 
     // ======================================
     // SUCCESS RESPONSE
@@ -4207,8 +4126,7 @@ export const generatePayUHash = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "PayU hash generated successfully",
+      message: "PayU hash generated successfully",
       data: {
         orderId: String(order._id),
         transactionId,
@@ -4217,24 +4135,14 @@ export const generatePayUHash = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(
-      "GENERATE PAYU HASH ERROR:",
-      error
-    );
+    console.error("GENERATE PAYU HASH ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to generate PayU hash",
+      message: "Unable to generate PayU hash",
     });
   }
 };
-
-
-
-
-
-
 
 // ============================================================
 // 2. VERIFY PAYU PAYMENT
@@ -4317,14 +4225,9 @@ export const verifyPayUPayment = async (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.error(
-      "VERIFY PAYU PAYMENT ERROR:",
-      error,
-    );
+    console.error("VERIFY PAYU PAYMENT ERROR:", error);
 
-    return res.status(
-      error.statusCode || 502,
-    ).json({
+    return res.status(error.statusCode || 502).json({
       success: false,
 
       message: error.statusCode
@@ -4338,11 +4241,7 @@ export const verifyPayUPayment = async (req, res) => {
 // SHARED PAYU CALLBACK HANDLER
 // ============================================================
 
-const handlePayUCallback = async (
-  req,
-  res,
-  source,
-) => {
+const handlePayUCallback = async (req, res, source) => {
   try {
     const body = req.body || {};
 
@@ -4350,10 +4249,7 @@ const handlePayUCallback = async (
     // 1. VALIDATE TRANSACTION ID
     // ======================================================
 
-    if (
-      typeof body.txnid !== "string" ||
-      !PAYU_TXN_REGEX.test(body.txnid)
-    ) {
+    if (typeof body.txnid !== "string" || !PAYU_TXN_REGEX.test(body.txnid)) {
       return res.status(400).json({
         success: false,
         message: "Invalid PayU transaction ID",
@@ -4391,13 +4287,9 @@ const handlePayUCallback = async (
     // 4. VERIFY CALLBACK AMOUNT
     // ======================================================
 
-    const expectedAmount = toPaise(
-      getAmount(order.totalAmount),
-    );
+    const expectedAmount = toPaise(getAmount(order.totalAmount));
 
-    const callbackAmount = toPaise(
-      body.amount,
-    );
+    const callbackAmount = toPaise(body.amount);
 
     if (
       expectedAmount === null ||
@@ -4441,8 +4333,7 @@ const handlePayUCallback = async (
       return res.status(200).json({
         success: true,
 
-        message:
-          "PayU payment verified and purchase completed",
+        message: "PayU payment verified and purchase completed",
 
         data: result,
       });
@@ -4453,22 +4344,16 @@ const handlePayUCallback = async (
     // ======================================================
 
     if (result.status === "RECONCILIATION_REQUIRED") {
-      console.error(
-        "PAYU PAYMENT RECONCILIATION REQUIRED:",
-        {
-          orderId: String(order._id),
-          payuTxnId: order.payuTxnId,
-          payuMihpayId: result.payuMihpayId,
-        },
-      );
+      console.error("PAYU PAYMENT RECONCILIATION REQUIRED:", {
+        orderId: String(order._id),
+        payuTxnId: order.payuTxnId,
+        payuMihpayId: result.payuMihpayId,
+      });
 
-      return res.status(
-        source === "WEBHOOK" ? 503 : 202,
-      ).json({
+      return res.status(source === "WEBHOOK" ? 503 : 202).json({
         success: false,
 
-        message:
-          "PayU payment succeeded but order requires reconciliation",
+        message: "PayU payment succeeded but order requires reconciliation",
 
         data: result,
       });
@@ -4486,14 +4371,9 @@ const handlePayUCallback = async (
       data: result,
     });
   } catch (error) {
-    console.error(
-      `PAYU ${source} ERROR:`,
-      error,
-    );
+    console.error(`PAYU ${source} ERROR:`, error);
 
-    return res.status(
-      error.statusCode || 503,
-    ).json({
+    return res.status(error.statusCode || 503).json({
       success: false,
 
       message: error.statusCode
@@ -4507,43 +4387,17 @@ const handlePayUCallback = async (
 // 3. PAYU SUCCESS / FAILURE RETURN CALLBACK
 // ============================================================
 
-export const payuPaymentReturn = async (
-  req,
-  res,
-) => {
-  return handlePayUCallback(
-    req,
-    res,
-    "RETURN",
-  );
+export const payuPaymentReturn = async (req, res) => {
+  return handlePayUCallback(req, res, "RETURN");
 };
 
 // ============================================================
 // 4. PAYU WEBHOOK
 // ============================================================
 
-export const payuWebhook = async (
-  req,
-  res,
-) => {
-  return handlePayUCallback(
-    req,
-    res,
-    "WEBHOOK",
-  );
+export const payuWebhook = async (req, res) => {
+  return handlePayUCallback(req, res, "WEBHOOK");
 };
-
-
-
-
-
-
-
-
-
-
-
-
 
 // ============================================================
 // GET ALL ORDERS - EXISTING
