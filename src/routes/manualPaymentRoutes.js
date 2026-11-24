@@ -144,7 +144,7 @@ router.get("/admin", listAdminManualPayments);
 router.get("/admin/:manualPaymentId", getAdminManualPayment);
 
 // Approve verified bank payment.
-router.patch("/admin/:manualPaymentId/approve", approveManualPayment);
+router.patch("/admin/update_status/:manualPaymentId", approveManualPayment);
 
 // Reject manual payment.
 router.patch("/admin/:manualPaymentId/reject", rejectManualPayment);

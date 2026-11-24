@@ -44,7 +44,7 @@ const paymentSchema = new mongoose.Schema(
 
     paymentGateway: {
       type: String,
-      enum: ["RAZORPAY", "CASHFREE","PAYU"],
+      enum: ["RAZORPAY", "CASHFREE","PAYU","MANUAL"],
       default: "RAZORPAY",
       required: true,
       index: true,
