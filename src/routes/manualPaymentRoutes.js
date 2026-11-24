@@ -132,7 +132,7 @@ router.use("/admin", requireAdmin);
 router.get("/admin/orders/pending-bank-details", listPendingBankDetailOrders);
 
 // Email bank details for an order.
-router.patch("/admin/orders/:orderId/send-bank-details", sendManualBankDetails);
+router.patch("/admin/orders/send-bank-details/:orderId", sendManualBankDetails);
 
 // ============================================================
 // ADMIN: PAYMENT VERIFICATION
