@@ -684,6 +684,165 @@ export const createManualOrder = async (req, res) => {
 // 2. ADMIN SENDS BANK DETAILS EMAIL
 // ============================================================
 
+// export const sendManualBankDetails = async (req, res) => {
+//   const adminId = getUserId(req);
+//   const { orderId } = req.params;
+
+//   if (!isId(adminId) || !isId(orderId)) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Invalid admin or order ID",
+//     });
+//   }
+
+//   let claimed = false;
+//   let emailAccepted = false;
+
+//   try {
+//     // Validate .env configuration.
+//     getBankDetails();
+
+//     const claimTime = new Date();
+
+//     // Atomic claim prevents concurrent admin sends.
+//     const order = await Order.findOneAndUpdate(
+//       {
+//         _id: orderId,
+
+//         paymentGateway: "MANUAL",
+
+//         status: "PENDING_PAYMENT",
+
+//         bankDetailsSentAt: null,
+//         bankDetailsSendingAt: null,
+
+//         expiresAt: { $gt: claimTime },
+//       },
+//       {
+//         $set: {
+//           bankDetailsSendingAt: claimTime,
+//         },
+//       },
+//       { new: true },
+//     );
+
+//     if (!order) {
+//       throw createError(
+//         409,
+//         "Order expired, bank details already sent, or sending is in progress",
+//       );
+//     }
+
+//     claimed = true;
+
+//     const [user, asset] = await Promise.all([
+//       User.findById(order.userId).select("name email").lean(),
+
+//       Asset.findById(order.assetId).select("assetName").lean(),
+//     ]);
+
+//     if (!user?.email || !asset) {
+//       throw createError(409, "Customer email or asset not found");
+//     }
+
+//     // Uses manualBankDetailsTemplate.js
+//     // through manualBankDetailsEmail.service.js.
+//     await sendManualBankDetailsEmail({
+//       email: user.email,
+
+//       customerName: user.name || "Customer",
+
+//       orderId: String(order._id),
+
+//       assetName: asset.assetName,
+
+//       fractions: order.fractions,
+
+//       amountPerFraction: order.amountPerFraction,
+
+//       totalAmount: order.totalAmount,
+
+//       expiresAt: order.expiresAt,
+//     });
+
+//     emailAccepted = true;
+
+//     const updated = await Order.findOneAndUpdate(
+//       {
+//         _id: orderId,
+
+//         paymentGateway: "MANUAL",
+
+//         status: "PENDING_PAYMENT",
+
+//         bankDetailsSentAt: null,
+
+//         bankDetailsSendingAt: claimTime,
+//       },
+//       {
+//         $set: {
+//           bankDetailsSentAt: new Date(),
+//           bankDetailsSentBy: adminId,
+//         },
+
+//         $unset: {
+//           bankDetailsSendingAt: "",
+//         },
+//       },
+//       { new: true },
+//     );
+
+//     if (!updated) {
+//       throw createError(
+//         409,
+//         "Email sent but order update failed. Admin reconciliation required.",
+//       );
+//     }
+
+//     claimed = false;
+
+//     return res.status(200).json({
+//       success: true,
+
+//       message: "Bank details emailed successfully",
+
+//       data: {
+//         orderId: updated._id,
+
+//         assetName: asset.assetName,
+
+//         customerName: user.name || "Customer",
+
+//         customerEmail: user.email,
+
+//         paymentGateway: updated.paymentGateway,
+
+//         status: updated.status,
+
+//         totalAmount: updated.totalAmount,
+
+//         bankDetailsSent: true,
+
+//         bankDetailsSentAt: updated.bankDetailsSentAt,
+
+//         expiresAt: updated.expiresAt,
+//       },
+//     });
+//   } catch (error) {
+//     if (claimed && !emailAccepted) {
+//       // Keep the send lock when delivery is uncertain.
+//       // Check mail provider logs before unlocking.
+//       console.error("MANUAL BANK EMAIL NEEDS RECONCILIATION:", {
+//         orderId,
+//         error: error.message,
+//       });
+//     }
+
+//     return handleError(res, error, "SEND MANUAL BANK DETAILS");
+//   }
+// };
+
+
 export const sendManualBankDetails = async (req, res) => {
   const adminId = getUserId(req);
   const { orderId } = req.params;
@@ -697,14 +856,63 @@ export const sendManualBankDetails = async (req, res) => {
 
   let claimed = false;
   let emailAccepted = false;
+  let claimTime = null;
 
   try {
-    // Validate .env configuration.
+    // ==========================================
+    // 1. VALIDATE BANK CONFIGURATION
+    // ==========================================
+
     getBankDetails();
 
-    const claimTime = new Date();
+    // ==========================================
+    // 2. VALIDATE ORDER
+    // ==========================================
 
-    // Atomic claim prevents concurrent admin sends.
+    const existingOrder = await Order.findOne({
+      _id: orderId,
+      paymentGateway: "MANUAL",
+    }).select(
+      "_id status expiresAt bankDetailsSentAt bankDetailsSendingAt"
+    );
+
+    if (!existingOrder) {
+      throw createError(
+        404,
+        "Manual payment order not found"
+      );
+    }
+
+    if (existingOrder.status !== "PENDING_PAYMENT") {
+      throw createError(
+        409,
+        "Bank details can only be sent for pending payment orders"
+      );
+    }
+
+    if (
+      !existingOrder.expiresAt ||
+      new Date(existingOrder.expiresAt).getTime() <= Date.now()
+    ) {
+      throw createError(
+        409,
+        "Manual payment order has expired"
+      );
+    }
+
+    if (existingOrder.bankDetailsSendingAt) {
+      throw createError(
+        409,
+        "Bank details email is already being processed. Please check the email delivery status."
+      );
+    }
+
+    // ==========================================
+    // 3. ATOMIC SEND LOCK
+    // ==========================================
+
+    claimTime = new Date();
+
     const order = await Order.findOneAndUpdate(
       {
         _id: orderId,
@@ -713,40 +921,76 @@ export const sendManualBankDetails = async (req, res) => {
 
         status: "PENDING_PAYMENT",
 
-        bankDetailsSentAt: null,
+        expiresAt: { $gt: claimTime },
+
+        // Prevent concurrent email requests.
         bankDetailsSendingAt: null,
 
-        expiresAt: { $gt: claimTime },
+        // No bankDetailsSentAt restriction.
+        // Resending is allowed.
       },
       {
         $set: {
           bankDetailsSendingAt: claimTime,
         },
       },
-      { new: true },
+      {
+        new: true,
+      }
     );
 
     if (!order) {
       throw createError(
         409,
-        "Order expired, bank details already sent, or sending is in progress",
+        "Order is expired, no longer pending, or another email request is in progress"
       );
     }
 
     claimed = true;
 
-    const [user, asset] = await Promise.all([
-      User.findById(order.userId).select("name email").lean(),
+    // ==========================================
+    // 4. FETCH CUSTOMER AND ASSET
+    // ==========================================
 
-      Asset.findById(order.assetId).select("assetName").lean(),
+    const [user, asset] = await Promise.all([
+      User.findById(order.userId)
+        .select("name email")
+        .lean(),
+
+      Asset.findById(order.assetId)
+        .select("assetName")
+        .lean(),
     ]);
 
-    if (!user?.email || !asset) {
-      throw createError(409, "Customer email or asset not found");
+    if (!user?.email) {
+      throw createError(
+        404,
+        "Customer email address not found"
+      );
     }
 
-    // Uses manualBankDetailsTemplate.js
-    // through manualBankDetailsEmail.service.js.
+    if (!asset) {
+      throw createError(
+        404,
+        "Asset not found"
+      );
+    }
+
+    // ==========================================
+    // 5. IDENTIFY FIRST SEND OR RESEND
+    // ==========================================
+
+    const isResend = Boolean(
+      order.bankDetailsSentAt
+    );
+
+    const previousSentAt =
+      order.bankDetailsSentAt || null;
+
+    // ==========================================
+    // 6. SEND BANK DETAILS EMAIL
+    // ==========================================
+
     await sendManualBankDetailsEmail({
       email: user.email,
 
@@ -765,7 +1009,14 @@ export const sendManualBankDetails = async (req, res) => {
       expiresAt: order.expiresAt,
     });
 
+    // Email provider accepted the request.
     emailAccepted = true;
+
+    // ==========================================
+    // 7. UPDATE EMAIL STATUS
+    // ==========================================
+
+    const sentAt = new Date();
 
     const updated = await Order.findOneAndUpdate(
       {
@@ -775,13 +1026,12 @@ export const sendManualBankDetails = async (req, res) => {
 
         status: "PENDING_PAYMENT",
 
-        bankDetailsSentAt: null,
-
+        // Release only our own send lock.
         bankDetailsSendingAt: claimTime,
       },
       {
         $set: {
-          bankDetailsSentAt: new Date(),
+          bankDetailsSentAt: sentAt,
           bankDetailsSentBy: adminId,
         },
 
@@ -789,58 +1039,97 @@ export const sendManualBankDetails = async (req, res) => {
           bankDetailsSendingAt: "",
         },
       },
-      { new: true },
+      {
+        new: true,
+      }
     );
 
     if (!updated) {
       throw createError(
         409,
-        "Email sent but order update failed. Admin reconciliation required.",
+        "Email was accepted but order status could not be updated. Admin reconciliation is required."
       );
     }
 
     claimed = false;
 
+    // ==========================================
+    // 8. SUCCESS RESPONSE
+    // ==========================================
+
     return res.status(200).json({
       success: true,
 
-      message: "Bank details emailed successfully",
+      message: isResend
+        ? "Bank details email resent successfully"
+        : "Bank details emailed successfully",
 
       data: {
         orderId: updated._id,
 
         assetName: asset.assetName,
 
-        customerName: user.name || "Customer",
+        customerName:
+          user.name || "Customer",
 
         customerEmail: user.email,
 
-        paymentGateway: updated.paymentGateway,
+        paymentGateway:
+          updated.paymentGateway,
 
         status: updated.status,
 
-        totalAmount: updated.totalAmount,
+        totalAmount:
+          updated.totalAmount,
 
         bankDetailsSent: true,
 
-        bankDetailsSentAt: updated.bankDetailsSentAt,
+        email_sent: true,
 
-        expiresAt: updated.expiresAt,
+        isResend,
+
+        previousSentAt,
+
+        bankDetailsSentAt:
+          updated.bankDetailsSentAt,
+
+        expiresAt:
+          updated.expiresAt,
       },
     });
+
   } catch (error) {
-    if (claimed && !emailAccepted) {
-      // Keep the send lock when delivery is uncertain.
-      // Check mail provider logs before unlocking.
-      console.error("MANUAL BANK EMAIL NEEDS RECONCILIATION:", {
-        orderId,
-        error: error.message,
-      });
+    // ==========================================
+    // 9. HANDLE EMAIL ERRORS
+    // ==========================================
+
+    if (claimed) {
+      // Do not automatically remove the lock.
+      //
+      // The mail server may have accepted an email
+      // before the connection failed.
+      //
+      // An admin should inspect provider logs and
+      // reconcile the order before clearing the lock.
+
+      console.error(
+        "MANUAL BANK EMAIL RECONCILIATION REQUIRED:",
+        {
+          orderId,
+          emailAccepted,
+          error: error.message,
+        }
+      );
     }
 
-    return handleError(res, error, "SEND MANUAL BANK DETAILS");
+    return handleError(
+      res,
+      error,
+      "SEND MANUAL BANK DETAILS"
+    );
   }
 };
+
 
 // ============================================================
 // 3. CUSTOMER SUBMITS PAYMENT PROOF
