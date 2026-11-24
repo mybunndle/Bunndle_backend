@@ -843,6 +843,7 @@ export const createManualOrder = async (req, res) => {
 // };
 
 
+
 export const sendManualBankDetails = async (req, res) => {
   const adminId = getUserId(req);
   const { orderId } = req.params;
@@ -872,9 +873,11 @@ export const sendManualBankDetails = async (req, res) => {
     const existingOrder = await Order.findOne({
       _id: orderId,
       paymentGateway: "MANUAL",
-    }).select(
-      "_id status expiresAt bankDetailsSentAt bankDetailsSendingAt"
-    );
+    })
+      .select(
+        "_id status expiresAt bankDetailsSentAt bankDetailsSendingAt"
+      )
+      .lean();
 
     if (!existingOrder) {
       throw createError(
@@ -883,16 +886,27 @@ export const sendManualBankDetails = async (req, res) => {
       );
     }
 
-    if (existingOrder.status !== "PENDING_PAYMENT") {
+    const allowedStatuses = [
+      "PENDING_PAYMENT",
+      "PENDING_VERIFICATION",
+    ];
+
+    if (!allowedStatuses.includes(existingOrder.status)) {
       throw createError(
         409,
-        "Bank details can only be sent for pending payment orders"
+        "Bank details cannot be sent for completed, rejected or expired orders"
       );
     }
 
+    // An unsubmitted order must still be within its payment window.
+    // PENDING_VERIFICATION can be resent after the payment
+    // window because proof was submitted earlier.
     if (
-      !existingOrder.expiresAt ||
-      new Date(existingOrder.expiresAt).getTime() <= Date.now()
+      existingOrder.status === "PENDING_PAYMENT" &&
+      (
+        !existingOrder.expiresAt ||
+        new Date(existingOrder.expiresAt).getTime() <= Date.now()
+      )
     ) {
       throw createError(
         409,
@@ -903,12 +917,12 @@ export const sendManualBankDetails = async (req, res) => {
     if (existingOrder.bankDetailsSendingAt) {
       throw createError(
         409,
-        "Bank details email is already being processed. Please check the email delivery status."
+        "Bank details email is already being processed. Please check delivery status before retrying."
       );
     }
 
     // ==========================================
-    // 3. ATOMIC SEND LOCK
+    // 3. ATOMIC EMAIL SEND LOCK
     // ==========================================
 
     claimTime = new Date();
@@ -919,15 +933,21 @@ export const sendManualBankDetails = async (req, res) => {
 
         paymentGateway: "MANUAL",
 
-        status: "PENDING_PAYMENT",
+        $or: [
+          {
+            status: "PENDING_PAYMENT",
+            expiresAt: { $gt: claimTime },
+          },
+          {
+            status: "PENDING_VERIFICATION",
+          },
+        ],
 
-        expiresAt: { $gt: claimTime },
-
-        // Prevent concurrent email requests.
+        // Prevent concurrent sends.
         bankDetailsSendingAt: null,
 
-        // No bankDetailsSentAt restriction.
-        // Resending is allowed.
+        // Do not require bankDetailsSentAt to be null.
+        // This allows repeated emails.
       },
       {
         $set: {
@@ -942,7 +962,7 @@ export const sendManualBankDetails = async (req, res) => {
     if (!order) {
       throw createError(
         409,
-        "Order is expired, no longer pending, or another email request is in progress"
+        "Order is not eligible for bank details email or another email request is in progress"
       );
     }
 
@@ -980,9 +1000,7 @@ export const sendManualBankDetails = async (req, res) => {
     // 5. IDENTIFY FIRST SEND OR RESEND
     // ==========================================
 
-    const isResend = Boolean(
-      order.bankDetailsSentAt
-    );
+    const isResend = Boolean(order.bankDetailsSentAt);
 
     const previousSentAt =
       order.bankDetailsSentAt || null;
@@ -1024,9 +1042,14 @@ export const sendManualBankDetails = async (req, res) => {
 
         paymentGateway: "MANUAL",
 
-        status: "PENDING_PAYMENT",
+        status: {
+          $in: [
+            "PENDING_PAYMENT",
+            "PENDING_VERIFICATION",
+          ],
+        },
 
-        // Release only our own send lock.
+        // Only release our own lock.
         bankDetailsSendingAt: claimTime,
       },
       {
@@ -1047,7 +1070,7 @@ export const sendManualBankDetails = async (req, res) => {
     if (!updated) {
       throw createError(
         409,
-        "Email was accepted but order status could not be updated. Admin reconciliation is required."
+        "Email was accepted but order update failed. Admin reconciliation required."
       );
     }
 
@@ -1069,18 +1092,15 @@ export const sendManualBankDetails = async (req, res) => {
 
         assetName: asset.assetName,
 
-        customerName:
-          user.name || "Customer",
+        customerName: user.name || "Customer",
 
         customerEmail: user.email,
 
-        paymentGateway:
-          updated.paymentGateway,
+        paymentGateway: updated.paymentGateway,
 
         status: updated.status,
 
-        totalAmount:
-          updated.totalAmount,
+        totalAmount: updated.totalAmount,
 
         bankDetailsSent: true,
 
@@ -1090,27 +1110,21 @@ export const sendManualBankDetails = async (req, res) => {
 
         previousSentAt,
 
-        bankDetailsSentAt:
-          updated.bankDetailsSentAt,
+        bankDetailsSentAt: updated.bankDetailsSentAt,
 
-        expiresAt:
-          updated.expiresAt,
+        expiresAt: updated.expiresAt,
       },
     });
 
   } catch (error) {
     // ==========================================
-    // 9. HANDLE EMAIL ERRORS
+    // 9. ERROR HANDLING
     // ==========================================
 
     if (claimed) {
-      // Do not automatically remove the lock.
-      //
-      // The mail server may have accepted an email
-      // before the connection failed.
-      //
-      // An admin should inspect provider logs and
-      // reconcile the order before clearing the lock.
+      // Keep the send lock if delivery is uncertain.
+      // SMTP may accept an email even if the request
+      // subsequently fails. Reconcile before unlocking.
 
       console.error(
         "MANUAL BANK EMAIL RECONCILIATION REQUIRED:",
@@ -1129,6 +1143,7 @@ export const sendManualBankDetails = async (req, res) => {
     );
   }
 };
+
 
 
 // ============================================================
