@@ -12,6 +12,7 @@ import {
   approveManualPayment,
   rejectManualPayment,
   markManualReviewRequired,
+  checkPendingManualOrder,
 } from "../controllers/manualPaymentController.js";
 
 import authenticate from "../middleware/auth_validate.js";
@@ -151,5 +152,6 @@ router.patch("/admin/:manualPaymentId/reject", rejectManualPayment);
 
 // Mark payment for further review.
 router.patch("/admin/:manualPaymentId/review", markManualReviewRequired);
+router.get("/orders/check-pending/:assetId", checkPendingManualOrder);
 
 export default router;

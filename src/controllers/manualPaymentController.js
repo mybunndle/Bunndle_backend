@@ -2002,3 +2002,175 @@ export const markManualReviewRequired = async (req, res) => {
     return handleError(res, error, "MARK MANUAL REVIEW");
   }
 };
+
+
+
+// ============================================================
+// CHECK EXISTING PENDING MANUAL ORDER
+// ============================================================
+
+export const checkPendingManualOrder = async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { assetId } = req.params;
+
+    // ==========================================
+    // 1. VALIDATION
+    // ==========================================
+
+    if (!isId(userId)) {
+      throw createError(
+        401,
+        "User authentication required"
+      );
+    }
+
+    if (!isId(assetId)) {
+      throw createError(
+        400,
+        "Invalid asset ID"
+      );
+    }
+
+    // ==========================================
+    // 2. FIND EXISTING PENDING ORDER
+    // ==========================================
+
+    const now = new Date();
+
+    const order = await Order.findOne({
+      userId,
+      assetId,
+
+      paymentGateway: "MANUAL",
+
+      $or: [
+        {
+          status: "PENDING_PAYMENT",
+          expiresAt: { $gt: now },
+        },
+        {
+          status: "PENDING_VERIFICATION",
+        },
+      ],
+    })
+      .select(
+        "_id userId assetId paymentGateway fractions amountPerFraction totalAmount status expiresAt bankDetailsSentAt createdAt"
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // ==========================================
+    // 3. NO PENDING ORDER
+    // ==========================================
+
+    if (!order) {
+      return res.status(200).json({
+        success: true,
+
+        pendingOrderExists: false,
+
+        message:
+          "No pending manual payment order found for this asset",
+
+        order: null,
+      });
+    }
+
+    // ==========================================
+    // 4. GET MANUAL PAYMENT IF SUBMITTED
+    // ==========================================
+
+    const manualPayment = await ManualPayment.findOne({
+      orderId: order._id,
+    })
+      .select(
+        "_id status transactionId amountPaid paymentMethod submittedAt"
+      )
+      .lean();
+
+    const bankDetailsSent = Boolean(
+      order.bankDetailsSentAt
+    );
+
+    const proofSubmitted =
+      order.status === "PENDING_VERIFICATION" ||
+      Boolean(manualPayment);
+
+    // ==========================================
+    // 5. RETURN EXISTING ORDER
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+
+      pendingOrderExists: true,
+
+      message:
+        "Pending manual payment order already exists for this asset",
+     email_sent: Boolean(order.bankDetailsSentAt),
+      order: {
+        orderId: order._id,
+
+        userId: order.userId,
+
+        assetId: order.assetId,
+
+        paymentGateway: order.paymentGateway,
+
+        fractions: order.fractions,
+
+        amountPerFraction:
+          order.amountPerFraction,
+
+        totalAmount: order.totalAmount,
+
+        status: order.status,
+
+        expiresAt: order.expiresAt,
+
+        bankDetailsSent,
+
+        bankDetailsSentAt:
+          order.bankDetailsSentAt,
+
+        proofSubmitted,
+
+        canUploadProof:
+          order.status === "PENDING_PAYMENT" &&
+          bankDetailsSent &&
+          new Date(order.expiresAt).getTime() >
+            Date.now(),
+
+        manualPayment: manualPayment
+          ? {
+              manualPaymentId: manualPayment._id,
+
+              status: manualPayment.status,
+
+              transactionId:
+                manualPayment.transactionId,
+
+              amountPaid:
+                manualPayment.amountPaid,
+
+              paymentMethod:
+                manualPayment.paymentMethod,
+
+              submittedAt:
+                manualPayment.submittedAt,
+            }
+          : null,
+
+        createdAt: order.createdAt,
+      },
+    });
+  } catch (error) {
+    return handleError(
+      res,
+      error,
+      "CHECK PENDING MANUAL ORDER"
+    );
+  }
+};
+
