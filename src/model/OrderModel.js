@@ -22,12 +22,12 @@ const orderSchema = new mongoose.Schema(
     },
     paymentGateway: {
       type: String,
-      enum: ["RAZORPAY", "CASHFREE","PAYU", "MANUAL"],
+      enum: ["RAZORPAY", "CASHFREE", "PAYU", "MANUAL"],
       default: "RAZORPAY",
       required: true,
       index: true,
     },
-      payuTxnId: {
+    payuTxnId: {
       type: String,
       default: null,
       trim: true,
@@ -52,14 +52,31 @@ const orderSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    bankDetailsSentAt: {
+      type: Date,
+      default: null,
+    },
+
+    bankDetailsSentBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    bankDetailsSendingAt: {
+      type: Date,
+      default: null,
+    },
 
     status: {
       type: String,
       enum: [
         "PENDING_PAYMENT",
+        "PENDING_VERIFICATION",
         "PAYMENT_SUCCESS",
         "COMPLETED",
         "FAILED",
+        "REJECTED",
         "EXPIRED",
       ],
       default: "PENDING_PAYMENT",
@@ -82,6 +99,5 @@ orderSchema.index(
     },
   },
 );
-
 
 export default mongoose.model("Order", orderSchema);

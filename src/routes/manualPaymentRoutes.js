@@ -3,6 +3,8 @@ import multer from "multer";
 
 import {
   createManualOrder,
+  sendManualBankDetails,
+  listPendingBankDetailOrders,
   submitManualProof,
   getMyManualPayments,
   listAdminManualPayments,
@@ -12,43 +14,41 @@ import {
   markManualReviewRequired,
 } from "../controllers/manualPaymentController.js";
 
-// Replace with your actual authentication middleware.
-import { authenticate } from "../middlewares/authenticate.js";
-
-import { requireAdmin } from "../middlewares/requireAdmin.js";
+import authenticate from "../middleware/auth_validate.js";
+import requireAdmin from "../middleware/admin_validate.js";
 
 const router = Router();
 
-// ============================================
-// IMAGE VALIDATION
-// ============================================
+// ============================================================
+// MULTER PAYMENT SCREENSHOT UPLOAD
+// ============================================================
 
-const upload = multer({
+const screenshotUpload = multer({
   storage: multer.memoryStorage(),
 
   limits: {
     fileSize: 5 * 1024 * 1024,
     files: 3,
-    fields: 10,
+    fields: 12,
   },
 
   fileFilter(req, file, cb) {
-    const allowedTypes = ["image/jpeg", "image/png"];
+    const allowed = ["image/jpeg", "image/png"];
 
-    if (!allowedTypes.includes(file.mimetype)) {
-      return cb(new Error("Only JPG and PNG screenshots allowed"));
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error("Only JPG and PNG payment screenshots are allowed"));
     }
 
     cb(null, true);
   },
 }).array("paymentScreenshots", 3);
 
-// ============================================
-// UPLOAD MIDDLEWARE
-// ============================================
+// ============================================================
+// VALIDATE UPLOADED SCREENSHOTS
+// ============================================================
 
-const acceptScreenshots = (req, res, next) => {
-  upload(req, res, (error) => {
+const uploadProof = (req, res, next) => {
+  screenshotUpload(req, res, (error) => {
     if (error) {
       return res.status(400).json({
         success: false,
@@ -56,55 +56,100 @@ const acceptScreenshots = (req, res, next) => {
       });
     }
 
-    if (!req.files || req.files.length < 1 || req.files.length > 3) {
+    if (
+      !Array.isArray(req.files) ||
+      req.files.length < 1 ||
+      req.files.length > 3
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Upload minimum 1 and maximum 3 screenshots",
+        message: "Upload 1–3 screenshots",
       });
+    }
+
+    for (const file of req.files) {
+      const buffer = file.buffer;
+
+      const jpeg =
+        buffer.length >= 3 &&
+        buffer[0] === 0xff &&
+        buffer[1] === 0xd8 &&
+        buffer[2] === 0xff;
+
+      const png =
+        buffer.length >= 8 &&
+        buffer
+          .subarray(0, 8)
+          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+
+      const validImage =
+        (file.mimetype === "image/jpeg" && jpeg) ||
+        (file.mimetype === "image/png" && png);
+
+      if (!validImage) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid screenshot content",
+        });
+      }
     }
 
     next();
   });
 };
 
-// ============================================
+// ============================================================
 // AUTHENTICATION
-// ============================================
+// ============================================================
 
 router.use(authenticate);
 
-// ============================================
-// USER ROUTES
-// ============================================
+// ============================================================
+// CUSTOMER ROUTES
+// ============================================================
 
-// Create manual payment order
-router.post("/orders", createManualOrder);
+// Customer creates manual order.
+router.post("/create_order", createManualOrder);
 
-// Upload screenshots + UTR
-router.post("/orders/:orderId/proof", acceptScreenshots, submitManualProof);
+// Customer submits payment proof after bank email.
+router.post("/orders/proof/:orderId", uploadProof, submitManualProof);
 
-// Get own manual payments
+// Customer gets their manual payments/orders.
 router.get("/my", getMyManualPayments);
 
-// ============================================
+// ============================================================
 // ADMIN AUTHORIZATION
-// ============================================
+// ============================================================
 
 router.use("/admin", requireAdmin);
 
-// List manual payments
+// ============================================================
+// ADMIN: BANK DETAILS
+// ============================================================
+
+// List orders that need bank details.
+router.get("/admin/orders/pending-bank-details", listPendingBankDetailOrders);
+
+// Email bank details for an order.
+router.patch("/admin/orders/:orderId/send-bank-details", sendManualBankDetails);
+
+// ============================================================
+// ADMIN: PAYMENT VERIFICATION
+// ============================================================
+
+// List submitted manual payments.
 router.get("/admin", listAdminManualPayments);
 
-// View payment details
-router.get("/admin/:paymentId", getAdminManualPayment);
+// Get one manual payment including screenshots.
+router.get("/admin/:manualPaymentId", getAdminManualPayment);
 
-// Approve payment
-router.patch("/admin/:paymentId/approve", approveManualPayment);
+// Approve verified bank payment.
+router.patch("/admin/:manualPaymentId/approve", approveManualPayment);
 
-// Reject payment
-router.patch("/admin/:paymentId/reject", rejectManualPayment);
+// Reject manual payment.
+router.patch("/admin/:manualPaymentId/reject", rejectManualPayment);
 
-// Mark for review
-router.patch("/admin/:paymentId/review", markManualReviewRequired);
+// Mark payment for further review.
+router.patch("/admin/:manualPaymentId/review", markManualReviewRequired);
 
 export default router;

@@ -2,33 +2,36 @@ import mongoose from "mongoose";
 
 import Order from "../model/OrderModel.js";
 import Payment from "../model/PaymentModel.js";
+import ManualPayment from "../model/manualPaymentModel.js";
 import Asset from "../model/coAssetModel.js";
 import PurchaseHistory from "../model/purchaseHistoryModel.js";
 import User from "../model/userModel.js";
 
 import { allocateFractions } from "../services/ownerShipService.js";
-
-import { sendPurchaseConfirmation } from "../services/finalizeSuccessfulPaymentService.js";
+import { sendPaymentWelcomeEmail } from "../services/paymentWelcomeEmail.service.js";
+import { sendManualBankDetailsEmail } from "../services/manualBankDetailsEmail.js";
 
 import {
-  uploadManualPaymentScreenshot,
+  uploadManualPaymentScreenshot,  
   deleteManualPaymentScreenshot,
   getManualPaymentScreenshotSignedUrl,
-} from "../services/imageStorage.service.js";
+} from "../services/imageStorageService.js";
 
-import { notifyManualPayment } from "../services/manualPaymentNotification.js";
+import sendEmail from "../utils/email.js";
 
-// ======================================================
+// ============================================================
 // CONSTANTS
-// ======================================================
+// ============================================================
 
-const MANUAL_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
 
 const REVIEW_STATUSES = ["PENDING_VERIFICATION", "REVIEW_REQUIRED"];
 
-// ======================================================
+const PAYMENT_METHODS = ["BANK_TRANSFER", "IMPS", "NEFT", "RTGS", "UPI"];
+
+// ============================================================
 // COMMON HELPERS
-// ======================================================
+// ============================================================
 
 const createError = (statusCode, message) => {
   const error = new Error(message);
@@ -36,38 +39,38 @@ const createError = (statusCode, message) => {
   return error;
 };
 
-const isValidId = (id) => mongoose.isValidObjectId(id);
+const isId = (value) => mongoose.isValidObjectId(value);
 
 const getUserId = (req) => req.user?._id || req.user?.id || req.user?.userId;
 
 const sameId = (a, b) => String(a) === String(b);
 
 const normalizeUTR = (value) =>
-  String(value || "")
+  String(value ?? "")
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "");
 
 const toPaise = (value) => {
-  if (value === null || value === undefined || value === "") {
+  if (value === undefined || value === null || value === "") {
     return NaN;
   }
 
-  const number = Number(value);
+  const amount = Number(value);
 
-  if (!Number.isFinite(number) || number <= 0) {
+  if (!Number.isFinite(amount) || amount <= 0) {
     return NaN;
   }
 
-  return Math.round(number * 100);
+  return Math.round(amount * 100);
 };
 
 const validDate = (value) => {
   if (!value) return false;
 
-  const date = new Date(value);
+  const time = new Date(value).getTime();
 
-  return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now() + 600000;
+  return Number.isFinite(time) && time <= Date.now() + 10 * 60 * 1000;
 };
 
 const handleError = (res, error, label) => {
@@ -86,19 +89,315 @@ const handleError = (res, error, label) => {
   });
 };
 
-const sendEmailSafely = async (type, details) => {
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const formatINR = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+  }).format(Number(value));
+
+const getBankDetails = () => {
+  const bank = {
+    accountHolder: process.env.MANUAL_BANK_ACCOUNT_HOLDER?.trim(),
+
+    bankName: process.env.MANUAL_BANK_NAME?.trim(),
+
+    accountNumber: process.env.MANUAL_BANK_ACCOUNT_NUMBER?.trim(),
+
+    ifsc: process.env.MANUAL_BANK_IFSC?.trim(),
+  };
+
+  if (Object.values(bank).some((value) => !value)) {
+    throw createError(500, "Manual payment bank configuration is incomplete");
+  }
+
+  return bank;
+};
+
+// ============================================================
+// COMMON EMAIL HELPERS
+// ============================================================
+
+const sendNotification = async ({ to, subject, heading, body }) => {
+  if (!to) return;
+
+  const html = `
+    <div style="
+      max-width:650px;
+      margin:auto;
+      padding:24px;
+      font-family:Arial,sans-serif;
+      color:#172033;
+      line-height:1.7;
+    ">
+      <h2 style="color:#124f8c;">
+        ${escapeHtml(heading)}
+      </h2>
+
+      ${body}
+
+      <p>
+        Best Regards,<br>
+        <strong>Team Bunndle</strong><br>
+        A Brand of Agent Alliance Private Limited
+      </p>
+
+      <p>
+        <a href="https://www.bunndle.in/">
+          www.bunndle.in
+        </a>
+      </p>
+    </div>
+  `;
+
+  return sendEmail({
+    to,
+    subject,
+    html,
+  });
+};
+
+const sendEmailSafely = async (fn, id) => {
   try {
-    await notifyManualPayment(type, details);
+    await fn(id);
   } catch (error) {
-    console.error(`MANUAL PAYMENT EMAIL ${type} FAILED:`, error);
+    console.error("MANUAL PAYMENT EMAIL ERROR:", error);
   }
 };
 
-// ======================================================
-// ASSET SNAPSHOT
-// ======================================================
+// ============================================================
+// MANUAL ORDER CREATED EMAIL
+// ============================================================
 
-const buildAssetSnapshot = (asset, fractionsPurchased) => ({
+const sendManualOrderCreatedEmail = async (orderId) => {
+  const order = await Order.findById(orderId).lean();
+
+  if (!order) return;
+
+  const [user, asset] = await Promise.all([
+    User.findById(order.userId).select("name email").lean(),
+
+    Asset.findById(order.assetId).select("assetName").lean(),
+  ]);
+
+  await sendNotification({
+    to: user?.email,
+
+    subject: "Manual Payment Order Created – Bunndle",
+
+    heading: "Your Manual Payment Order",
+
+    body: `
+      <p>
+        Dear ${escapeHtml(user?.name || "Customer")},
+      </p>
+
+      <p>
+        Your manual payment order has been created
+        successfully. Our team will share the official
+        bank account details through email.
+      </p>
+
+      <p>
+        <strong>Asset:</strong>
+        ${escapeHtml(asset?.assetName)}
+      </p>
+
+      <p>
+        <strong>Order ID:</strong>
+        ${escapeHtml(order._id)}
+      </p>
+
+      <p>
+        <strong>Amount Payable:</strong>
+        ${escapeHtml(formatINR(order.totalAmount))}
+      </p>
+
+      <p>
+        Please wait for the official bank payment
+        instructions before transferring funds.
+      </p>
+    `,
+  });
+
+  await sendNotification({
+    to: process.env.MANUAL_PAYMENT_ADMIN_EMAIL,
+
+    subject: "New Manual Order – Bank Details Required",
+
+    heading: "Manual Payment Order Created",
+
+    body: `
+      <p>A new manual payment order requires bank details.</p>
+
+      <p>
+        <strong>Customer:</strong>
+        ${escapeHtml(user?.name)}
+      </p>
+
+      <p>
+        <strong>Email:</strong>
+        ${escapeHtml(user?.email)}
+      </p>
+
+      <p>
+        <strong>Order ID:</strong>
+        ${escapeHtml(order._id)}
+      </p>
+
+      <p>
+        <strong>Amount:</strong>
+        ${escapeHtml(formatINR(order.totalAmount))}
+      </p>
+    `,
+  });
+};
+
+// ============================================================
+// MANUAL PAYMENT PROOF SUBMITTED EMAIL
+// ============================================================
+
+const sendManualPaymentSubmittedEmail = async (orderId) => {
+  const order = await Order.findById(orderId).lean();
+
+  if (!order) return;
+
+  const [user, manual] = await Promise.all([
+    User.findById(order.userId).select("name email").lean(),
+
+    ManualPayment.findOne({ orderId })
+      .select("transactionId amountPaid")
+      .lean(),
+  ]);
+
+  await sendNotification({
+    to: user?.email,
+
+    subject: "Payment Proof Received – Bunndle",
+
+    heading: "Payment Proof Submitted",
+
+    body: `
+      <p>
+        Dear ${escapeHtml(user?.name || "Customer")},
+      </p>
+
+      <p>
+        We have received your payment proof.
+        Our team will verify the actual bank credit.
+      </p>
+
+      <p>
+        <strong>Transaction ID:</strong>
+        ${escapeHtml(manual?.transactionId)}
+      </p>
+
+      <p>
+        <strong>Amount:</strong>
+        ${escapeHtml(formatINR(manual?.amountPaid || 0))}
+      </p>
+
+      <p>
+        This email acknowledges receipt of your proof.
+        It is not a payment success confirmation.
+      </p>
+    `,
+  });
+
+  await sendNotification({
+    to: process.env.MANUAL_PAYMENT_ADMIN_EMAIL,
+
+    subject: "Manual Payment Awaiting Verification – Bunndle",
+
+    heading: "New Manual Payment Proof",
+
+    body: `
+      <p>
+        A customer has submitted manual payment proof.
+      </p>
+
+      <p>
+        <strong>Order:</strong>
+        ${escapeHtml(orderId)}
+      </p>
+
+      <p>
+        <strong>UTR:</strong>
+        ${escapeHtml(manual?.transactionId)}
+      </p>
+
+      <p>
+        <strong>Amount:</strong>
+        ${escapeHtml(formatINR(manual?.amountPaid || 0))}
+      </p>
+
+      <p>
+        Verify the transaction in the official
+        bank statement before approving.
+      </p>
+    `,
+  });
+};
+
+// ============================================================
+// MANUAL PAYMENT REJECTED EMAIL
+// EXISTING FUNCTION PRESERVED
+// ============================================================
+
+const sendManualPaymentRejectedEmail = async (orderId) => {
+  const order = await Order.findById(orderId).lean();
+
+  if (!order) return;
+
+  const [user, manual] = await Promise.all([
+    User.findById(order.userId).select("name email").lean(),
+
+    ManualPayment.findOne({ orderId }).select("rejectionReason").lean(),
+  ]);
+
+  await sendNotification({
+    to: user?.email,
+
+    subject: "Manual Payment Verification Update – Bunndle",
+
+    heading: "Payment Verification Unsuccessful",
+
+    body: `
+      <p>
+        Dear ${escapeHtml(user?.name || "Customer")},
+      </p>
+
+      <p>
+        Your manual payment could not be verified.
+      </p>
+
+      <p>
+        <strong>Reason:</strong>
+        ${escapeHtml(
+          manual?.rejectionReason || "Payment verification unsuccessful",
+        )}
+      </p>
+
+      <p>
+        If you believe the funds were transferred,
+        please contact Bunndle support.
+      </p>
+    `,
+  });
+};
+
+// ============================================================
+// PURCHASE HISTORY SNAPSHOT HELPERS
+// ============================================================
+
+const buildAssetSnapshot = (asset, count) => ({
   assetName: asset.assetName ?? null,
   assetCode: asset.assetCode ?? null,
   specification: asset.specification ?? null,
@@ -115,44 +414,182 @@ const buildAssetSnapshot = (asset, fractionsPurchased) => ({
   totalMonthlyRental:
     asset.rentalAmountPerFraction == null
       ? null
-      : Number(asset.rentalAmountPerFraction) * fractionsPurchased,
+      : Number(asset.rentalAmountPerFraction) * count,
 
   durationMonths: asset.durationMonths ?? null,
   lockInMonths: asset.lockInMonths ?? null,
 });
 
-// ======================================================
-// 1. CREATE MANUAL ORDER
-// POST /api/manual-payments/orders
-//
-// IMPORTANT:
-// NO FRACTIONS RESERVED HERE.
-// ======================================================
+const buildUserSnapshot = (user) => ({
+  name: user?.name || user?.fullName || null,
 
-export const createManualOrder = async (req, res) => {
-  const userId = getUserId(req);
+  email: user?.email || null,
 
-  const { assetId, fractions } = req.body || {};
+  phone: user?.fullPhone || user?.phone || user?.mobile || null,
+});
 
-  if (
-    !isValidId(userId) ||
-    !isValidId(assetId) ||
-    !Number.isSafeInteger(Number(fractions)) ||
-    Number(fractions) <= 0
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Valid assetId and fractions are required",
-    });
-  }
+// ============================================================
+// SUCCESSFUL PAYMENT EMAIL
+// REUSES EXISTING PAYMENT WELCOME EMAIL SERVICE
+// ============================================================
 
-  const count = Number(fractions);
-  const session = await mongoose.startSession();
+const sendPurchaseConfirmation = async (purchaseHistoryId) => {
+  const purchase = await PurchaseHistory.findOneAndUpdate(
+    {
+      _id: purchaseHistoryId,
+      paymentStatus: "SUCCESS",
 
-  let order = null;
-  let payment = null;
+      $or: [
+        { paymentEmailStatus: "PENDING" },
+        { paymentEmailStatus: { $exists: false } },
+      ],
+    },
+    {
+      $set: {
+        paymentEmailStatus: "SENDING",
+        paymentEmailClaimedAt: new Date(),
+      },
+
+      $inc: {
+        paymentEmailAttempts: 1,
+      },
+    },
+    { new: true },
+  );
+
+  if (!purchase) return;
 
   try {
+    const [user, asset] = await Promise.all([
+      User.findById(purchase.userId).select("name fullName email").lean(),
+
+      Asset.findById(purchase.assetId)
+        .select(
+          "assetName assetCode assetCost totalFractions rentalAmountPerFraction",
+        )
+        .lean(),
+    ]);
+
+    const userSnapshot = purchase.userSnapshot || {};
+    const assetSnapshot = purchase.assetSnapshot || {};
+
+    const name =
+      userSnapshot.name || user?.name || user?.fullName || "Customer";
+
+    const email = userSnapshot.email || user?.email;
+
+    if (!email) {
+      throw new Error("Customer email not found");
+    }
+
+    const count = Number(purchase.fractionsPurchased);
+
+    const rental =
+      assetSnapshot.rentalAmountPerFraction ??
+      asset?.rentalAmountPerFraction ??
+      null;
+
+    const totalRental =
+      assetSnapshot.totalMonthlyRental ??
+      (rental == null ? null : Number(rental) * count);
+
+    await sendPaymentWelcomeEmail({
+      email,
+      name,
+
+      assetName: assetSnapshot.assetName ?? asset?.assetName ?? null,
+
+      assetCode: assetSnapshot.assetCode ?? asset?.assetCode ?? null,
+
+      registeredLegalOwner: name,
+
+      totalAssetValue: assetSnapshot.assetCost ?? asset?.assetCost ?? null,
+
+      totalFractions:
+        assetSnapshot.totalFractions ?? asset?.totalFractions ?? null,
+
+      amountPerFraction: purchase.amountPerFraction,
+
+      fractionsPurchased: count,
+
+      totalAmountPaid: purchase.totalAmount,
+
+      acquisitionDate: purchase.paidAt || purchase.createdAt,
+
+      monthlyRentalPerFraction: rental,
+
+      totalFixedMonthlyRental: totalRental,
+
+      transactionId: purchase.transactionReference,
+    });
+
+    await PurchaseHistory.updateOne(
+      {
+        _id: purchase._id,
+        paymentEmailStatus: "SENDING",
+      },
+      {
+        $set: {
+          paymentEmailStatus: "SENT",
+          paymentEmailSentAt: new Date(),
+        },
+
+        $unset: {
+          paymentEmailClaimedAt: "",
+        },
+      },
+    );
+  } catch (error) {
+    console.error("MANUAL PAYMENT SUCCESS EMAIL FAILED:", error);
+
+    await PurchaseHistory.updateOne(
+      {
+        _id: purchase._id,
+        paymentEmailStatus: "SENDING",
+      },
+      {
+        $set: {
+          paymentEmailStatus: "FAILED",
+        },
+
+        $unset: {
+          paymentEmailClaimedAt: "",
+        },
+      },
+    );
+  }
+};
+
+// ============================================================
+// 1. CREATE MANUAL ORDER
+// ============================================================
+
+export const createManualOrder = async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    if (!isId(userId)) {
+      throw createError(401, "User authentication required");
+    }
+
+    const { assetId, fractions } = req.body || {};
+
+    if (!isId(assetId)) {
+      throw createError(400, "Invalid asset ID");
+    }
+
+    const count = Number(fractions);
+
+    if (
+      fractions === undefined ||
+      fractions === null ||
+      fractions === "" ||
+      !Number.isSafeInteger(count) ||
+      count <= 0
+    ) {
+      throw createError(400, "Invalid fraction count");
+    }
+
     const user = await User.findById(userId).select(
       "name email kycStatus isKycVerified",
     );
@@ -165,139 +602,239 @@ export const createManualOrder = async (req, res) => {
       throw createError(403, "KYC verification is required");
     }
 
-    await session.withTransaction(async () => {
-      // Check available fractions only.
-      // Do not modify Asset inventory.
-
-      const asset = await Asset.findOne({
-        _id: assetId,
-        status: "ACTIVE",
-        availableFractions: {
-          $gte: count,
-        },
-      }).session(session);
-
-      if (!asset) {
-        throw createError(409, "Requested fractions are unavailable");
-      }
-
-      // Follow Bunndle's existing
-      // 80% public purchase restriction.
-
-      const publicLimit = Math.floor(Number(asset.totalFractions) * 0.8);
-
-      const publicUsed =
-        Number(asset.totalFractions) - Number(asset.availableFractions);
-
-      if (!Number.isFinite(publicLimit) || publicUsed + count > publicLimit) {
-        throw createError(409, "Maximum public ownership limit reached");
-      }
-
-      const amountPerFraction = Number(asset.amountPerFraction);
-
-      const totalAmount = amountPerFraction * count;
-
-      if (!Number.isFinite(toPaise(totalAmount))) {
-        throw createError(400, "Invalid asset payment amount");
-      }
-
-      const expiresAt = new Date(Date.now() + MANUAL_EXPIRY_MS);
-
-      // =====================================
-      // CREATE ORDER
-      // =====================================
-
-      const createdOrders = await Order.create(
-        [
-          {
-            userId,
-            assetId,
-
-            paymentGateway: "MANUAL",
-
-            fractions: count,
-
-            amountPerFraction,
-            totalAmount,
-
-            status: "PENDING_PAYMENT",
-            expiresAt,
-          },
-        ],
-        { session },
-      );
-
-      order = createdOrders[0];
-
-      // =====================================
-      // CREATE PENDING PAYMENT
-      // =====================================
-
-      const createdPayments = await Payment.create(
-        [
-          {
-            userId,
-            orderId: order._id,
-
-            paymentGateway: "MANUAL",
-
-            amount: totalAmount,
-            currency: "INR",
-
-            status: "PENDING",
-
-            manualVerificationStatus: "NOT_SUBMITTED",
-
-            manualScreenshots: [],
-          },
-        ],
-        { session },
-      );
-
-      payment = createdPayments[0];
+    const asset = await Asset.findOne({
+      _id: assetId,
+      status: "ACTIVE",
+      availableFractions: { $gte: count },
     });
 
-    await sendEmailSafely("INSTRUCTIONS", {
-      orderId: String(order._id),
+    if (!asset) {
+      throw createError(409, "Requested fractions are unavailable");
+    }
+
+    const amountPerFraction = Number(asset.amountPerFraction);
+
+    const totalAmount = amountPerFraction * count;
+
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      throw createError(400, "Invalid asset price");
+    }
+
+    const expiresAt = new Date(Date.now() + SEVEN_DAYS);
+
+    // No inventory reservation here.
+    // No Payment or ManualPayment record.
+    const order = await Order.create({
+      userId,
+      assetId,
+
+      paymentGateway: "MANUAL",
+
+      fractions: count,
+      amountPerFraction,
+      totalAmount,
+
+      status: "PENDING_PAYMENT",
+
+      expiresAt,
     });
+
+    await sendEmailSafely(sendManualOrderCreatedEmail, order._id);
 
     return res.status(201).json({
       success: true,
 
-      message: "Manual payment order created successfully",
+      message:
+        "Manual order created successfully. Our team will share bank account details through email.",
 
-      orderId: order._id,
-      paymentId: payment._id,
+      order: {
+        orderId: order._id,
+        assetId: order.assetId,
+        assetName: asset.assetName,
 
-      assetId,
-      fractions: count,
+        fractions: order.fractions,
+        amountPerFraction: order.amountPerFraction,
+
+        totalAmount: order.totalAmount,
+
+        paymentGateway: order.paymentGateway,
+
+        status: order.status,
+        expiresAt: order.expiresAt,
+
+        fractionsReserved: false,
+      },
+    });
+  } catch (error) {
+    return handleError(res, error, "CREATE MANUAL ORDER");
+  }
+};
+
+// ============================================================
+// 2. ADMIN SENDS BANK DETAILS EMAIL
+// ============================================================
+
+export const sendManualBankDetails = async (req, res) => {
+  const adminId = getUserId(req);
+  const { orderId } = req.params;
+
+  if (!isId(adminId) || !isId(orderId)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid admin or order ID",
+    });
+  }
+
+  let claimed = false;
+  let emailAccepted = false;
+
+  try {
+    // Validate .env configuration.
+    getBankDetails();
+
+    const claimTime = new Date();
+
+    // Atomic claim prevents concurrent admin sends.
+    const order = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+
+        paymentGateway: "MANUAL",
+
+        status: "PENDING_PAYMENT",
+
+        bankDetailsSentAt: null,
+        bankDetailsSendingAt: null,
+
+        expiresAt: { $gt: claimTime },
+      },
+      {
+        $set: {
+          bankDetailsSendingAt: claimTime,
+        },
+      },
+      { new: true },
+    );
+
+    if (!order) {
+      throw createError(
+        409,
+        "Order expired, bank details already sent, or sending is in progress",
+      );
+    }
+
+    claimed = true;
+
+    const [user, asset] = await Promise.all([
+      User.findById(order.userId).select("name email").lean(),
+
+      Asset.findById(order.assetId).select("assetName").lean(),
+    ]);
+
+    if (!user?.email || !asset) {
+      throw createError(409, "Customer email or asset not found");
+    }
+
+    // Uses manualBankDetailsTemplate.js
+    // through manualBankDetailsEmail.service.js.
+    await sendManualBankDetailsEmail({
+      email: user.email,
+
+      customerName: user.name || "Customer",
+
+      orderId: String(order._id),
+
+      assetName: asset.assetName,
+
+      fractions: order.fractions,
 
       amountPerFraction: order.amountPerFraction,
 
       totalAmount: order.totalAmount,
 
-      paymentGateway: "MANUAL",
-
-      orderStatus: "PENDING_PAYMENT",
-
       expiresAt: order.expiresAt,
+    });
 
-      note: "Fractions are not reserved for manual payments. Availability will be checked again during admin approval.",
+    emailAccepted = true;
+
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+
+        paymentGateway: "MANUAL",
+
+        status: "PENDING_PAYMENT",
+
+        bankDetailsSentAt: null,
+
+        bankDetailsSendingAt: claimTime,
+      },
+      {
+        $set: {
+          bankDetailsSentAt: new Date(),
+          bankDetailsSentBy: adminId,
+        },
+
+        $unset: {
+          bankDetailsSendingAt: "",
+        },
+      },
+      { new: true },
+    );
+
+    if (!updated) {
+      throw createError(
+        409,
+        "Email sent but order update failed. Admin reconciliation required.",
+      );
+    }
+
+    claimed = false;
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Bank details emailed successfully",
+
+      data: {
+        orderId: updated._id,
+
+        assetName: asset.assetName,
+
+        customerName: user.name || "Customer",
+
+        customerEmail: user.email,
+
+        paymentGateway: updated.paymentGateway,
+
+        status: updated.status,
+
+        totalAmount: updated.totalAmount,
+
+        bankDetailsSent: true,
+
+        bankDetailsSentAt: updated.bankDetailsSentAt,
+
+        expiresAt: updated.expiresAt,
+      },
     });
   } catch (error) {
-    return handleError(res, error, "CREATE MANUAL ORDER");
-  } finally {
-    await session.endSession();
+    if (claimed && !emailAccepted) {
+      // Keep the send lock when delivery is uncertain.
+      // Check mail provider logs before unlocking.
+      console.error("MANUAL BANK EMAIL NEEDS RECONCILIATION:", {
+        orderId,
+        error: error.message,
+      });
+    }
+
+    return handleError(res, error, "SEND MANUAL BANK DETAILS");
   }
 };
 
-// ======================================================
-// 2. SUBMIT PAYMENT PROOF
-// POST /api/manual-payments/orders/:orderId/proof
-//
-// 1 TO 3 SCREENSHOTS
-// NO FRACTION ALLOCATION
-// ======================================================
+// ============================================================
+// 3. CUSTOMER SUBMITS PAYMENT PROOF
+// ============================================================
 
 export const submitManualProof = async (req, res) => {
   const userId = getUserId(req);
@@ -308,13 +845,11 @@ export const submitManualProof = async (req, res) => {
 
   const utr = normalizeUTR(transactionId);
 
-  const allowedMethods = ["BANK_TRANSFER", "IMPS", "NEFT", "RTGS", "UPI"];
-
   if (
-    !isValidId(userId) ||
-    !isValidId(orderId) ||
+    !isId(userId) ||
+    !isId(orderId) ||
     !/^[A-Z0-9-]{6,80}$/.test(utr) ||
-    !allowedMethods.includes(paymentMethod) ||
+    !PAYMENT_METHODS.includes(paymentMethod) ||
     !Number.isFinite(toPaise(amountPaid)) ||
     !validDate(paymentDate) ||
     !Array.isArray(req.files) ||
@@ -324,14 +859,14 @@ export const submitManualProof = async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        "Valid UTR, payment method, date, amount and 1-3 screenshots required",
+        "Valid UTR, payment method, amount, date and 1–3 screenshots required",
     });
   }
 
-  const uploads = [];
-  const session = await mongoose.startSession();
+  const uploadedFiles = [];
 
   let committed = false;
+  let session = null;
 
   try {
     const order = await Order.findOne({
@@ -344,37 +879,36 @@ export const submitManualProof = async (req, res) => {
       throw createError(404, "Manual order not found");
     }
 
+    // Current flow:
+    // PENDING_PAYMENT is valid only after
+    // bank details have been emailed.
     if (
       order.status !== "PENDING_PAYMENT" ||
+      !order.bankDetailsSentAt ||
       !order.expiresAt ||
       new Date(order.expiresAt).getTime() <= Date.now()
     ) {
       throw createError(
         409,
-        "Order expired or no longer accepts payment proof",
+        "Bank details not sent or order no longer accepts payment proof",
       );
     }
 
     if (toPaise(amountPaid) !== toPaise(order.totalAmount)) {
       throw createError(
         409,
-        "Paid amount does not match order amount. Contact support for reconciliation.",
+        "Payment amount mismatch. Contact support for reconciliation.",
       );
     }
 
-    // =====================================
-    // UPLOAD SCREENSHOTS TO IMAGEKIT
-    // =====================================
-
+    // Upload screenshots.
     for (const file of req.files) {
       const uploaded = await uploadManualPaymentScreenshot(file, orderId);
 
-      uploads.push(uploaded);
+      uploadedFiles.push(uploaded);
     }
 
-    // =====================================
-    // UPDATE PAYMENT + ORDER
-    // =====================================
+    session = await mongoose.startSession();
 
     await session.withTransaction(async () => {
       const now = new Date();
@@ -387,6 +921,10 @@ export const submitManualProof = async (req, res) => {
           paymentGateway: "MANUAL",
 
           status: "PENDING_PAYMENT",
+
+          bankDetailsSentAt: {
+            $ne: null,
+          },
 
           expiresAt: {
             $gt: now,
@@ -404,116 +942,119 @@ export const submitManualProof = async (req, res) => {
       );
 
       if (!updatedOrder) {
-        throw createError(409, "Order expired or already submitted");
+        throw createError(
+          409,
+          "Order expired or payment proof already submitted",
+        );
       }
 
-      const payment = await Payment.findOne({
+      const existing = await ManualPayment.findOne({
         orderId,
-        userId,
-
-        paymentGateway: "MANUAL",
-
-        status: "PENDING",
       }).session(session);
 
-      if (!payment || payment.manualVerificationStatus !== "NOT_SUBMITTED") {
-        throw createError(409, "Payment is not awaiting proof");
+      if (existing) {
+        throw createError(409, "Payment proof already submitted");
       }
 
-      // Prevent duplicate UTR.
-
-      const duplicate = await Payment.findOne({
-        _id: {
-          $ne: payment._id,
-        },
-
-        paymentGateway: "MANUAL",
-
-        manualTransactionId: utr,
+      const duplicateUTR = await ManualPayment.findOne({
+        normalizedTransactionId: utr,
       }).session(session);
 
-      if (duplicate) {
+      if (duplicateUTR) {
         throw createError(409, "Transaction reference already submitted");
       }
 
-      payment.manualTransactionId = utr;
+      await ManualPayment.create(
+        [
+          {
+            userId,
+            orderId,
 
-      payment.manualPaymentMethod = paymentMethod;
+            assetId: updatedOrder.assetId,
 
-      payment.manualPaymentDate = new Date(paymentDate);
+            fractions: updatedOrder.fractions,
 
-      payment.manualAmountPaid = Number(amountPaid);
+            amountPerFraction: updatedOrder.amountPerFraction,
 
-      payment.manualScreenshots = uploads.map((item) => ({
-        url: item.url,
-        fileId: item.fileId,
-      }));
+            totalAmount: updatedOrder.totalAmount,
 
-      payment.manualSubmittedAt = now;
+            amountPaid: Number(amountPaid),
 
-      payment.manualVerificationStatus = "PENDING_VERIFICATION";
+            paymentMethod,
 
-      await payment.save({ session });
+            transactionId: utr,
+
+            normalizedTransactionId: utr,
+
+            paymentDate: new Date(paymentDate),
+
+            paymentScreenshots: uploadedFiles.map((file) => ({
+              url: file.url,
+              fileId: file.fileId,
+              uploadedAt: now,
+            })),
+
+            status: "PENDING_VERIFICATION",
+
+            submittedAt: now,
+
+            expiresAt: updatedOrder.expiresAt,
+          },
+        ],
+        { session },
+      );
     });
 
     committed = true;
 
-    await sendEmailSafely("SUBMITTED", {
-      orderId,
-      utr,
-    });
+    await sendEmailSafely(sendManualPaymentSubmittedEmail, orderId);
 
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
 
-      message: "Payment proof submitted. Awaiting admin verification.",
+      message: "Payment proof submitted successfully",
 
       orderId,
 
-      manualTransactionId: utr,
+      transactionId: utr,
 
-      screenshotCount: uploads.length,
+      screenshotCount: uploadedFiles.length,
 
-      orderStatus: "PENDING_VERIFICATION",
+      status: "PENDING_VERIFICATION",
 
-      paymentStatus: "PENDING",
-
-      manualVerificationStatus: "PENDING_VERIFICATION",
+      note: "Payment and ownership are subject to admin verification.",
     });
   } catch (error) {
     return handleError(res, error, "SUBMIT MANUAL PROOF");
   } finally {
-    await session.endSession();
-
-    // Remove newly uploaded screenshots
-    // only when the DB transaction did not commit.
+    if (session) {
+      await session.endSession();
+    }
 
     if (!committed) {
       await Promise.allSettled(
-        uploads.map((item) => deleteManualPaymentScreenshot(item.fileId)),
+        uploadedFiles.map((file) => deleteManualPaymentScreenshot(file.fileId)),
       );
     }
   }
 };
 
-// ======================================================
-// 3. GET USER MANUAL PAYMENTS
-// GET /api/manual-payments/my
-// ======================================================
+// ============================================================
+// 4. CUSTOMER: GET MY MANUAL PAYMENTS
+// ============================================================
 
 export const getMyManualPayments = async (req, res) => {
   try {
     const userId = getUserId(req);
 
-    if (!isValidId(userId)) {
+    if (!isId(userId)) {
       throw createError(401, "Authentication required");
     }
 
-    const payments = await Payment.find({
+    const payments = await ManualPayment.find({
       userId,
-      paymentGateway: "MANUAL",
     })
-      .select("-manualScreenshots -bankCreditReference")
+      .select("-paymentScreenshots")
       .populate({
         path: "orderId",
         select: "assetId fractions totalAmount status expiresAt createdAt",
@@ -522,68 +1063,122 @@ export const getMyManualPayments = async (req, res) => {
       .limit(100)
       .lean();
 
+    const ordersAwaitingProof = await Order.find({
+      userId,
+      paymentGateway: "MANUAL",
+
+      status: "PENDING_PAYMENT",
+    })
+      .select(
+        "assetId fractions totalAmount status expiresAt bankDetailsSentAt createdAt",
+      )
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
     return res.status(200).json({
       success: true,
-      count: payments.length,
+
       payments,
+
+      ordersAwaitingProof: ordersAwaitingProof.map((order) => ({
+        ...order,
+
+        bankDetailsSent: Boolean(order.bankDetailsSentAt),
+
+        canUploadProof:
+          Boolean(order.bankDetailsSentAt) &&
+          new Date(order.expiresAt).getTime() > Date.now(),
+      })),
     });
   } catch (error) {
     return handleError(res, error, "GET MY MANUAL PAYMENTS");
   }
 };
 
-// ======================================================
-// 4. ADMIN - LIST MANUAL PAYMENTS
-// GET /api/manual-payments/admin
-// ======================================================
+// ============================================================
+// 5. ADMIN: LIST ORDERS WAITING FOR BANK DETAILS
+// ============================================================
+
+export const listPendingBankDetailOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      paymentGateway: "MANUAL",
+
+      status: "PENDING_PAYMENT",
+
+      bankDetailsSentAt: null,
+
+      expiresAt: {
+        $gt: new Date(),
+      },
+    })
+      .select(
+        "userId assetId fractions amountPerFraction totalAmount status expiresAt bankDetailsSendingAt bankDetailsSentAt createdAt",
+      )
+      .populate("userId", "name email phone")
+      .populate("assetId", "assetName assetCode")
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+
+      count: orders.length,
+
+      orders,
+    });
+  } catch (error) {
+    return handleError(res, error, "LIST PENDING BANK DETAIL ORDERS");
+  }
+};
+
+// ============================================================
+// 6. ADMIN: LIST MANUAL PAYMENT PROOFS
+// ============================================================
 
 export const listAdminManualPayments = async (req, res) => {
   try {
-    const allowedStatuses = [
-      "NOT_SUBMITTED",
-      "PENDING_VERIFICATION",
-      "REVIEW_REQUIRED",
-      "APPROVED",
-      "REJECTED",
-      "EXPIRED",
-    ];
-
-    const filter = {
-      paymentGateway: "MANUAL",
-    };
+    const filter = {};
 
     if (req.query.status) {
-      if (!allowedStatuses.includes(req.query.status)) {
-        throw createError(400, "Invalid verification status");
+      const validStatuses = [...REVIEW_STATUSES, "APPROVED", "REJECTED"];
+
+      if (!validStatuses.includes(req.query.status)) {
+        throw createError(400, "Invalid payment status");
       }
 
-      filter.manualVerificationStatus = req.query.status;
+      filter.status = req.query.status;
     }
 
-    const page = Math.max(1, Math.min(100000, Number(req.query.page) || 1));
+    const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
 
-    const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 20));
+    const limit = Math.max(
+      1,
+      Math.min(50, Math.floor(Number(req.query.limit) || 20)),
+    );
 
     const [payments, total] = await Promise.all([
-      Payment.find(filter)
-        .select("-manualScreenshots")
-        .populate({
-          path: "orderId",
-          select: "assetId fractions totalAmount status expiresAt",
-        })
+      ManualPayment.find(filter)
+        .select("-paymentScreenshots")
+        .populate("userId", "name email phone")
+        .populate("orderId", "fractions totalAmount status expiresAt")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
 
-      Payment.countDocuments(filter),
+      ManualPayment.countDocuments(filter),
     ]);
 
     return res.status(200).json({
       success: true,
-      total,
+
       page,
       limit,
+      total,
+
       payments,
     });
   } catch (error) {
@@ -591,71 +1186,66 @@ export const listAdminManualPayments = async (req, res) => {
   }
 };
 
-// ======================================================
-// 5. ADMIN - PAYMENT DETAILS
-// GET /api/manual-payments/admin/:paymentId
-// ======================================================
+// ============================================================
+// 7. ADMIN: GET PAYMENT DETAILS + SCREENSHOTS
+// ============================================================
 
 export const getAdminManualPayment = async (req, res) => {
   try {
-    const { paymentId } = req.params;
+    const { manualPaymentId } = req.params;
 
-    if (!isValidId(paymentId)) {
-      throw createError(400, "Invalid payment ID");
+    if (!isId(manualPaymentId)) {
+      throw createError(400, "Invalid manual payment ID");
     }
 
-    const payment = await Payment.findOne({
-      _id: paymentId,
-      paymentGateway: "MANUAL",
-    }).lean();
+    const manual = await ManualPayment.findById(manualPaymentId).lean();
 
-    if (!payment) {
+    if (!manual) {
       throw createError(404, "Manual payment not found");
     }
 
-    const order = await Order.findById(payment.orderId).lean();
+    const [order, user, asset] = await Promise.all([
+      Order.findById(manual.orderId).lean(),
 
-    const user = await User.findById(payment.userId)
-      .select("name email phone")
-      .lean();
+      User.findById(manual.userId).select("name email phone").lean(),
 
-    // Signed URLs only available
-    // through admin-authenticated endpoint.
+      Asset.findById(manual.assetId)
+        .select("assetName assetCode totalFractions availableFractions")
+        .lean(),
+    ]);
 
-    const screenshots = (payment.manualScreenshots || []).map((item) => ({
-      fileId: item.fileId,
+    const screenshots = (manual.paymentScreenshots || []).map((file) => ({
+      fileId: file.fileId,
 
-      signedUrl: getManualPaymentScreenshotSignedUrl(item.url),
+      signedUrl: getManualPaymentScreenshotSignedUrl(file.url),
     }));
 
     return res.status(200).json({
       success: true,
 
-      payment: {
-        ...payment,
-        manualScreenshots: screenshots,
+      manualPayment: {
+        ...manual,
+
+        paymentScreenshots: screenshots,
       },
 
       order,
       user,
+      asset,
     });
   } catch (error) {
     return handleError(res, error, "GET ADMIN MANUAL PAYMENT");
   }
 };
 
-// ======================================================
-// 6. ADMIN - APPROVE MANUAL PAYMENT
-// PATCH /api/manual-payments/admin/:paymentId/approve
-//
-// IMPORTANT:
-// MANUAL ORDERS HAVE NO RESERVED FRACTIONS.
-// DEDUCT AVAILABLE FRACTIONS ONLY ON APPROVAL.
-// ======================================================
+// ============================================================
+// 8. ADMIN: APPROVE MANUAL PAYMENT
+// ============================================================
 
 export const approveManualPayment = async (req, res) => {
   const adminId = getUserId(req);
-  const { paymentId } = req.params;
+
+  const { manualPaymentId } = req.params;
 
   const {
     bankCreditVerified,
@@ -667,10 +1257,10 @@ export const approveManualPayment = async (req, res) => {
 
   const creditRef = normalizeUTR(bankCreditReference);
 
-  if (!isValidId(adminId) || !isValidId(paymentId)) {
+  if (!isId(adminId) || !isId(manualPaymentId)) {
     return res.status(400).json({
       success: false,
-      message: "Invalid admin or payment ID",
+      message: "Invalid admin or manual payment ID",
     });
   }
 
@@ -682,63 +1272,65 @@ export const approveManualPayment = async (req, res) => {
   ) {
     return res.status(400).json({
       success: false,
-      message: "Verified bank credit reference, amount and date are required",
+      message: "Verified bank credit details required",
     });
   }
-
-  // Admin must independently confirm bank credit
-  // using the official bank statement.
-  // Do not treat this request flag as bank proof.
 
   const session = await mongoose.startSession();
 
   let purchaseHistoryId = null;
+  let paymentId = null;
+
   let alreadyProcessed = false;
 
   try {
     await session.withTransaction(async () => {
-      const payment = await Payment.findOne({
-        _id: paymentId,
-        paymentGateway: "MANUAL",
-      }).session(session);
+      const manual =
+        await ManualPayment.findById(manualPaymentId).session(session);
 
-      if (!payment) {
+      if (!manual) {
         throw createError(404, "Manual payment not found");
       }
 
-      const order = await Order.findById(payment.orderId).session(session);
+      const order = await Order.findById(manual.orderId).session(session);
 
       if (
         !order ||
         order.paymentGateway !== "MANUAL" ||
-        !sameId(order.userId, payment.userId)
+        !sameId(order.userId, manual.userId) ||
+        !sameId(order.assetId, manual.assetId)
       ) {
-        throw createError(409, "Order and payment mismatch");
+        throw createError(409, "Order and manual payment mismatch");
       }
 
-      // ====================================
-      // PREVENT DUPLICATE FINALIZATION
-      // ====================================
+      // ----------------------------------------
+      // IDEMPOTENCY
+      // ----------------------------------------
 
-      const existingPurchase = await PurchaseHistory.findOne({
-        $or: [{ orderId: order._id }, { paymentId: payment._id }],
-      }).session(session);
+      if (manual.status === "APPROVED" && order.status === "COMPLETED") {
+        const existing = await PurchaseHistory.findOne({
+          orderId: order._id,
+        }).session(session);
 
-      if (existingPurchase) {
         if (
-          order.status !== "COMPLETED" ||
-          payment.status !== "SUCCESS" ||
-          payment.manualVerificationStatus !== "APPROVED" ||
-          !sameId(existingPurchase.orderId, order._id) ||
-          !sameId(existingPurchase.paymentId, payment._id)
+          !existing ||
+          !manual.paymentId ||
+          !sameId(existing.paymentId, manual.paymentId)
         ) {
-          throw createError(
-            409,
-            "Previous finalization inconsistent. Reconciliation required.",
-          );
+          throw createError(409, "Previous approval requires reconciliation");
         }
 
-        purchaseHistoryId = existingPurchase._id;
+        const existingPayment = await Payment.findById(
+          manual.paymentId,
+        ).session(session);
+
+        if (!existingPayment || existingPayment.status !== "SUCCESS") {
+          throw createError(409, "Existing payment is inconsistent");
+        }
+
+        paymentId = existingPayment._id;
+
+        purchaseHistoryId = existing._id;
 
         alreadyProcessed = true;
         return;
@@ -746,91 +1338,71 @@ export const approveManualPayment = async (req, res) => {
 
       if (
         order.status !== "PENDING_VERIFICATION" ||
-        payment.status !== "PENDING" ||
-        !REVIEW_STATUSES.includes(payment.manualVerificationStatus)
+        !REVIEW_STATUSES.includes(manual.status)
       ) {
         throw createError(409, "Payment is not awaiting approval");
       }
 
-      // ====================================
-      // CHECK SUBMITTED PAYMENT DETAILS
-      // ====================================
+      // ----------------------------------------
+      // VALIDATE SUBMITTED PROOF
+      // ----------------------------------------
 
       if (
-        !payment.manualTransactionId ||
-        !Array.isArray(payment.manualScreenshots) ||
-        payment.manualScreenshots.length < 1 ||
-        payment.manualScreenshots.length > 3
+        !manual.normalizedTransactionId ||
+        !manual.paymentScreenshots ||
+        manual.paymentScreenshots.length < 1 ||
+        manual.paymentScreenshots.length > 3
       ) {
         throw createError(409, "UTR or payment screenshots missing");
       }
 
-      if (
-        toPaise(order.totalAmount) !== toPaise(payment.amount) ||
-        toPaise(payment.amount) !== toPaise(payment.manualAmountPaid) ||
-        toPaise(payment.amount) !== toPaise(bankCreditAmount)
-      ) {
-        throw createError(
-          409,
-          "Bank credit amount does not match order amount",
-        );
+      if (normalizeUTR(manual.normalizedTransactionId) !== creditRef) {
+        throw createError(409, "Bank reference does not match submitted UTR");
       }
 
       if (
-        normalizeUTR(payment.manualTransactionId) !== creditRef &&
-        !String(remark || "").trim()
+        toPaise(order.totalAmount) !== toPaise(manual.totalAmount) ||
+        toPaise(order.totalAmount) !== toPaise(manual.amountPaid) ||
+        toPaise(order.totalAmount) !== toPaise(bankCreditAmount)
       ) {
-        throw createError(
-          409,
-          "Bank reference mismatch. Admin reconciliation remark required.",
-        );
+        throw createError(409, "Verified amount does not match order");
       }
 
-      // ====================================
-      // PREVENT DUPLICATE BANK REFERENCE
-      // ====================================
-
-      const usedReference = await Payment.findOne({
-        _id: { $ne: payment._id },
-
-        paymentGateway: "MANUAL",
-
-        $or: [
-          {
-            manualTransactionId: creditRef,
-          },
-          {
-            bankCreditReference: creditRef,
-          },
-        ],
+      const existingPayment = await Payment.findOne({
+        orderId: order._id,
       }).session(session);
 
-      if (usedReference) {
-        throw createError(
-          409,
-          "Bank transaction already associated with another payment",
-        );
+      if (existingPayment) {
+        throw createError(409, "Payment already exists for this order");
       }
 
-      // ====================================
-      // CHECK FRACTIONS
-      // ====================================
+      const existingPurchase = await PurchaseHistory.findOne({
+        orderId: order._id,
+      }).session(session);
+
+      if (existingPurchase) {
+        throw createError(409, "Purchase history already exists");
+      }
+
+      // ----------------------------------------
+      // ALLOCATE AVAILABLE FRACTIONS
+      // ----------------------------------------
 
       const count = Number(order.fractions);
 
       if (!Number.isSafeInteger(count) || count <= 0) {
-        throw createError(409, "Invalid order fraction count");
+        throw createError(409, "Invalid fraction count");
       }
 
-      // ====================================
-      // DEDUCT AVAILABLE FRACTIONS
-      // MANUAL: NO RESERVED FRACTIONS
-      // ====================================
+      // IMPORTANT:
+      // This deduction assumes allocateFractions()
+      // does NOT deduct availableFractions.
+      //
+      // Confirm this against ownerShipService.js.
+      // Available fractions are checked at approval,
+      // because manual orders do not reserve them.
 
-      // This matches the 80% public limit
-      // already used in Bunndle's online orders.
-
-      const assetResult = await Asset.findOneAndUpdate(
+      const asset = await Asset.findOneAndUpdate(
         {
           _id: order.assetId,
 
@@ -838,24 +1410,6 @@ export const approveManualPayment = async (req, res) => {
 
           availableFractions: {
             $gte: count,
-          },
-
-          $expr: {
-            $lte: [
-              {
-                $add: [
-                  {
-                    $subtract: ["$totalFractions", "$availableFractions"],
-                  },
-                  count,
-                ],
-              },
-              {
-                $floor: {
-                  $multiply: ["$totalFractions", 0.8],
-                },
-              },
-            ],
           },
         },
         {
@@ -869,19 +1423,12 @@ export const approveManualPayment = async (req, res) => {
         },
       );
 
-      if (!assetResult) {
+      if (!asset) {
         throw createError(
           409,
-          "Fractions unavailable or public ownership limit reached. Keep payment for reconciliation or refund.",
+          "Fractions unavailable. Verified payment requires reconciliation or refund.",
         );
       }
-
-      // ====================================
-      // ALLOCATE OWNERSHIP
-      // ====================================
-
-      // Must be session-aware and must not
-      // decrement availableFractions again.
 
       await allocateFractions({
         assetId: order.assetId,
@@ -890,68 +1437,48 @@ export const approveManualPayment = async (req, res) => {
         session,
       });
 
-      // ====================================
-      // UPDATE PAYMENT
-      // ====================================
+      // ----------------------------------------
+      // CREATE SUCCESSFUL PAYMENT
+      // ----------------------------------------
 
       const paidAt = new Date(bankCreditDate);
 
-      payment.status = "SUCCESS";
-      payment.paidAt = paidAt;
+      const [payment] = await Payment.create(
+        [
+          {
+            userId: order.userId,
+            orderId: order._id,
 
-      payment.paymentMethod = "BANK_TRANSFER";
+            paymentGateway: "MANUAL",
 
-      payment.manualVerificationStatus = "APPROVED";
+            amount: Number(order.totalAmount),
 
-      payment.manualVerifiedBy = adminId;
-      payment.manualVerifiedAt = new Date();
+            currency: "INR",
 
-      payment.bankCreditVerified = true;
+            status: "SUCCESS",
 
-      payment.bankCreditReference = creditRef;
+            paymentMethod: manual.paymentMethod,
 
-      payment.bankCreditAmount = Number(bankCreditAmount);
+            paidAt,
+          },
+        ],
+        { session },
+      );
 
-      payment.bankCreditDate = paidAt;
+      paymentId = payment._id;
 
-      payment.manualAdminRemark = String(remark || "").trim() || null;
-
-      await payment.save({ session });
-
-      // ====================================
-      // COMPLETE ORDER
-      // ====================================
-
-      order.status = "COMPLETED";
-
-      await order.save({ session });
-
-      // ====================================
-      // USER SNAPSHOT
-      // ====================================
+      // ----------------------------------------
+      // CREATE PURCHASE HISTORY
+      // ----------------------------------------
 
       const user = await User.findById(order.userId)
         .select("name fullName email phone mobile fullPhone")
         .session(session)
         .lean();
 
-      const userSnapshot = {
-        name: user?.name || user?.fullName || null,
-
-        email: user?.email || null,
-
-        phone: user?.fullPhone || user?.phone || user?.mobile || null,
-      };
-
-      // ====================================
-      // ASSET SNAPSHOT
-      // ====================================
-
-      const assetSnapshot = buildAssetSnapshot(assetResult, count);
-
-      // ====================================
-      // CREATE PURCHASE HISTORY
-      // ====================================
+      if (!user) {
+        throw createError(404, "Customer not found");
+      }
 
       const [purchase] = await PurchaseHistory.create(
         [
@@ -970,12 +1497,13 @@ export const approveManualPayment = async (req, res) => {
 
             totalAmount: Number(order.totalAmount),
 
-            userSnapshot,
-            assetSnapshot,
+            userSnapshot: buildUserSnapshot(user),
+
+            assetSnapshot: buildAssetSnapshot(asset, count),
 
             paymentStatus: "SUCCESS",
 
-            paymentMethod: "BANK_TRANSFER",
+            paymentMethod: manual.paymentMethod,
 
             transactionReference: creditRef,
 
@@ -986,6 +1514,7 @@ export const approveManualPayment = async (req, res) => {
             paymentEmailAttempts: 0,
 
             paymentEmailSentAt: null,
+
             paymentEmailClaimedAt: null,
           },
         ],
@@ -993,29 +1522,69 @@ export const approveManualPayment = async (req, res) => {
       );
 
       purchaseHistoryId = purchase._id;
+
+      // ----------------------------------------
+      // COMPLETE ORDER
+      // ----------------------------------------
+
+      order.status = "COMPLETED";
+
+      await order.save({
+        session,
+      });
+
+      // ----------------------------------------
+      // APPROVE MANUAL PAYMENT
+      // ----------------------------------------
+
+      const now = new Date();
+
+      manual.status = "APPROVED";
+
+      manual.bankCreditVerified = true;
+
+      manual.bankCreditReference = creditRef;
+
+      manual.bankCreditAmount = Number(bankCreditAmount);
+
+      manual.bankCreditDate = paidAt;
+
+      manual.verifiedBy = adminId;
+
+      manual.verifiedAt = now;
+
+      manual.approvedAt = now;
+
+      manual.adminRemark = String(remark || "").trim() || null;
+
+      manual.paymentId = payment._id;
+
+      manual.purchaseHistoryId = purchase._id;
+
+      await manual.save({
+        session,
+      });
     });
 
-    // ====================================
-    // SEND CONFIRMATION AFTER COMMIT
-    // ====================================
+    // ----------------------------------------
+    // SEND SUCCESS EMAIL AFTER COMMIT
+    // ----------------------------------------
 
     if (!alreadyProcessed && purchaseHistoryId) {
-      try {
-        await sendPurchaseConfirmation(purchaseHistoryId);
-      } catch (emailError) {
-        console.error("MANUAL PURCHASE EMAIL ERROR:", emailError);
-      }
+      await sendEmailSafely(sendPurchaseConfirmation, purchaseHistoryId);
     }
 
     return res.status(200).json({
       success: true,
+
       alreadyProcessed,
 
+      manualPaymentId,
       paymentId,
       purchaseHistoryId,
 
       message:
-        "Manual payment approved. Ownership and purchase history created successfully.",
+        "Manual payment approved. Ownership, Payment and PurchaseHistory created successfully.",
     });
   } catch (error) {
     return handleError(res, error, "APPROVE MANUAL PAYMENT");
@@ -1024,29 +1593,27 @@ export const approveManualPayment = async (req, res) => {
   }
 };
 
-// ======================================================
-// 7. ADMIN - REJECT MANUAL PAYMENT
-// PATCH /api/manual-payments/admin/:paymentId/reject
-//
-// NO FRACTIONS TO RELEASE.
-// ======================================================
+// ============================================================
+// 9. ADMIN: REJECT MANUAL PAYMENT
+// ============================================================
 
 export const rejectManualPayment = async (req, res) => {
   const adminId = getUserId(req);
-  const { paymentId } = req.params;
+
+  const { manualPaymentId } = req.params;
 
   const { reason, bankCreditConfirmedAbsent } = req.body || {};
 
   if (
-    !isValidId(adminId) ||
-    !isValidId(paymentId) ||
+    !isId(adminId) ||
+    !isId(manualPaymentId) ||
     !String(reason || "").trim() ||
     bankCreditConfirmedAbsent !== true
   ) {
     return res.status(400).json({
       success: false,
-      message:
-        "Valid payment ID, reason and confirmation of absent bank credit required",
+
+      message: "Rejection reason and bank non-receipt confirmation required",
     });
   }
 
@@ -1057,84 +1624,96 @@ export const rejectManualPayment = async (req, res) => {
 
   try {
     await session.withTransaction(async () => {
-      const payment = await Payment.findOne({
-        _id: paymentId,
-        paymentGateway: "MANUAL",
-      }).session(session);
+      const manual =
+        await ManualPayment.findById(manualPaymentId).session(session);
 
-      if (!payment) {
+      if (!manual) {
         throw createError(404, "Manual payment not found");
       }
 
-      const order = await Order.findById(payment.orderId).session(session);
+      const order = await Order.findById(manual.orderId).session(session);
 
       if (
         !order ||
         order.paymentGateway !== "MANUAL" ||
-        !sameId(order.userId, payment.userId)
+        !sameId(order.userId, manual.userId) ||
+        !sameId(order.assetId, manual.assetId)
       ) {
         throw createError(409, "Order mismatch");
       }
 
       orderId = order._id;
 
-      if (
-        payment.manualVerificationStatus === "REJECTED" &&
-        order.status === "REJECTED"
-      ) {
+      if (manual.status === "REJECTED" && order.status === "REJECTED") {
         alreadyRejected = true;
         return;
       }
 
       if (
         order.status !== "PENDING_VERIFICATION" ||
-        payment.status !== "PENDING" ||
-        !REVIEW_STATUSES.includes(payment.manualVerificationStatus)
+        !REVIEW_STATUSES.includes(manual.status)
       ) {
-        throw createError(409, "Payment cannot be rejected in current status");
+        throw createError(409, "Payment cannot be rejected");
       }
 
-      const existingPurchase = await PurchaseHistory.exists({
+      const purchase = await PurchaseHistory.exists({
         orderId: order._id,
       }).session(session);
 
-      if (existingPurchase) {
+      if (purchase) {
         throw createError(409, "Purchase already exists");
       }
 
-      // No inventory updates.
-      // Manual orders never reserved fractions.
+      const payment = await Payment.findOne({
+        orderId: order._id,
+        status: "SUCCESS",
+      }).session(session);
 
-      payment.status = "FAILED";
+      if (payment) {
+        throw createError(409, "Successful payment already exists");
+      }
 
-      payment.manualVerificationStatus = "REJECTED";
+      const now = new Date();
 
-      payment.manualRejectionReason = String(reason).trim();
+      // No inventory modifications.
+      manual.status = "REJECTED";
 
-      payment.manualVerifiedBy = adminId;
-      payment.manualVerifiedAt = new Date();
+      manual.rejectionReason = String(reason).trim();
 
-      await payment.save({ session });
+      manual.rejectedAt = now;
+
+      manual.verifiedBy = adminId;
+      manual.verifiedAt = now;
+
+      manual.bankCreditVerified = false;
+
+      await manual.save({
+        session,
+      });
 
       order.status = "REJECTED";
 
-      await order.save({ session });
+      await order.save({
+        session,
+      });
     });
 
-    if (!alreadyRejected) {
-      await sendEmailSafely("REJECTED", {
-        orderId: String(orderId),
-        reason: String(reason).trim(),
-      });
+    // Email only after transaction commits.
+    if (!alreadyRejected && orderId) {
+      await sendEmailSafely(sendManualPaymentRejectedEmail, orderId);
     }
 
     return res.status(200).json({
       success: true,
+
       alreadyRejected,
 
       orderId,
+      manualPaymentId,
 
-      message: "Manual payment rejected successfully",
+      message: alreadyRejected
+        ? "Manual payment was already rejected"
+        : "Manual payment rejected successfully",
     });
   } catch (error) {
     return handleError(res, error, "REJECT MANUAL PAYMENT");
@@ -1143,49 +1722,51 @@ export const rejectManualPayment = async (req, res) => {
   }
 };
 
-// ======================================================
-// 8. ADMIN - MARK FOR REVIEW
-// PATCH /api/manual-payments/admin/:paymentId/review
-// ======================================================
+// ============================================================
+// 10. ADMIN: MARK PAYMENT REVIEW REQUIRED
+// ============================================================
 
 export const markManualReviewRequired = async (req, res) => {
   try {
-    const { paymentId } = req.params;
+    const { manualPaymentId } = req.params;
 
     const remark = String(req.body?.remark || "").trim();
 
-    if (!isValidId(paymentId) || !remark) {
-      throw createError(400, "Payment ID and remark required");
+    if (!isId(manualPaymentId) || !remark) {
+      throw createError(400, "Manual payment ID and remark required");
     }
 
-    const payment = await Payment.findOneAndUpdate(
+    const manual = await ManualPayment.findOneAndUpdate(
       {
-        _id: paymentId,
+        _id: manualPaymentId,
 
-        paymentGateway: "MANUAL",
-
-        status: "PENDING",
-
-        manualVerificationStatus: "PENDING_VERIFICATION",
+        status: "PENDING_VERIFICATION",
       },
       {
         $set: {
-          manualVerificationStatus: "REVIEW_REQUIRED",
+          status: "REVIEW_REQUIRED",
 
-          manualAdminRemark: remark,
+          adminRemark: remark,
         },
       },
-      { new: true },
+      {
+        new: true,
+        runValidators: true,
+      },
     );
 
-    if (!payment) {
+    if (!manual) {
       throw createError(409, "Payment is not pending verification");
     }
 
     return res.status(200).json({
       success: true,
 
-      message: "Payment marked for further review",
+      manualPaymentId,
+
+      status: manual.status,
+
+      message: "Manual payment marked for reconciliation",
     });
   } catch (error) {
     return handleError(res, error, "MARK MANUAL REVIEW");

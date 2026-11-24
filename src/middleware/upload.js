@@ -83,3 +83,40 @@ export const upload_web_AssetImages = multer({
   }
 });
 
+
+
+
+
+//
+// ============================================
+// MANUAL PAYMENT SCREENSHOT UPLOAD
+// ============================================
+//
+
+export const uploadManualPaymentScreenshots = multer({
+  storage: multer.memoryStorage(),
+
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5 MB per screenshot
+    files: 3,                  // Maximum 3 screenshots
+    fields: 12,
+  },
+
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = [
+      "image/jpeg",
+      "image/png",
+    ];
+
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      return cb(
+        new Error(
+          "Only JPG, JPEG and PNG payment screenshots are allowed"
+        ),
+        false
+      );
+    }
+
+    cb(null, true);
+  },
+});
