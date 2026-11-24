@@ -10,6 +10,10 @@ import User from "../model/userModel.js";
 import { allocateFractions } from "../services/ownerShipService.js";
 import { sendPaymentWelcomeEmail } from "../services/paymentWelcomeEmail.service.js";
 import { sendManualBankDetailsEmail } from "../services/manualBankDetailsEmail.js";
+import {
+  manualOrderCreatedTemplates,
+  manualPaymentSubmittedTemplates,
+} from "../utils/manualPaymentNotificationTemplates.js";
 
 import {
   uploadManualPaymentScreenshot,  
@@ -176,175 +180,181 @@ const sendEmailSafely = async (fn, id) => {
 // MANUAL ORDER CREATED EMAIL
 // ============================================================
 
+
 const sendManualOrderCreatedEmail = async (orderId) => {
   const order = await Order.findById(orderId).lean();
 
   if (!order) return;
 
   const [user, asset] = await Promise.all([
-    User.findById(order.userId).select("name email").lean(),
+    User.findById(order.userId)
+      .select("name email")
+      .lean(),
 
-    Asset.findById(order.assetId).select("assetName").lean(),
+    Asset.findById(order.assetId)
+      .select("assetName")
+      .lean(),
   ]);
 
-  await sendNotification({
-    to: user?.email,
-
-    subject: "Manual Payment Order Created – Bunndle",
-
-    heading: "Your Manual Payment Order",
-
-    body: `
-      <p>
-        Dear ${escapeHtml(user?.name || "Customer")},
-      </p>
-
-      <p>
-        Your manual payment order has been created
-        successfully. Our team will share the official
-        bank account details through email.
-      </p>
-
-      <p>
-        <strong>Asset:</strong>
-        ${escapeHtml(asset?.assetName)}
-      </p>
-
-      <p>
-        <strong>Order ID:</strong>
-        ${escapeHtml(order._id)}
-      </p>
-
-      <p>
-        <strong>Amount Payable:</strong>
-        ${escapeHtml(formatINR(order.totalAmount))}
-      </p>
-
-      <p>
-        Please wait for the official bank payment
-        instructions before transferring funds.
-      </p>
-    `,
+  const {
+    customerHtml,
+    adminHtml,
+  } = manualOrderCreatedTemplates({
+    customerName: user?.name || "Customer",
+    customerEmail: user?.email,
+    assetName: asset?.assetName,
+    orderId: String(order._id),
+    totalAmount: order.totalAmount,
   });
 
-  await sendNotification({
-    to: process.env.MANUAL_PAYMENT_ADMIN_EMAIL,
+  const notifications = [];
 
-    subject: "New Manual Order – Bank Details Required",
+  if (user?.email) {
+    notifications.push({
+      label: "customer",
+      promise: sendEmail({
+        to: user.email,
+        subject: "Manual Payment Order Created – Bunndle",
+        html: customerHtml,
+      }),
+    });
+  }
 
-    heading: "Manual Payment Order Created",
+  if (process.env.MANUAL_PAYMENT_ADMIN_EMAIL) {
+    notifications.push({
+      label: "admin",
+      promise: sendEmail({
+        to: process.env.MANUAL_PAYMENT_ADMIN_EMAIL,
+        subject: "New Manual Order – Bank Details Required",
+        html: adminHtml,
+      }),
+    });
+  }
 
-    body: `
-      <p>A new manual payment order requires bank details.</p>
+  const results = await Promise.allSettled(
+    notifications.map(({ promise }) => promise)
+  );
 
-      <p>
-        <strong>Customer:</strong>
-        ${escapeHtml(user?.name)}
-      </p>
+  const failures = results
+    .map((result, index) => ({
+      result,
+      label: notifications[index].label,
+    }))
+    .filter(({ result }) => result.status === "rejected");
 
-      <p>
-        <strong>Email:</strong>
-        ${escapeHtml(user?.email)}
-      </p>
+  if (failures.length > 0) {
+    for (const failure of failures) {
+      console.error(
+        `MANUAL ORDER ${failure.label.toUpperCase()} EMAIL FAILED:`,
+        failure.result.reason
+      );
+    }
 
-      <p>
-        <strong>Order ID:</strong>
-        ${escapeHtml(order._id)}
-      </p>
-
-      <p>
-        <strong>Amount:</strong>
-        ${escapeHtml(formatINR(order.totalAmount))}
-      </p>
-    `,
-  });
+    throw new Error(
+      `Manual order notification failed for: ${
+        failures.map(({ label }) => label).join(", ")
+      }`
+    );
+  }
 };
+
 
 // ============================================================
 // MANUAL PAYMENT PROOF SUBMITTED EMAIL
 // ============================================================
+
 
 const sendManualPaymentSubmittedEmail = async (orderId) => {
   const order = await Order.findById(orderId).lean();
 
   if (!order) return;
 
-  const [user, manual] = await Promise.all([
-    User.findById(order.userId).select("name email").lean(),
+  const [user, asset, manual] = await Promise.all([
+    User.findById(order.userId)
+      .select("name email")
+      .lean(),
+
+    Asset.findById(order.assetId)
+      .select("assetName")
+      .lean(),
 
     ManualPayment.findOne({ orderId })
-      .select("transactionId amountPaid")
+      .select(
+        "transactionId amountPaid paymentMethod status"
+      )
       .lean(),
   ]);
 
-  await sendNotification({
-    to: user?.email,
+  if (!manual) {
+    throw new Error(
+      "Manual payment record not found for notification"
+    );
+  }
 
-    subject: "Payment Proof Received – Bunndle",
-
-    heading: "Payment Proof Submitted",
-
-    body: `
-      <p>
-        Dear ${escapeHtml(user?.name || "Customer")},
-      </p>
-
-      <p>
-        We have received your payment proof.
-        Our team will verify the actual bank credit.
-      </p>
-
-      <p>
-        <strong>Transaction ID:</strong>
-        ${escapeHtml(manual?.transactionId)}
-      </p>
-
-      <p>
-        <strong>Amount:</strong>
-        ${escapeHtml(formatINR(manual?.amountPaid || 0))}
-      </p>
-
-      <p>
-        This email acknowledges receipt of your proof.
-        It is not a payment success confirmation.
-      </p>
-    `,
+  const {
+    customerHtml,
+    adminHtml,
+  } = manualPaymentSubmittedTemplates({
+    customerName: user?.name || "Customer",
+    customerEmail: user?.email,
+    assetName: asset?.assetName,
+    orderId: String(order._id),
+    transactionId: manual.transactionId,
+    amountPaid: manual.amountPaid,
+    paymentMethod: manual.paymentMethod,
   });
 
-  await sendNotification({
-    to: process.env.MANUAL_PAYMENT_ADMIN_EMAIL,
+  const notifications = [];
 
-    subject: "Manual Payment Awaiting Verification – Bunndle",
+  if (user?.email) {
+    notifications.push({
+      label: "customer",
+      promise: sendEmail({
+        to: user.email,
+        subject: "Payment Proof Received – Bunndle",
+        html: customerHtml,
+      }),
+    });
+  }
 
-    heading: "New Manual Payment Proof",
+  if (process.env.MANUAL_PAYMENT_ADMIN_EMAIL) {
+    notifications.push({
+      label: "admin",
+      promise: sendEmail({
+        to: process.env.MANUAL_PAYMENT_ADMIN_EMAIL,
+        subject: "Manual Payment Awaiting Verification – Bunndle",
+        html: adminHtml,
+      }),
+    });
+  }
 
-    body: `
-      <p>
-        A customer has submitted manual payment proof.
-      </p>
+  const results = await Promise.allSettled(
+    notifications.map(({ promise }) => promise)
+  );
 
-      <p>
-        <strong>Order:</strong>
-        ${escapeHtml(orderId)}
-      </p>
+  const failures = results
+    .map((result, index) => ({
+      result,
+      label: notifications[index].label,
+    }))
+    .filter(({ result }) => result.status === "rejected");
 
-      <p>
-        <strong>UTR:</strong>
-        ${escapeHtml(manual?.transactionId)}
-      </p>
+  if (failures.length > 0) {
+    for (const failure of failures) {
+      console.error(
+        `MANUAL PAYMENT ${failure.label.toUpperCase()} EMAIL FAILED:`,
+        failure.result.reason
+      );
+    }
 
-      <p>
-        <strong>Amount:</strong>
-        ${escapeHtml(formatINR(manual?.amountPaid || 0))}
-      </p>
-
-      <p>
-        Verify the transaction in the official
-        bank statement before approving.
-      </p>
-    `,
-  });
+    throw new Error(
+      `Manual payment notification failed for: ${
+        failures.map(({ label }) => label).join(", ")
+      }`
+    );
+  }
 };
+
 
 // ============================================================
 // MANUAL PAYMENT REJECTED EMAIL
@@ -2009,41 +2019,27 @@ export const markManualReviewRequired = async (req, res) => {
 // CHECK EXISTING PENDING MANUAL ORDER
 // ============================================================
 
+
 export const checkPendingManualOrder = async (req, res) => {
   try {
     const userId = getUserId(req);
     const { assetId } = req.params;
 
-    // ==========================================
-    // 1. VALIDATION
-    // ==========================================
-
     if (!isId(userId)) {
-      throw createError(
-        401,
-        "User authentication required"
-      );
+      throw createError(401, "User authentication required");
     }
 
     if (!isId(assetId)) {
-      throw createError(
-        400,
-        "Invalid asset ID"
-      );
+      throw createError(400, "Invalid asset ID");
     }
-
-    // ==========================================
-    // 2. FIND EXISTING PENDING ORDER
-    // ==========================================
 
     const now = new Date();
 
+    // Find only the latest pending manual order
     const order = await Order.findOne({
       userId,
       assetId,
-
       paymentGateway: "MANUAL",
-
       $or: [
         {
           status: "PENDING_PAYMENT",
@@ -2057,29 +2053,18 @@ export const checkPendingManualOrder = async (req, res) => {
       .select(
         "_id userId assetId paymentGateway fractions amountPerFraction totalAmount status expiresAt bankDetailsSentAt createdAt"
       )
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: -1 })
       .lean();
-
-    // ==========================================
-    // 3. NO PENDING ORDER
-    // ==========================================
 
     if (!order) {
       return res.status(200).json({
         success: true,
-
         pendingOrderExists: false,
-
-        message:
-          "No pending manual payment order found for this asset",
-
+        email_sent: false,
+        message: "No pending manual payment order found for this asset",
         order: null,
       });
     }
-
-    // ==========================================
-    // 4. GET MANUAL PAYMENT IF SUBMITTED
-    // ==========================================
 
     const manualPayment = await ManualPayment.findOne({
       orderId: order._id,
@@ -2089,76 +2074,47 @@ export const checkPendingManualOrder = async (req, res) => {
       )
       .lean();
 
-    const bankDetailsSent = Boolean(
-      order.bankDetailsSentAt
-    );
+    const emailSent = Boolean(order.bankDetailsSentAt);
 
     const proofSubmitted =
       order.status === "PENDING_VERIFICATION" ||
       Boolean(manualPayment);
 
-    // ==========================================
-    // 5. RETURN EXISTING ORDER
-    // ==========================================
-
     return res.status(200).json({
       success: true,
-
       pendingOrderExists: true,
+      email_sent: emailSent,
+      message: "Latest pending manual payment order found",
 
-      message:
-        "Pending manual payment order already exists for this asset",
-     email_sent: Boolean(order.bankDetailsSentAt),
       order: {
         orderId: order._id,
-
         userId: order.userId,
-
         assetId: order.assetId,
-
         paymentGateway: order.paymentGateway,
-
         fractions: order.fractions,
-
-        amountPerFraction:
-          order.amountPerFraction,
-
+        amountPerFraction: order.amountPerFraction,
         totalAmount: order.totalAmount,
-
         status: order.status,
-
         expiresAt: order.expiresAt,
 
-        bankDetailsSent,
-
-        bankDetailsSentAt:
-          order.bankDetailsSentAt,
+        email_sent: emailSent,
+        bankDetailsSentAt: order.bankDetailsSentAt,
 
         proofSubmitted,
 
         canUploadProof:
           order.status === "PENDING_PAYMENT" &&
-          bankDetailsSent &&
-          new Date(order.expiresAt).getTime() >
-            Date.now(),
+          emailSent &&
+          new Date(order.expiresAt).getTime() > Date.now(),
 
         manualPayment: manualPayment
           ? {
               manualPaymentId: manualPayment._id,
-
               status: manualPayment.status,
-
-              transactionId:
-                manualPayment.transactionId,
-
-              amountPaid:
-                manualPayment.amountPaid,
-
-              paymentMethod:
-                manualPayment.paymentMethod,
-
-              submittedAt:
-                manualPayment.submittedAt,
+              transactionId: manualPayment.transactionId,
+              amountPaid: manualPayment.amountPaid,
+              paymentMethod: manualPayment.paymentMethod,
+              submittedAt: manualPayment.submittedAt,
             }
           : null,
 
@@ -2166,11 +2122,8 @@ export const checkPendingManualOrder = async (req, res) => {
       },
     });
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "CHECK PENDING MANUAL ORDER"
-    );
+    return handleError(res, error, "CHECK PENDING MANUAL ORDER");
   }
 };
+
 
