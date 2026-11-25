@@ -707,6 +707,7 @@ import {
 } from "../utils/razorpaySignature.js";
 
 import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPaymentService.js";
+import { calculateOrderPayment } from "../utils/payment_charges.js";
 
 // const expireAndReleaseOrder = async (orderId) => {
 //   const session = await mongoose.startSession();
@@ -783,7 +784,6 @@ import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPayment
 //   }
 // };
 
-
 const expireAndReleaseOrder = async (
   orderId,
   { initializationFailed = false, gatewayReconciled = false } = {},
@@ -817,11 +817,9 @@ const expireAndReleaseOrder = async (
 
       const isManual = order.paymentGateway === "MANUAL";
 
-      const isOnline = [
-        "RAZORPAY",
-        "CASHFREE",
-        "PAYU",
-      ].includes(order.paymentGateway);
+      const isOnline = ["RAZORPAY", "CASHFREE", "PAYU"].includes(
+        order.paymentGateway,
+      );
 
       if (!isManual && !isOnline) {
         return {
@@ -862,11 +860,7 @@ const expireAndReleaseOrder = async (
       }).session(session);
 
       // Never expire successful payments.
-      if (
-        payments.some(
-          (payment) => payment.status === "SUCCESS"
-        )
-      ) {
+      if (payments.some((payment) => payment.status === "SUCCESS")) {
         return {
           expired: false,
           reason: "PAYMENT_ALREADY_SUCCESSFUL",
@@ -878,11 +872,9 @@ const expireAndReleaseOrder = async (
       if (
         isManual &&
         payments.some((payment) =>
-          [
-            "PENDING_VERIFICATION",
-            "REVIEW_REQUIRED",
-            "APPROVED",
-          ].includes(payment.manualVerificationStatus)
+          ["PENDING_VERIFICATION", "REVIEW_REQUIRED", "APPROVED"].includes(
+            payment.manualVerificationStatus,
+          ),
         )
       ) {
         return {
@@ -893,11 +885,7 @@ const expireAndReleaseOrder = async (
 
       // Online payments must be reconciled with
       // the provider before automatic release.
-      if (
-        isOnline &&
-        !initializationFailed &&
-        !gatewayReconciled
-      ) {
+      if (isOnline && !initializationFailed && !gatewayReconciled) {
         return {
           expired: false,
           reason: "GATEWAY_RECONCILIATION_REQUIRED",
@@ -908,10 +896,9 @@ const expireAndReleaseOrder = async (
       // 4. CHECK PURCHASE HISTORY
       // ============================================
 
-      const existingPurchase =
-        await PurchaseHistory.findOne({
-          orderId: order._id,
-        }).session(session);
+      const existingPurchase = await PurchaseHistory.findOne({
+        orderId: order._id,
+      }).session(session);
 
       if (existingPurchase) {
         return {
@@ -956,13 +943,8 @@ const expireAndReleaseOrder = async (
       if (isOnline) {
         const fractions = Number(order.fractions);
 
-        if (
-          !Number.isSafeInteger(fractions) ||
-          fractions <= 0
-        ) {
-          throw new Error(
-            `Invalid fractions for order ${order._id}`
-          );
+        if (!Number.isSafeInteger(fractions) || fractions <= 0) {
+          throw new Error(`Invalid fractions for order ${order._id}`);
         }
 
         const assetResult = await Asset.updateOne(
@@ -986,7 +968,7 @@ const expireAndReleaseOrder = async (
 
         if (assetResult.modifiedCount !== 1) {
           throw new Error(
-            `Unable to release reserved fractions for order ${order._id}`
+            `Unable to release reserved fractions for order ${order._id}`,
           );
         }
 
@@ -1002,8 +984,7 @@ const expireAndReleaseOrder = async (
       };
 
       if (isManual) {
-        paymentUpdate.manualVerificationStatus =
-          "EXPIRED";
+        paymentUpdate.manualVerificationStatus = "EXPIRED";
       }
 
       await Payment.updateMany(
@@ -1021,8 +1002,8 @@ const expireAndReleaseOrder = async (
 
       console.log(
         `[ORDER EXPIRED] ${order._id} | ` +
-        `Gateway: ${order.paymentGateway} | ` +
-        `Fractions released: ${fractionsReleased}`
+          `Gateway: ${order.paymentGateway} | ` +
+          `Fractions released: ${fractionsReleased}`,
       );
 
       return {
@@ -1033,10 +1014,7 @@ const expireAndReleaseOrder = async (
       };
     });
   } catch (error) {
-    console.error(
-      `ORDER EXPIRY ERROR: ${orderId}`,
-      error
-    );
+    console.error(`ORDER EXPIRY ERROR: ${orderId}`, error);
 
     throw error;
   } finally {
@@ -1044,19 +1022,575 @@ const expireAndReleaseOrder = async (
   }
 };
 
+// export const createOrder = async (req, res) => {
+//   let order = null;
+//   let asset = null;
+
+//   try {
+//     const userId = req.user.id;
+
+//     const { assetId, fractions, paymentGateway = "PAYU" } = req.body;
+
+//     // ==========================================
+//     // VALIDATION
+//     // ==========================================
+
+//     if (!assetId || fractions === undefined) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "assetId and fractions are required",
+//       });
+//     }
+
+//     if (!mongoose.isValidObjectId(assetId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid assetId",
+//       });
+//     }
+
+//     // ==========================================
+//     // ALL THREE PAYMENT GATEWAYS ENABLED
+//     // ==========================================
+
+//     const allowedGateways = [
+//       // "RAZORPAY",
+//       "CASHFREE",
+//       "PAYU",
+//     ];
+//     if (!allowedGateways.includes(paymentGateway)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "This payment gateway is currently unavailable.",
+//       });
+//     }
+
+//     const fractionCount = Number(fractions);
+
+//     if (!Number.isInteger(fractionCount) || fractionCount <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid fraction count",
+//       });
+//     }
+
+//     // ==========================================
+//     // PAYU CONFIGURATION VALIDATION
+//     // ==========================================
+
+//     if (paymentGateway === "PAYU") {
+//       if (
+//         process.env.PAYU_ENV !== "PRODUCTION" ||
+//         !process.env.PAYU_MERCHANT_KEY ||
+//         !process.env.PAYU_MERCHANT_SALT ||
+//         !process.env.PAYU_SUCCESS_URL ||
+//         !process.env.PAYU_FAILURE_URL
+//       ) {
+//         console.error("PAYU PRODUCTION CONFIGURATION MISSING");
+
+//         return res.status(503).json({
+//           success: false,
+//           message: "PayU payment service is currently unavailable.",
+//         });
+//       }
+//     }
+
+//     // ==========================================
+//     // KYC CHECK
+//     // ==========================================
+
+//     const user = await User.findById(userId).select(
+//       "name kycStatus isKycVerified email phone mobile mobileNumber phoneNumber",
+//     );
+
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     if (user.kycStatus !== "VERIFIED" || !user.isKycVerified) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "KYC verification is required before making an investment.",
+//       });
+//     }
+
+//     // ==========================================
+//     // CUSTOMER DETAILS
+//     // ==========================================
+
+//     let customerPhone = null;
+//     let customerName = null;
+//     let customerEmail = null;
+
+//     // Cashfree and PayU require phone details.
+
+//     if (paymentGateway === "CASHFREE" || paymentGateway === "PAYU") {
+//       const rawPhone =
+//         user.phoneNumber ?? user.mobileNumber ?? user.mobile ?? user.phone;
+
+//       const digits = String(rawPhone ?? "").replace(/\D/g, "");
+
+//       customerPhone =
+//         digits.length === 12 && digits.startsWith("91")
+//           ? digits.slice(2)
+//           : digits;
+
+//       if (!/^[6-9]\d{9}$/.test(customerPhone)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "A valid registered mobile number is required for payment.",
+//         });
+//       }
+//     }
+
+//     // ==========================================
+//     // PAYU CUSTOMER VALIDATION
+//     // ==========================================
+
+//     if (paymentGateway === "PAYU") {
+//       customerName = String(user.name ?? "").trim();
+
+//       customerEmail = String(user.email ?? "").trim();
+
+//       if (!customerName) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Customer name is required for PayU payment.",
+//         });
+//       }
+
+//       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Valid customer email is required for PayU payment.",
+//         });
+//       }
+//     }
+
+//     // ==========================================
+//     // GENERATE PAYU TRANSACTION ID
+//     // ==========================================
+
+//     let payuTxnId = null;
+
+//     if (paymentGateway === "PAYU") {
+//       // 22 characters, alphanumeric.
+//       // PayU Checkout Pro allows up to 25.
+
+//       payuTxnId = "BN" + crypto.randomBytes(10).toString("hex");
+//     }
+
+//     // ==========================================
+//     // RESERVE FRACTIONS +
+//     // CREATE INTERNAL ORDER
+//     // ==========================================
+
+//     const session = await mongoose.startSession();
+
+//     try {
+//       await session.withTransaction(async () => {
+//         asset = await Asset.findOneAndUpdate(
+//           {
+//             _id: assetId,
+
+//             status: "ACTIVE",
+
+//             availableFractions: {
+//               $gte: fractionCount,
+//             },
+
+//             // Maximum 80% public purchase.
+
+//             $expr: {
+//               $lte: [
+//                 {
+//                   $add: [
+//                     {
+//                       $subtract: ["$totalFractions", "$availableFractions"],
+//                     },
+//                     fractionCount,
+//                   ],
+//                 },
+//                 {
+//                   $floor: {
+//                     $multiply: ["$totalFractions", 0.8],
+//                   },
+//                 },
+//               ],
+//             },
+//           },
+//           {
+//             $inc: {
+//               availableFractions: -fractionCount,
+//               reservedFractions: fractionCount,
+//             },
+//           },
+//           {
+//             returnDocument: "after",
+//             session,
+//           },
+//         );
+
+//         if (!asset) {
+//           const error = new Error(
+//             "Requested fractions are not available. Maximum 80% of the asset can be purchased by users.",
+//           );
+
+//           error.statusCode = 400;
+
+//           throw error;
+//         }
+
+//         // ======================================
+//         // CALCULATE AMOUNT
+//         // ======================================
+
+//         const amount = fractionCount * asset.amountPerFraction;
+
+//         if (!Number.isFinite(amount) || amount <= 0) {
+//           const error = new Error("Invalid asset payment amount");
+
+//           error.statusCode = 400;
+
+//           throw error;
+//         }
+
+//         // ======================================
+//         // CREATE INTERNAL ORDER
+//         // ======================================
+
+//         const createdOrders = await Order.create(
+//           [
+//             {
+//               userId,
+
+//               assetId,
+
+//               paymentGateway,
+
+//               payuTxnId: paymentGateway === "PAYU" ? payuTxnId : null,
+
+//               fractions: fractionCount,
+
+//               amountPerFraction: asset.amountPerFraction,
+
+//               totalAmount: amount,
+
+//               status: "PENDING_PAYMENT",
+
+//               expiresAt: new Date(Date.now() + 20 * 60 * 1000),
+//             },
+//           ],
+//           {
+//             session,
+//           },
+//         );
+
+//         order = createdOrders[0];
+
+//         // ======================================
+//         // CREATE PAYU PENDING PAYMENT
+//         // ======================================
+//         // PayU does not require an additional
+//         // gateway order creation API.
+//         //
+//         // Creating its pending payment inside
+//         // the transaction prevents orphaned
+//         // reservations if database creation fails.
+
+//         if (paymentGateway === "PAYU") {
+//           await Payment.create(
+//             [
+//               {
+//                 userId,
+
+//                 orderId: order._id,
+
+//                 paymentGateway: "PAYU",
+
+//                 payuTxnId,
+
+//                 payuMihpayId: null,
+
+//                 amount: order.totalAmount,
+
+//                 currency: "INR",
+
+//                 status: "PENDING",
+//               },
+//             ],
+//             {
+//               session,
+//             },
+//           );
+//         }
+//       });
+//     } finally {
+//       await session.endSession();
+//     }
+
+//     // ==========================================
+//     // CREATE PAYMENT GATEWAY ORDER
+//     // ==========================================
+
+//     let razorpayOrder = null;
+//     let cashfreeOrder = null;
+//     let payuOrder = null;
+
+//     try {
+//       // ======================================
+//       // RAZORPAY
+//       // ======================================
+
+//       if (paymentGateway === "RAZORPAY") {
+//         razorpayOrder = await razorpay.orders.create({
+//           amount: Math.round(order.totalAmount * 100),
+
+//           currency: "INR",
+
+//           receipt: `receipt_${order._id}`,
+//         });
+//       }
+
+//       // ======================================
+//       // CASHFREE
+//       // ======================================
+//       else if (paymentGateway === "CASHFREE") {
+//         const cashfreeResponse = await cashfree.PGCreateOrder({
+//           order_id: `BUNNDLE_${order._id}`,
+
+//           order_amount: Number(order.totalAmount.toFixed(2)),
+
+//           order_currency: "INR",
+
+//           customer_details: {
+//             customer_id: String(user._id),
+
+//             customer_phone: customerPhone,
+
+//             ...(user.email
+//               ? {
+//                   customer_email: user.email,
+//                 }
+//               : {}),
+//           },
+
+//           order_expiry_time: order.expiresAt.toISOString(),
+
+//           order_note: `Bunndle asset purchase ${order._id}`,
+//         });
+
+//         cashfreeOrder = cashfreeResponse.data;
+
+//         if (!cashfreeOrder?.order_id || !cashfreeOrder?.payment_session_id) {
+//           throw new Error("Invalid Cashfree order response");
+//         }
+//       }
+
+//       // ======================================
+//       // PAYU LIVE
+//       // ======================================
+//       else if (paymentGateway === "PAYU") {
+//         const amount = Number(order.totalAmount).toFixed(2);
+
+//         // Merchant-generated checkout parameters.
+//         // Flutter uses these with Checkout Pro.
+//         //
+//         // Hashes must be generated securely
+//         // by a separate backend endpoint.
+
+//         payuOrder = {
+//           orderId: String(order._id),
+
+//           transactionId: payuTxnId,
+
+//           merchantKey: process.env.PAYU_MERCHANT_KEY,
+
+//           amount,
+
+//           currency: "INR",
+
+//           productInfo: "Bunndle Asset Purchase",
+
+//           firstName: customerName,
+
+//           email: customerEmail,
+
+//           phone: customerPhone,
+
+//           surl: process.env.PAYU_SUCCESS_URL,
+
+//           furl: process.env.PAYU_FAILURE_URL,
+
+//           environment: "0",
+
+//           isProduction: true,
+//         };
+//       }
+//     } catch (gatewayError) {
+//       console.error(`${paymentGateway} Order Creation Error:`, gatewayError);
+
+//       if (paymentGateway === "RAZORPAY") {
+//         await expireAndReleaseOrder(order._id);
+//       }
+
+//       // Cashfree may have created its order
+//       // despite a timeout. Reconcile first.
+
+//       return res.status(502).json({
+//         success: false,
+//         message:
+//           "Unable to initialize payment. Please check the order status before retrying.",
+//       });
+//     }
+
+//     // ==========================================
+//     // CREATE PAYMENT RECORD
+//     // ==========================================
+//     // PayU Payment already created in transaction.
+
+//     if (paymentGateway !== "PAYU") {
+//       try {
+//         await Payment.create({
+//           userId,
+
+//           orderId: order._id,
+
+//           paymentGateway,
+
+//           razorpayOrderId: razorpayOrder?.id ?? null,
+
+//           cashfreeOrderId: cashfreeOrder?.order_id ?? null,
+
+//           cashfreeCfOrderId: cashfreeOrder?.cf_order_id
+//             ? String(cashfreeOrder.cf_order_id)
+//             : null,
+
+//           amount: order.totalAmount,
+
+//           status: "PENDING",
+//         });
+//       } catch (paymentError) {
+//         console.error("Payment Record Creation Error:", paymentError);
+
+//         if (paymentGateway === "RAZORPAY") {
+//           await expireAndReleaseOrder(order._id);
+//         }
+
+//         return res.status(500).json({
+//           success: false,
+//           message: "Unable to initialize payment. Please try again.",
+//         });
+//       }
+//     }
+
+//     // ==========================================
+//     // PUBLIC / COMPANY FRACTIONS
+//     // ==========================================
+
+//     const publicLimit = Math.floor(asset.totalFractions * 0.8);
+
+//     const companyReservedFractions = asset.totalFractions - publicLimit;
+
+//     const publicUsed = asset.totalFractions - asset.availableFractions;
+
+//     const publicAvailableFractions = Math.max(0, publicLimit - publicUsed);
+
+//     // ==========================================
+//     // RESPONSE
+//     // ==========================================
+
+//     return res.status(201).json({
+//       success: true,
+
+//       message: "Order created successfully",
+
+//       order,
+
+//       razorpayOrder,
+
+//       // ======================================
+//       // CASHFREE RESPONSE
+//       // ======================================
+
+//       ...(paymentGateway === "CASHFREE"
+//         ? {
+//             cashfreeOrder: {
+//               order_id: cashfreeOrder.order_id,
+
+//               cf_order_id: cashfreeOrder.cf_order_id,
+
+//               payment_session_id: cashfreeOrder.payment_session_id,
+
+//               order_status: cashfreeOrder.order_status,
+//             },
+//           }
+//         : {}),
+
+//       // ======================================
+//       // PAYU RESPONSE
+//       // ======================================
+
+//       ...(paymentGateway === "PAYU"
+//         ? {
+//             payuOrder,
+//           }
+//         : {}),
+
+//       fractionInfo: {
+//         totalFractions: asset.totalFractions,
+
+//         publicLimit,
+
+//         publicAvailableFractions,
+
+//         companyReservedFractions,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Create Order Error:", error);
+
+//     return res.status(error.statusCode || 500).json({
+//       success: false,
+
+//       message: error.statusCode
+//         ? error.message
+//         : "Something went wrong while creating the order.",
+//     });
+//   }
+// };
+
+// ============================================================
+// VERIFY PAYMENT - EXISTING RAZORPAY
+// ============================================================
+
 
 export const createOrder = async (req, res) => {
   let order = null;
   let asset = null;
 
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?._id;
 
-    const { assetId, fractions, paymentGateway = "PAYU" } = req.body;
+    const {
+      assetId,
+      fractions,
+      paymentGateway = "PAYU",
+    } = req.body || {};
 
-    // ==========================================
-    // VALIDATION
-    // ==========================================
+    // =====================================================
+    // 1. BASIC VALIDATION
+    // =====================================================
+
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
 
     if (!assetId || fractions === undefined) {
       return res.status(400).json({
@@ -1072,36 +1606,44 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // ALL THREE PAYMENT GATEWAYS ENABLED
-    // ==========================================
+    const gateway = String(paymentGateway)
+      .trim()
+      .toUpperCase();
 
+    // Preserve the currently enabled gateways.
     const allowedGateways = [
       // "RAZORPAY",
       "CASHFREE",
       "PAYU",
     ];
-    if (!allowedGateways.includes(paymentGateway)) {
+
+    if (!allowedGateways.includes(gateway)) {
       return res.status(400).json({
         success: false,
-        message: "This payment gateway is currently unavailable.",
+        message:
+          "This payment gateway is currently unavailable.",
       });
     }
 
     const fractionCount = Number(fractions);
 
-    if (!Number.isInteger(fractionCount) || fractionCount <= 0) {
+    if (
+      fractions === null ||
+      fractions === "" ||
+      !Number.isSafeInteger(fractionCount) ||
+      fractionCount <= 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid fraction count",
       });
     }
 
-    // ==========================================
-    // PAYU CONFIGURATION VALIDATION
-    // ==========================================
+    // =====================================================
+    // 2. PAYU CONFIGURATION
+    // =====================================================
 
-    if (paymentGateway === "PAYU") {
+    if (gateway === "PAYU") {
       if (
         process.env.PAYU_ENV !== "PRODUCTION" ||
         !process.env.PAYU_MERCHANT_KEY ||
@@ -1109,21 +1651,24 @@ export const createOrder = async (req, res) => {
         !process.env.PAYU_SUCCESS_URL ||
         !process.env.PAYU_FAILURE_URL
       ) {
-        console.error("PAYU PRODUCTION CONFIGURATION MISSING");
+        console.error(
+          "PAYU PRODUCTION CONFIGURATION MISSING"
+        );
 
         return res.status(503).json({
           success: false,
-          message: "PayU payment service is currently unavailable.",
+          message:
+            "PayU payment service is currently unavailable.",
         });
       }
     }
 
-    // ==========================================
-    // KYC CHECK
-    // ==========================================
+    // =====================================================
+    // 3. FETCH USER AND VERIFY KYC
+    // =====================================================
 
     const user = await User.findById(userId).select(
-      "name kycStatus isKycVerified email phone mobile mobileNumber phoneNumber",
+      "name kycStatus isKycVerified email phone mobile mobileNumber phoneNumber"
     );
 
     if (!user) {
@@ -1133,88 +1678,121 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    if (user.kycStatus !== "VERIFIED" || !user.isKycVerified) {
+    if (
+      user.kycStatus !== "VERIFIED" ||
+      !user.isKycVerified
+    ) {
       return res.status(403).json({
         success: false,
-        message: "KYC verification is required before making an investment.",
+        message:
+          "KYC verification is required before making an investment.",
       });
     }
 
-    // ==========================================
-    // CUSTOMER DETAILS
-    // ==========================================
+    // =====================================================
+    // 4. CUSTOMER DETAILS
+    // =====================================================
 
     let customerPhone = null;
     let customerName = null;
     let customerEmail = null;
 
-    // Cashfree and PayU require phone details.
-
-    if (paymentGateway === "CASHFREE" || paymentGateway === "PAYU") {
+    if (
+      gateway === "CASHFREE" ||
+      gateway === "PAYU"
+    ) {
       const rawPhone =
-        user.phoneNumber ?? user.mobileNumber ?? user.mobile ?? user.phone;
+        user.phoneNumber ??
+        user.mobileNumber ??
+        user.mobile ??
+        user.phone;
 
-      const digits = String(rawPhone ?? "").replace(/\D/g, "");
+      const digits = String(rawPhone ?? "")
+        .replace(/\D/g, "");
 
       customerPhone =
-        digits.length === 12 && digits.startsWith("91")
+        digits.length === 12 &&
+        digits.startsWith("91")
           ? digits.slice(2)
           : digits;
 
       if (!/^[6-9]\d{9}$/.test(customerPhone)) {
         return res.status(400).json({
           success: false,
-          message: "A valid registered mobile number is required for payment.",
+          message:
+            "A valid registered mobile number is required for payment.",
         });
       }
     }
 
-    // ==========================================
-    // PAYU CUSTOMER VALIDATION
-    // ==========================================
+    if (gateway === "PAYU") {
+      customerName = String(
+        user.name ?? ""
+      ).trim();
 
-    if (paymentGateway === "PAYU") {
-      customerName = String(user.name ?? "").trim();
-
-      customerEmail = String(user.email ?? "").trim();
+      customerEmail = String(
+        user.email ?? ""
+      ).trim();
 
       if (!customerName) {
         return res.status(400).json({
           success: false,
-          message: "Customer name is required for PayU payment.",
+          message:
+            "Customer name is required for PayU payment.",
         });
       }
 
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+      if (
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+          customerEmail
+        )
+      ) {
         return res.status(400).json({
           success: false,
-          message: "Valid customer email is required for PayU payment.",
+          message:
+            "Valid customer email is required for PayU payment.",
         });
       }
     }
 
-    // ==========================================
-    // GENERATE PAYU TRANSACTION ID
-    // ==========================================
+    // =====================================================
+    // 5. GENERATE PAYU TRANSACTION ID
+    // =====================================================
 
     let payuTxnId = null;
 
-    if (paymentGateway === "PAYU") {
-      // 22 characters, alphanumeric.
-      // PayU Checkout Pro allows up to 25.
-
-      payuTxnId = "BN" + crypto.randomBytes(10).toString("hex");
+    if (gateway === "PAYU") {
+      payuTxnId =
+        "BN" +
+        crypto.randomBytes(10).toString("hex");
     }
 
-    // ==========================================
-    // RESERVE FRACTIONS +
-    // CREATE INTERNAL ORDER
-    // ==========================================
+    // =====================================================
+    // 6. PAYMENT AMOUNTS
+    // =====================================================
+
+    let paymentBreakdown = null;
+
+    // Values below are populated inside transaction
+    // after asset availability and price are confirmed.
+    let baseAmount = 0;
+    let processingFeePercentage = 0;
+    let processingFee = 0;
+    let totalPayableAmount = 0;
+    let totalPayablePaise = 0;
+
+    // =====================================================
+    // 7. RESERVE FRACTIONS AND CREATE ORDER
+    // =====================================================
 
     const session = await mongoose.startSession();
 
     try {
       await session.withTransaction(async () => {
+        // -------------------------------------------------
+        // 7.1 RESERVE AVAILABLE FRACTIONS
+        // -------------------------------------------------
+
         asset = await Asset.findOneAndUpdate(
           {
             _id: assetId,
@@ -1225,21 +1803,26 @@ export const createOrder = async (req, res) => {
               $gte: fractionCount,
             },
 
-            // Maximum 80% public purchase.
-
+            // Preserve existing 80% public limit.
             $expr: {
               $lte: [
                 {
                   $add: [
                     {
-                      $subtract: ["$totalFractions", "$availableFractions"],
+                      $subtract: [
+                        "$totalFractions",
+                        "$availableFractions",
+                      ],
                     },
                     fractionCount,
                   ],
                 },
                 {
                   $floor: {
-                    $multiply: ["$totalFractions", 0.8],
+                    $multiply: [
+                      "$totalFractions",
+                      0.8,
+                    ],
                   },
                 },
               ],
@@ -1252,102 +1835,178 @@ export const createOrder = async (req, res) => {
             },
           },
           {
-            returnDocument: "after",
+            new: true,
             session,
-          },
+          }
         );
 
         if (!asset) {
           const error = new Error(
-            "Requested fractions are not available. Maximum 80% of the asset can be purchased by users.",
+            "Requested fractions are unavailable. Maximum 80% of the asset can be purchased by users."
           );
 
           error.statusCode = 400;
-
           throw error;
         }
 
-        // ======================================
-        // CALCULATE AMOUNT
-        // ======================================
+        // -------------------------------------------------
+        // 7.2 CALCULATE ASSET PURCHASE AMOUNT
+        // -------------------------------------------------
 
-        const amount = fractionCount * asset.amountPerFraction;
+        const amountPerFraction = Number(
+          asset.amountPerFraction
+        );
 
-        if (!Number.isFinite(amount) || amount <= 0) {
-          const error = new Error("Invalid asset payment amount");
+        if (
+          !Number.isFinite(amountPerFraction) ||
+          amountPerFraction <= 0
+        ) {
+          const error = new Error(
+            "Invalid asset fraction price"
+          );
 
           error.statusCode = 400;
-
           throw error;
         }
 
-        // ======================================
-        // CREATE INTERNAL ORDER
-        // ======================================
+        // Use paise for money calculations.
+        const fractionPricePaise = Math.round(
+          amountPerFraction * 100
+        );
+
+        if (
+          !Number.isSafeInteger(fractionPricePaise) ||
+          fractionPricePaise <= 0
+        ) {
+          const error = new Error(
+            "Invalid asset fraction price"
+          );
+
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const basePaise =
+          fractionPricePaise * fractionCount;
+
+        if (!Number.isSafeInteger(basePaise)) {
+          const error = new Error(
+            "Payment amount exceeds supported range"
+          );
+
+          error.statusCode = 400;
+          throw error;
+        }
+
+        baseAmount = basePaise / 100;
+
+        // -------------------------------------------------
+        // 7.3 ADD 0.5% ONLINE PROCESSING CHARGE
+        // -------------------------------------------------
+
+        paymentBreakdown = calculateOrderPayment({
+          baseAmount,
+          paymentGateway: gateway,
+        });
+
+        processingFeePercentage =
+          paymentBreakdown.processingFeePercentage;
+
+        processingFee =
+          paymentBreakdown.processingFee;
+
+        totalPayableAmount =
+          paymentBreakdown.totalPayableAmount;
+
+        totalPayablePaise =
+          paymentBreakdown.totalPayablePaise;
+
+        // Basic consistency checks.
+        if (
+          !Number.isSafeInteger(totalPayablePaise) ||
+          totalPayablePaise <= 0 ||
+          Math.round(totalPayableAmount * 100) !==
+            totalPayablePaise ||
+          Math.round(processingFee * 100) +
+            basePaise !==
+            totalPayablePaise
+        ) {
+          const error = new Error(
+            "Invalid payment breakdown"
+          );
+
+          error.statusCode = 500;
+          throw error;
+        }
+
+        // -------------------------------------------------
+        // 7.4 CREATE INTERNAL ORDER
+        // -------------------------------------------------
 
         const createdOrders = await Order.create(
           [
             {
               userId,
-
               assetId,
 
-              paymentGateway,
+              paymentGateway: gateway,
 
-              payuTxnId: paymentGateway === "PAYU" ? payuTxnId : null,
+              payuTxnId:
+                gateway === "PAYU"
+                  ? payuTxnId
+                  : null,
 
               fractions: fractionCount,
 
-              amountPerFraction: asset.amountPerFraction,
+              amountPerFraction:
+                asset.amountPerFraction,
 
-              totalAmount: amount,
+              // Actual asset ownership value.
+              totalAmount: baseAmount,
+
+              // Extra 0.5% charge.
+              processingFeePercentage,
+              processingFee,
+
+              // Amount payable through gateway.
+              totalPayableAmount,
 
               status: "PENDING_PAYMENT",
 
-              expiresAt: new Date(Date.now() + 20 * 60 * 1000),
+              expiresAt: new Date(
+                Date.now() + 20 * 60 * 1000
+              ),
             },
           ],
-          {
-            session,
-          },
+          { session }
         );
 
         order = createdOrders[0];
 
-        // ======================================
-        // CREATE PAYU PENDING PAYMENT
-        // ======================================
-        // PayU does not require an additional
-        // gateway order creation API.
-        //
-        // Creating its pending payment inside
-        // the transaction prevents orphaned
-        // reservations if database creation fails.
+        // -------------------------------------------------
+        // 7.5 CREATE PAYU PENDING PAYMENT
+        // -------------------------------------------------
 
-        if (paymentGateway === "PAYU") {
+        if (gateway === "PAYU") {
           await Payment.create(
             [
               {
                 userId,
-
                 orderId: order._id,
 
                 paymentGateway: "PAYU",
 
                 payuTxnId,
-
                 payuMihpayId: null,
 
-                amount: order.totalAmount,
+                // Includes 0.5% processing charge.
+                amount: totalPayableAmount,
 
                 currency: "INR",
-
                 status: "PENDING",
               },
             ],
-            {
-              session,
-            },
+            { session }
           );
         }
       });
@@ -1355,84 +2014,98 @@ export const createOrder = async (req, res) => {
       await session.endSession();
     }
 
-    // ==========================================
-    // CREATE PAYMENT GATEWAY ORDER
-    // ==========================================
+    // =====================================================
+    // 8. CREATE PAYMENT GATEWAY ORDER
+    // =====================================================
 
     let razorpayOrder = null;
     let cashfreeOrder = null;
     let payuOrder = null;
 
     try {
-      // ======================================
-      // RAZORPAY
-      // ======================================
+      // -------------------------------------------------
+      // 8.1 RAZORPAY
+      // -------------------------------------------------
 
-      if (paymentGateway === "RAZORPAY") {
-        razorpayOrder = await razorpay.orders.create({
-          amount: Math.round(order.totalAmount * 100),
+      if (gateway === "RAZORPAY") {
+        razorpayOrder =
+          await razorpay.orders.create({
+            // Razorpay expects amount in paise.
+            amount: totalPayablePaise,
 
-          currency: "INR",
+            currency: "INR",
 
-          receipt: `receipt_${order._id}`,
-        });
+            receipt: `receipt_${order._id}`,
+          });
       }
 
-      // ======================================
-      // CASHFREE
-      // ======================================
-      else if (paymentGateway === "CASHFREE") {
-        const cashfreeResponse = await cashfree.PGCreateOrder({
-          order_id: `BUNNDLE_${order._id}`,
+      // -------------------------------------------------
+      // 8.2 CASHFREE
+      // -------------------------------------------------
 
-          order_amount: Number(order.totalAmount.toFixed(2)),
+      else if (gateway === "CASHFREE") {
+        const cashfreeResponse =
+          await cashfree.PGCreateOrder({
+            order_id: `BUNNDLE_${order._id}`,
 
-          order_currency: "INR",
+            // Cashfree expects INR amount.
+            order_amount: totalPayableAmount,
 
-          customer_details: {
-            customer_id: String(user._id),
+            order_currency: "INR",
 
-            customer_phone: customerPhone,
+            customer_details: {
+              customer_id: String(user._id),
 
-            ...(user.email
-              ? {
-                  customer_email: user.email,
-                }
-              : {}),
-          },
+              customer_phone: customerPhone,
 
-          order_expiry_time: order.expiresAt.toISOString(),
+              ...(user.email
+                ? {
+                    customer_email:
+                      user.email,
+                  }
+                : {}),
+            },
 
-          order_note: `Bunndle asset purchase ${order._id}`,
-        });
+            order_expiry_time:
+              order.expiresAt.toISOString(),
+
+            order_note:
+              `Bunndle asset purchase ${order._id}`,
+          });
 
         cashfreeOrder = cashfreeResponse.data;
 
-        if (!cashfreeOrder?.order_id || !cashfreeOrder?.payment_session_id) {
-          throw new Error("Invalid Cashfree order response");
+        if (
+          !cashfreeOrder?.order_id ||
+          !cashfreeOrder?.payment_session_id
+        ) {
+          throw new Error(
+            "Invalid Cashfree order response"
+          );
         }
       }
 
-      // ======================================
-      // PAYU LIVE
-      // ======================================
-      else if (paymentGateway === "PAYU") {
-        const amount = Number(order.totalAmount).toFixed(2);
+      // -------------------------------------------------
+      // 8.3 PAYU
+      // -------------------------------------------------
 
-        // Merchant-generated checkout parameters.
-        // Flutter uses these with Checkout Pro.
-        //
-        // Hashes must be generated securely
-        // by a separate backend endpoint.
+      else if (gateway === "PAYU") {
+        // PayU amount must match the amount
+        // used for generating payment hashes.
+
+        const payableAmountString =
+          totalPayableAmount.toFixed(2);
 
         payuOrder = {
           orderId: String(order._id),
 
           transactionId: payuTxnId,
 
-          merchantKey: process.env.PAYU_MERCHANT_KEY,
+          merchantKey:
+            process.env.PAYU_MERCHANT_KEY,
 
-          amount,
+          // Includes processing fee.
+          amount: payableAmountString,
 
           currency: "INR",
 
@@ -1454,117 +2127,179 @@ export const createOrder = async (req, res) => {
         };
       }
     } catch (gatewayError) {
-      console.error(`${paymentGateway} Order Creation Error:`, gatewayError);
+      console.error(
+        `${gateway} Order Creation Error:`,
+        gatewayError
+      );
 
-      if (paymentGateway === "RAZORPAY") {
-        await expireAndReleaseOrder(order._id);
+      // Only Razorpay initialization failure
+      // is handled by existing immediate release.
+      //
+      // Cashfree may have created a gateway order
+      // even if the request timed out.
+      // PayU is initialized via checkout parameters.
+
+      if (gateway === "RAZORPAY") {
+        try {
+          await expireAndReleaseOrder(
+            order._id,
+            { initializationFailed: true }
+          );
+        } catch (releaseError) {
+          console.error(
+            "Razorpay reservation release failed:",
+            releaseError
+          );
+        }
       }
-
-      // Cashfree may have created its order
-      // despite a timeout. Reconcile first.
 
       return res.status(502).json({
         success: false,
+
         message:
           "Unable to initialize payment. Please check the order status before retrying.",
+
+        orderId: order._id,
       });
     }
 
-    // ==========================================
-    // CREATE PAYMENT RECORD
-    // ==========================================
-    // PayU Payment already created in transaction.
+    // =====================================================
+    // 9. CREATE PAYMENT RECORD FOR CASHFREE / RAZORPAY
+    // =====================================================
 
-    if (paymentGateway !== "PAYU") {
+    // PayU pending payment already exists.
+    if (gateway !== "PAYU") {
       try {
         await Payment.create({
           userId,
 
           orderId: order._id,
 
-          paymentGateway,
+          paymentGateway: gateway,
 
-          razorpayOrderId: razorpayOrder?.id ?? null,
+          razorpayOrderId:
+            razorpayOrder?.id ?? null,
 
-          cashfreeOrderId: cashfreeOrder?.order_id ?? null,
+          cashfreeOrderId:
+            cashfreeOrder?.order_id ?? null,
 
-          cashfreeCfOrderId: cashfreeOrder?.cf_order_id
-            ? String(cashfreeOrder.cf_order_id)
-            : null,
+          cashfreeCfOrderId:
+            cashfreeOrder?.cf_order_id
+              ? String(cashfreeOrder.cf_order_id)
+              : null,
 
-          amount: order.totalAmount,
+          // Actual amount paid via gateway,
+          // including the additional 0.5%.
+          amount: totalPayableAmount,
+
+          currency: "INR",
 
           status: "PENDING",
         });
       } catch (paymentError) {
-        console.error("Payment Record Creation Error:", paymentError);
+        console.error(
+          "Payment Record Creation Error:",
+          paymentError
+        );
 
-        if (paymentGateway === "RAZORPAY") {
-          await expireAndReleaseOrder(order._id);
-        }
+        // If gateway order already exists,
+        // do not blindly expire/release fractions.
+        // Reconcile the gateway order first.
 
         return res.status(500).json({
           success: false,
-          message: "Unable to initialize payment. Please try again.",
+
+          message:
+            "Payment order was initialized but internal payment registration failed. Please check order status before retrying.",
+
+          orderId: order._id,
         });
       }
     }
 
-    // ==========================================
-    // PUBLIC / COMPANY FRACTIONS
-    // ==========================================
+    // =====================================================
+    // 10. PUBLIC / COMPANY FRACTION DETAILS
+    // =====================================================
 
-    const publicLimit = Math.floor(asset.totalFractions * 0.8);
+    const publicLimit = Math.floor(
+      asset.totalFractions * 0.8
+    );
 
-    const companyReservedFractions = asset.totalFractions - publicLimit;
+    const companyReservedFractions =
+      asset.totalFractions - publicLimit;
 
-    const publicUsed = asset.totalFractions - asset.availableFractions;
+    const publicUsed =
+      asset.totalFractions -
+      asset.availableFractions;
 
-    const publicAvailableFractions = Math.max(0, publicLimit - publicUsed);
+    const publicAvailableFractions = Math.max(
+      0,
+      publicLimit - publicUsed
+    );
 
-    // ==========================================
-    // RESPONSE
-    // ==========================================
+    // =====================================================
+    // 11. FINAL RESPONSE
+    // =====================================================
 
     return res.status(201).json({
       success: true,
 
       message: "Order created successfully",
 
+      // Keep original order response.
       order,
 
       razorpayOrder,
 
-      // ======================================
-      // CASHFREE RESPONSE
-      // ======================================
-
-      ...(paymentGateway === "CASHFREE"
+      ...(gateway === "CASHFREE"
         ? {
             cashfreeOrder: {
-              order_id: cashfreeOrder.order_id,
+              order_id:
+                cashfreeOrder.order_id,
 
-              cf_order_id: cashfreeOrder.cf_order_id,
+              cf_order_id:
+                cashfreeOrder.cf_order_id,
 
-              payment_session_id: cashfreeOrder.payment_session_id,
+              payment_session_id:
+                cashfreeOrder.payment_session_id,
 
-              order_status: cashfreeOrder.order_status,
+              order_status:
+                cashfreeOrder.order_status,
             },
           }
         : {}),
 
-      // ======================================
-      // PAYU RESPONSE
-      // ======================================
-
-      ...(paymentGateway === "PAYU"
+      ...(gateway === "PAYU"
         ? {
             payuOrder,
           }
         : {}),
 
+      // Additional payment breakdown.
+      paymentBreakdown: {
+        currency: "INR",
+
+        paymentGateway: gateway,
+
+        fractions: fractionCount,
+
+        amountPerFraction:
+          asset.amountPerFraction,
+
+        // Ownership value.
+        baseAmount,
+
+        processingFeePercentage,
+
+        processingFee,
+
+        // Final gateway charge.
+        totalPayableAmount,
+      },
+
       fractionInfo: {
-        totalFractions: asset.totalFractions,
+        totalFractions:
+          asset.totalFractions,
 
         publicLimit,
 
@@ -1574,9 +2309,14 @@ export const createOrder = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create Order Error:", error);
+    console.error(
+      "Create Order Error:",
+      error
+    );
 
-    return res.status(error.statusCode || 500).json({
+    return res.status(
+      error.statusCode || 500
+    ).json({
       success: false,
 
       message: error.statusCode
@@ -1586,9 +2326,6 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// ============================================================
-// VERIFY PAYMENT - EXISTING RAZORPAY
-// ============================================================
 
 export const verifyPayment = async (req, res) => {
   try {
