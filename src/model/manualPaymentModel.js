@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const paymentScreenshotSchema = new mongoose.Schema(
@@ -92,13 +91,7 @@ const manualPaymentSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: [
-        "BANK_TRANSFER",
-        "IMPS",
-        "NEFT",
-        "RTGS",
-        "UPI",
-      ],
+      enum: ["BANK_TRANSFER", "IMPS", "NEFT", "RTGS", "UPI"],
       default: "BANK_TRANSFER",
     },
 
@@ -113,6 +106,10 @@ const manualPaymentSchema = new mongoose.Schema(
       required: true,
       trim: true,
       uppercase: true,
+    },
+    normalizedTransactionIds: {
+      type: [String],
+      default: [],
     },
 
     paymentDate: {
@@ -137,8 +134,7 @@ const manualPaymentSchema = new mongoose.Schema(
           );
         },
 
-        message:
-          "Please upload at least 1 and at most 3 payment screenshots",
+        message: "Please upload at least 1 and at most 3 payment screenshots",
       },
     },
 
@@ -148,12 +144,7 @@ const manualPaymentSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: [
-        "PENDING_VERIFICATION",
-        "REVIEW_REQUIRED",
-        "APPROVED",
-        "REJECTED",
-      ],
+      enum: ["PENDING_VERIFICATION", "REVIEW_REQUIRED", "APPROVED", "REJECTED"],
       default: "PENDING_VERIFICATION",
       index: true,
     },
@@ -274,9 +265,6 @@ manualPaymentSchema.index({
 
 const ManualPayment =
   mongoose.models.ManualPayment ||
-  mongoose.model(
-    "ManualPayment",
-    manualPaymentSchema,
-  );
+  mongoose.model("ManualPayment", manualPaymentSchema);
 
 export default ManualPayment;

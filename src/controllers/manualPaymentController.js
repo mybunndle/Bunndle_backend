@@ -16,7 +16,7 @@ import {
 } from "../utils/manualPaymentNotificationTemplates.js";
 
 import {
-  uploadManualPaymentScreenshot,  
+  uploadManualPaymentScreenshot,
   deleteManualPaymentScreenshot,
   getManualPaymentScreenshotSignedUrl,
 } from "../services/imageStorageService.js";
@@ -54,7 +54,6 @@ const normalizeUTR = (value) =>
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "");
-
 const toPaise = (value) => {
   if (value === undefined || value === null || value === "") {
     return NaN;
@@ -68,6 +67,54 @@ const toPaise = (value) => {
 
   return Math.round(amount * 100);
 };
+
+
+const normalizeMultipleUTRs = (value) => {
+  if (typeof value !== "string") {
+    throw createError(
+      400,
+      "Transaction IDs must be provided as a string"
+    );
+  }
+
+  const transactionIds = value
+    .split(",")
+    .map((id) => id.trim().toUpperCase())
+    .filter(Boolean);
+
+  if (
+    transactionIds.length === 0 ||
+    transactionIds.length > 20
+  ) {
+    throw createError(
+      400,
+      "Provide between 1 and 20 transaction IDs"
+    );
+  }
+
+  for (const id of transactionIds) {
+    if (!/^[A-Z0-9-]{6,80}$/.test(id)) {
+      throw createError(
+        400,
+        `Invalid transaction ID: ${id}`
+      );
+    }
+  }
+
+  if (new Set(transactionIds).size !== transactionIds.length) {
+    throw createError(
+      400,
+      "Duplicate transaction IDs are not allowed"
+    );
+  }
+
+  return {
+    transactionId: transactionIds.join(", "),
+    transactionIds,
+    isMultiplePayment: transactionIds.length > 1,
+  };
+};
+
 
 const validDate = (value) => {
   if (!value) return false;
@@ -180,26 +227,18 @@ const sendEmailSafely = async (fn, id) => {
 // MANUAL ORDER CREATED EMAIL
 // ============================================================
 
-
 const sendManualOrderCreatedEmail = async (orderId) => {
   const order = await Order.findById(orderId).lean();
 
   if (!order) return;
 
   const [user, asset] = await Promise.all([
-    User.findById(order.userId)
-      .select("name email")
-      .lean(),
+    User.findById(order.userId).select("name email").lean(),
 
-    Asset.findById(order.assetId)
-      .select("assetName")
-      .lean(),
+    Asset.findById(order.assetId).select("assetName").lean(),
   ]);
 
-  const {
-    customerHtml,
-    adminHtml,
-  } = manualOrderCreatedTemplates({
+  const { customerHtml, adminHtml } = manualOrderCreatedTemplates({
     customerName: user?.name || "Customer",
     customerEmail: user?.email,
     assetName: asset?.assetName,
@@ -232,7 +271,7 @@ const sendManualOrderCreatedEmail = async (orderId) => {
   }
 
   const results = await Promise.allSettled(
-    notifications.map(({ promise }) => promise)
+    notifications.map(({ promise }) => promise),
   );
 
   const failures = results
@@ -246,23 +285,21 @@ const sendManualOrderCreatedEmail = async (orderId) => {
     for (const failure of failures) {
       console.error(
         `MANUAL ORDER ${failure.label.toUpperCase()} EMAIL FAILED:`,
-        failure.result.reason
+        failure.result.reason,
       );
     }
 
     throw new Error(
-      `Manual order notification failed for: ${
-        failures.map(({ label }) => label).join(", ")
-      }`
+      `Manual order notification failed for: ${failures
+        .map(({ label }) => label)
+        .join(", ")}`,
     );
   }
 };
 
-
 // ============================================================
 // MANUAL PAYMENT PROOF SUBMITTED EMAIL
 // ============================================================
-
 
 const sendManualPaymentSubmittedEmail = async (orderId) => {
   const order = await Order.findById(orderId).lean();
@@ -270,31 +307,20 @@ const sendManualPaymentSubmittedEmail = async (orderId) => {
   if (!order) return;
 
   const [user, asset, manual] = await Promise.all([
-    User.findById(order.userId)
-      .select("name email")
-      .lean(),
+    User.findById(order.userId).select("name email").lean(),
 
-    Asset.findById(order.assetId)
-      .select("assetName")
-      .lean(),
+    Asset.findById(order.assetId).select("assetName").lean(),
 
     ManualPayment.findOne({ orderId })
-      .select(
-        "transactionId amountPaid paymentMethod status"
-      )
+      .select("transactionId amountPaid paymentMethod status")
       .lean(),
   ]);
 
   if (!manual) {
-    throw new Error(
-      "Manual payment record not found for notification"
-    );
+    throw new Error("Manual payment record not found for notification");
   }
 
-  const {
-    customerHtml,
-    adminHtml,
-  } = manualPaymentSubmittedTemplates({
+  const { customerHtml, adminHtml } = manualPaymentSubmittedTemplates({
     customerName: user?.name || "Customer",
     customerEmail: user?.email,
     assetName: asset?.assetName,
@@ -329,7 +355,7 @@ const sendManualPaymentSubmittedEmail = async (orderId) => {
   }
 
   const results = await Promise.allSettled(
-    notifications.map(({ promise }) => promise)
+    notifications.map(({ promise }) => promise),
   );
 
   const failures = results
@@ -343,18 +369,17 @@ const sendManualPaymentSubmittedEmail = async (orderId) => {
     for (const failure of failures) {
       console.error(
         `MANUAL PAYMENT ${failure.label.toUpperCase()} EMAIL FAILED:`,
-        failure.result.reason
+        failure.result.reason,
       );
     }
 
     throw new Error(
-      `Manual payment notification failed for: ${
-        failures.map(({ label }) => label).join(", ")
-      }`
+      `Manual payment notification failed for: ${failures
+        .map(({ label }) => label)
+        .join(", ")}`,
     );
   }
 };
-
 
 // ============================================================
 // MANUAL PAYMENT REJECTED EMAIL
@@ -842,8 +867,6 @@ export const createManualOrder = async (req, res) => {
 //   }
 // };
 
-
-
 export const sendManualBankDetails = async (req, res) => {
   const adminId = getUserId(req);
   const { orderId } = req.params;
@@ -874,27 +897,19 @@ export const sendManualBankDetails = async (req, res) => {
       _id: orderId,
       paymentGateway: "MANUAL",
     })
-      .select(
-        "_id status expiresAt bankDetailsSentAt bankDetailsSendingAt"
-      )
+      .select("_id status expiresAt bankDetailsSentAt bankDetailsSendingAt")
       .lean();
 
     if (!existingOrder) {
-      throw createError(
-        404,
-        "Manual payment order not found"
-      );
+      throw createError(404, "Manual payment order not found");
     }
 
-    const allowedStatuses = [
-      "PENDING_PAYMENT",
-      "PENDING_VERIFICATION",
-    ];
+    const allowedStatuses = ["PENDING_PAYMENT", "PENDING_VERIFICATION"];
 
     if (!allowedStatuses.includes(existingOrder.status)) {
       throw createError(
         409,
-        "Bank details cannot be sent for completed, rejected or expired orders"
+        "Bank details cannot be sent for completed, rejected or expired orders",
       );
     }
 
@@ -903,21 +918,16 @@ export const sendManualBankDetails = async (req, res) => {
     // window because proof was submitted earlier.
     if (
       existingOrder.status === "PENDING_PAYMENT" &&
-      (
-        !existingOrder.expiresAt ||
-        new Date(existingOrder.expiresAt).getTime() <= Date.now()
-      )
+      (!existingOrder.expiresAt ||
+        new Date(existingOrder.expiresAt).getTime() <= Date.now())
     ) {
-      throw createError(
-        409,
-        "Manual payment order has expired"
-      );
+      throw createError(409, "Manual payment order has expired");
     }
 
     if (existingOrder.bankDetailsSendingAt) {
       throw createError(
         409,
-        "Bank details email is already being processed. Please check delivery status before retrying."
+        "Bank details email is already being processed. Please check delivery status before retrying.",
       );
     }
 
@@ -956,13 +966,13 @@ export const sendManualBankDetails = async (req, res) => {
       },
       {
         new: true,
-      }
+      },
     );
 
     if (!order) {
       throw createError(
         409,
-        "Order is not eligible for bank details email or another email request is in progress"
+        "Order is not eligible for bank details email or another email request is in progress",
       );
     }
 
@@ -973,27 +983,17 @@ export const sendManualBankDetails = async (req, res) => {
     // ==========================================
 
     const [user, asset] = await Promise.all([
-      User.findById(order.userId)
-        .select("name email")
-        .lean(),
+      User.findById(order.userId).select("name email").lean(),
 
-      Asset.findById(order.assetId)
-        .select("assetName")
-        .lean(),
+      Asset.findById(order.assetId).select("assetName").lean(),
     ]);
 
     if (!user?.email) {
-      throw createError(
-        404,
-        "Customer email address not found"
-      );
+      throw createError(404, "Customer email address not found");
     }
 
     if (!asset) {
-      throw createError(
-        404,
-        "Asset not found"
-      );
+      throw createError(404, "Asset not found");
     }
 
     // ==========================================
@@ -1002,8 +1002,7 @@ export const sendManualBankDetails = async (req, res) => {
 
     const isResend = Boolean(order.bankDetailsSentAt);
 
-    const previousSentAt =
-      order.bankDetailsSentAt || null;
+    const previousSentAt = order.bankDetailsSentAt || null;
 
     // ==========================================
     // 6. SEND BANK DETAILS EMAIL
@@ -1043,10 +1042,7 @@ export const sendManualBankDetails = async (req, res) => {
         paymentGateway: "MANUAL",
 
         status: {
-          $in: [
-            "PENDING_PAYMENT",
-            "PENDING_VERIFICATION",
-          ],
+          $in: ["PENDING_PAYMENT", "PENDING_VERIFICATION"],
         },
 
         // Only release our own lock.
@@ -1064,13 +1060,13 @@ export const sendManualBankDetails = async (req, res) => {
       },
       {
         new: true,
-      }
+      },
     );
 
     if (!updated) {
       throw createError(
         409,
-        "Email was accepted but order update failed. Admin reconciliation required."
+        "Email was accepted but order update failed. Admin reconciliation required.",
       );
     }
 
@@ -1115,7 +1111,6 @@ export const sendManualBankDetails = async (req, res) => {
         expiresAt: updated.expiresAt,
       },
     });
-
   } catch (error) {
     // ==========================================
     // 9. ERROR HANDLING
@@ -1126,29 +1121,353 @@ export const sendManualBankDetails = async (req, res) => {
       // SMTP may accept an email even if the request
       // subsequently fails. Reconcile before unlocking.
 
-      console.error(
-        "MANUAL BANK EMAIL RECONCILIATION REQUIRED:",
-        {
-          orderId,
-          emailAccepted,
-          error: error.message,
-        }
-      );
+      console.error("MANUAL BANK EMAIL RECONCILIATION REQUIRED:", {
+        orderId,
+        emailAccepted,
+        error: error.message,
+      });
     }
 
-    return handleError(
-      res,
-      error,
-      "SEND MANUAL BANK DETAILS"
-    );
+    return handleError(res, error, "SEND MANUAL BANK DETAILS");
   }
 };
 
 
-
-// ============================================================
 // 3. CUSTOMER SUBMITS PAYMENT PROOF
-// ============================================================
+
+
+// export const submitManualProof = async (req, res) => {
+//   const userId = getUserId(req);
+//   const { orderId } = req.params;
+
+//   const { transactionId, paymentMethod, amountPaid, paymentDate } =
+//     req.body || {};
+
+//   const utr = normalizeUTR(transactionId);
+
+//   const skipBankEmailCheck =
+//     process.env.NODE_ENV === "development" &&
+//     process.env.MANUAL_PAYMENT_SKIP_BANK_EMAIL_CHECK === "true";
+
+//   if (!isId(userId) || !isId(orderId)) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Invalid user or order ID",
+//     });
+//   }
+
+//   if (
+//     !/^[A-Z0-9-]{6,80}$/.test(utr) ||
+//     !PAYMENT_METHODS.includes(paymentMethod) ||
+//     !Number.isFinite(toPaise(amountPaid)) ||
+//     !validDate(paymentDate) ||
+//     !Array.isArray(req.files) ||
+//     req.files.length < 1 ||
+//     req.files.length > 3
+//   ) {
+//     return res.status(400).json({
+//       success: false,
+//       message:
+//         "Valid UTR, payment method, amount, date and 1–3 screenshots required",
+//     });
+//   }
+
+//   const uploadedFiles = [];
+//   let oldScreenshots = [];
+
+//   let committed = false;
+//   let session = null;
+
+//   let manualPaymentId = null;
+//   let isUpdated = false;
+
+//   try {
+//     const order = await Order.findOne({
+//       _id: orderId,
+//       userId,
+//       paymentGateway: "MANUAL",
+//     }).lean();
+
+//     if (!order) {
+//       throw createError(404, "Manual order not found");
+//     }
+
+//     const allowedOrderStatuses = ["PENDING_PAYMENT", "PENDING_VERIFICATION"];
+
+//     if (!allowedOrderStatuses.includes(order.status)) {
+//       throw createError(409, "This order no longer accepts payment proof");
+//     }
+
+//     if (!order.expiresAt || new Date(order.expiresAt).getTime() <= Date.now()) {
+//       throw createError(409, "Manual payment order has expired");
+//     }
+
+//     if (!skipBankEmailCheck && !order.bankDetailsSentAt) {
+//       throw createError(409, "Bank details have not been sent for this order");
+//     }
+
+//     if (toPaise(amountPaid) !== toPaise(order.totalAmount)) {
+//       throw createError(409, "Payment amount does not match order amount");
+//     }
+
+//     const currentManual = await ManualPayment.findOne({
+//       orderId,
+//     }).lean();
+
+//     if (
+//       currentManual &&
+//       !["PENDING_VERIFICATION", "REVIEW_REQUIRED"].includes(
+//         currentManual.status,
+//       )
+//     ) {
+//       throw createError(
+//         409,
+//         "Payment has already been finalized and cannot be modified",
+//       );
+//     }
+
+//     if (currentManual && order.status !== "PENDING_VERIFICATION") {
+//       throw createError(
+//         409,
+//         "Existing payment and order status are inconsistent",
+//       );
+//     }
+
+//     if (!currentManual && order.status !== "PENDING_PAYMENT") {
+//       throw createError(
+//         409,
+//         "Payment proof is missing for an order awaiting verification",
+//       );
+//     }
+
+//     const duplicateUTR = await ManualPayment.findOne({
+//       normalizedTransactionId: utr,
+//       orderId: { $ne: order._id },
+//     }).lean();
+
+//     if (duplicateUTR) {
+//       throw createError(
+//         409,
+//         "This transaction reference is already associated with another order",
+//       );
+//     }
+
+//     for (const file of req.files) {
+//       const uploaded = await uploadManualPaymentScreenshot(file, orderId);
+
+//       uploadedFiles.push(uploaded);
+//     }
+
+//     session = await mongoose.startSession();
+
+//     await session.withTransaction(async () => {
+//       const now = new Date();
+
+//       const currentOrder = await Order.findOne({
+//         _id: orderId,
+//         userId,
+//         paymentGateway: "MANUAL",
+//       }).session(session);
+
+//       if (!currentOrder) {
+//         throw createError(404, "Manual order not found");
+//       }
+
+//       if (!allowedOrderStatuses.includes(currentOrder.status)) {
+//         throw createError(409, "Order no longer accepts payment proof");
+//       }
+
+//       if (!currentOrder.expiresAt || new Date(currentOrder.expiresAt) <= now) {
+//         throw createError(409, "Manual order has expired");
+//       }
+
+//       if (!skipBankEmailCheck && !currentOrder.bankDetailsSentAt) {
+//         throw createError(409, "Bank details not sent");
+//       }
+
+//       const duplicate = await ManualPayment.findOne({
+//         normalizedTransactionId: utr,
+//         orderId: { $ne: currentOrder._id },
+//       }).session(session);
+
+//       if (duplicate) {
+//         throw createError(
+//           409,
+//           "Transaction reference already used for another order",
+//         );
+//       }
+
+//       const existing = await ManualPayment.findOne({
+//         orderId: currentOrder._id,
+//       }).session(session);
+
+//       const screenshots = uploadedFiles.map((file) => ({
+//         url: file.url,
+//         fileId: file.fileId,
+//         uploadedAt: now,
+//       }));
+
+//       if (existing) {
+//         if (currentOrder.status !== "PENDING_VERIFICATION") {
+//           throw createError(409, "Order and payment status mismatch");
+//         }
+
+//         if (
+//           !["PENDING_VERIFICATION", "REVIEW_REQUIRED"].includes(existing.status)
+//         ) {
+//           throw createError(
+//             409,
+//             "Payment has been finalized and cannot be updated",
+//           );
+//         }
+
+//         if (
+//           !sameId(existing.userId, userId) ||
+//           !sameId(existing.assetId, currentOrder.assetId)
+//         ) {
+//           throw createError(409, "Manual payment ownership mismatch");
+//         }
+
+//         oldScreenshots = (existing.paymentScreenshots || []).map((file) => ({
+//           fileId: file.fileId,
+//         }));
+
+//         existing.transactionId = utr;
+//         existing.normalizedTransactionId = utr;
+
+//         existing.paymentMethod = paymentMethod;
+//         existing.amountPaid = Number(amountPaid);
+//         existing.paymentDate = new Date(paymentDate);
+
+//         existing.paymentScreenshots = screenshots;
+
+//         existing.status = "PENDING_VERIFICATION";
+//         existing.adminRemark = null;
+
+//         existing.bankCreditVerified = false;
+
+//         existing.verifiedBy = null;
+//         existing.verifiedAt = null;
+
+//         existing.bankCreditReference = null;
+//         existing.bankCreditAmount = null;
+//         existing.bankCreditDate = null;
+
+//         existing.rejectionReason = null;
+//         existing.rejectedAt = null;
+
+//         existing.submittedAt = now;
+
+//         await existing.save({ session });
+
+//         manualPaymentId = existing._id;
+//         isUpdated = true;
+//       } else {
+//         if (currentOrder.status !== "PENDING_PAYMENT") {
+//           throw createError(409, "Order already awaiting verification");
+//         }
+
+//         const [manual] = await ManualPayment.create(
+//           [
+//             {
+//               userId,
+//               orderId: currentOrder._id,
+//               assetId: currentOrder.assetId,
+
+//               fractions: currentOrder.fractions,
+
+//               amountPerFraction: currentOrder.amountPerFraction,
+
+//               totalAmount: currentOrder.totalAmount,
+
+//               amountPaid: Number(amountPaid),
+
+//               paymentMethod,
+
+//               transactionId: utr,
+//               normalizedTransactionId: utr,
+
+//               paymentDate: new Date(paymentDate),
+
+//               paymentScreenshots: screenshots,
+
+//               status: "PENDING_VERIFICATION",
+
+//               submittedAt: now,
+
+//               expiresAt: currentOrder.expiresAt,
+//             },
+//           ],
+//           { session },
+//         );
+
+//         manualPaymentId = manual._id;
+
+//         currentOrder.status = "PENDING_VERIFICATION";
+
+//         await currentOrder.save({ session });
+
+//         isUpdated = false;
+//       }
+//     });
+
+//     committed = true;
+
+//     if (isUpdated && oldScreenshots.length > 0) {
+//       const cleanup = await Promise.allSettled(
+//         oldScreenshots
+//           .filter((file) => file.fileId)
+//           .map((file) => deleteManualPaymentScreenshot(file.fileId)),
+//       );
+
+//       for (const result of cleanup) {
+//         if (result.status === "rejected") {
+//           console.error("OLD MANUAL SCREENSHOT CLEANUP FAILED:", result.reason);
+//         }
+//       }
+//     }
+
+//     await sendEmailSafely(sendManualPaymentSubmittedEmail, orderId);
+
+//     return res.status(isUpdated ? 200 : 201).json({
+//       success: true,
+
+//       message: isUpdated
+//         ? "Manual payment proof updated successfully"
+//         : "Manual payment proof submitted successfully",
+
+//       data: {
+//         manualPaymentId,
+//         orderId,
+
+//         transactionId: utr,
+//         paymentMethod,
+//         amountPaid: Number(amountPaid),
+//         paymentDate: new Date(paymentDate),
+
+//         screenshotCount: uploadedFiles.length,
+
+//         status: "PENDING_VERIFICATION",
+
+//         isUpdated,
+//       },
+
+//       note: "Payment will be verified by the Bunndle admin team.",
+//     });
+//   } catch (error) {
+//     return handleError(res, error, "SUBMIT MANUAL PROOF");
+//   } finally {
+//     if (session) {
+//       await session.endSession();
+//     }
+
+//     if (!committed) {
+//       await Promise.allSettled(
+//         uploadedFiles.map((file) => deleteManualPaymentScreenshot(file.fileId)),
+//       );
+//     }
+//   }
+// };
 
 
 export const submitManualProof = async (req, res) => {
@@ -1162,34 +1481,9 @@ export const submitManualProof = async (req, res) => {
     paymentDate,
   } = req.body || {};
 
-  const utr = normalizeUTR(transactionId);
-
   const skipBankEmailCheck =
     process.env.NODE_ENV === "development" &&
     process.env.MANUAL_PAYMENT_SKIP_BANK_EMAIL_CHECK === "true";
-
-  if (!isId(userId) || !isId(orderId)) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid user or order ID",
-    });
-  }
-
-  if (
-    !/^[A-Z0-9-]{6,80}$/.test(utr) ||
-    !PAYMENT_METHODS.includes(paymentMethod) ||
-    !Number.isFinite(toPaise(amountPaid)) ||
-    !validDate(paymentDate) ||
-    !Array.isArray(req.files) ||
-    req.files.length < 1 ||
-    req.files.length > 3
-  ) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Valid UTR, payment method, amount, date and 1–3 screenshots required",
-    });
-  }
 
   const uploadedFiles = [];
   let oldScreenshots = [];
@@ -1201,6 +1495,52 @@ export const submitManualProof = async (req, res) => {
   let isUpdated = false;
 
   try {
+    // ==========================================
+    // 1. VALIDATE USER AND ORDER
+    // ==========================================
+
+    if (!isId(userId) || !isId(orderId)) {
+      throw createError(
+        400,
+        "Invalid user or order ID"
+      );
+    }
+
+    // ==========================================
+    // 2. NORMALIZE SINGLE OR MULTIPLE UTRs
+    // ==========================================
+
+    const {
+      transactionId: normalizedTransactionString,
+      transactionIds,
+      isMultiplePayment,
+    } = normalizeMultipleUTRs(transactionId);
+
+    const normalizedTransactionIds = transactionIds;
+
+    // ==========================================
+    // 3. VALIDATE PAYMENT DETAILS
+    // ==========================================
+
+    if (
+      !PAYMENT_METHODS.includes(paymentMethod) ||
+      !Number.isFinite(toPaise(amountPaid)) ||
+      toPaise(amountPaid) <= 0 ||
+      !validDate(paymentDate) ||
+      !Array.isArray(req.files) ||
+      req.files.length < 1 ||
+      req.files.length > 3
+    ) {
+      throw createError(
+        400,
+        "Valid payment method, amount, date and 1–3 screenshots are required"
+      );
+    }
+
+    // ==========================================
+    // 4. FIND MANUAL ORDER
+    // ==========================================
+
     const order = await Order.findOne({
       _id: orderId,
       userId,
@@ -1208,7 +1548,10 @@ export const submitManualProof = async (req, res) => {
     }).lean();
 
     if (!order) {
-      throw createError(404, "Manual order not found");
+      throw createError(
+        404,
+        "Manual order not found"
+      );
     }
 
     const allowedOrderStatuses = [
@@ -1219,7 +1562,7 @@ export const submitManualProof = async (req, res) => {
     if (!allowedOrderStatuses.includes(order.status)) {
       throw createError(
         409,
-        "This order no longer accepts payment proof",
+        "This order no longer accepts payment proof"
       );
     }
 
@@ -1229,7 +1572,7 @@ export const submitManualProof = async (req, res) => {
     ) {
       throw createError(
         409,
-        "Manual payment order has expired",
+        "Manual payment order has expired"
       );
     }
 
@@ -1239,7 +1582,7 @@ export const submitManualProof = async (req, res) => {
     ) {
       throw createError(
         409,
-        "Bank details have not been sent for this order",
+        "Bank details have not been sent for this order"
       );
     }
 
@@ -1249,9 +1592,13 @@ export const submitManualProof = async (req, res) => {
     ) {
       throw createError(
         409,
-        "Payment amount does not match order amount",
+        "Total payment amount does not match order amount"
       );
     }
+
+    // ==========================================
+    // 5. CHECK EXISTING MANUAL PAYMENT
+    // ==========================================
 
     const currentManual = await ManualPayment.findOne({
       orderId,
@@ -1266,7 +1613,7 @@ export const submitManualProof = async (req, res) => {
     ) {
       throw createError(
         409,
-        "Payment has already been finalized and cannot be modified",
+        "Payment has already been finalized and cannot be modified"
       );
     }
 
@@ -1276,7 +1623,7 @@ export const submitManualProof = async (req, res) => {
     ) {
       throw createError(
         409,
-        "Existing payment and order status are inconsistent",
+        "Existing payment and order status are inconsistent"
       );
     }
 
@@ -1286,36 +1633,67 @@ export const submitManualProof = async (req, res) => {
     ) {
       throw createError(
         409,
-        "Payment proof is missing for an order awaiting verification",
+        "Payment proof is missing for an order awaiting verification"
       );
     }
 
+    // ==========================================
+    // 6. CHECK DUPLICATE TRANSACTION IDs
+    // ==========================================
+
     const duplicateUTR = await ManualPayment.findOne({
-      normalizedTransactionId: utr,
-      orderId: { $ne: order._id },
+      orderId: {
+        $ne: order._id,
+      },
+
+      $or: [
+        {
+          normalizedTransactionIds: {
+            $in: normalizedTransactionIds,
+          },
+        },
+        {
+          // Support historical single-UTR records.
+          normalizedTransactionId: {
+            $in: normalizedTransactionIds,
+          },
+        },
+      ],
     }).lean();
 
     if (duplicateUTR) {
       throw createError(
         409,
-        "This transaction reference is already associated with another order",
+        "One or more transaction IDs are already associated with another order"
       );
     }
+
+    // ==========================================
+    // 7. UPLOAD PAYMENT SCREENSHOTS
+    // ==========================================
 
     for (const file of req.files) {
       const uploaded =
         await uploadManualPaymentScreenshot(
           file,
-          orderId,
+          orderId
         );
 
       uploadedFiles.push(uploaded);
     }
 
+    // ==========================================
+    // 8. START MONGODB TRANSACTION
+    // ==========================================
+
     session = await mongoose.startSession();
 
     await session.withTransaction(async () => {
       const now = new Date();
+
+      // ========================================
+      // 8.1 RECHECK ORDER
+      // ========================================
 
       const currentOrder = await Order.findOne({
         _id: orderId,
@@ -1326,7 +1704,7 @@ export const submitManualProof = async (req, res) => {
       if (!currentOrder) {
         throw createError(
           404,
-          "Manual order not found",
+          "Manual order not found"
         );
       }
 
@@ -1337,7 +1715,7 @@ export const submitManualProof = async (req, res) => {
       ) {
         throw createError(
           409,
-          "Order no longer accepts payment proof",
+          "Order no longer accepts payment proof"
         );
       }
 
@@ -1347,7 +1725,7 @@ export const submitManualProof = async (req, res) => {
       ) {
         throw createError(
           409,
-          "Manual order has expired",
+          "Manual order has expired"
         );
       }
 
@@ -1357,31 +1735,69 @@ export const submitManualProof = async (req, res) => {
       ) {
         throw createError(
           409,
-          "Bank details not sent",
+          "Bank details have not been sent"
         );
       }
 
+      if (
+        toPaise(amountPaid) !==
+        toPaise(currentOrder.totalAmount)
+      ) {
+        throw createError(
+          409,
+          "Total payment amount does not match order amount"
+        );
+      }
+
+      // ========================================
+      // 8.2 RECHECK DUPLICATE UTRs
+      // ========================================
+
       const duplicate = await ManualPayment.findOne({
-        normalizedTransactionId: utr,
-        orderId: { $ne: currentOrder._id },
+        orderId: {
+          $ne: currentOrder._id,
+        },
+
+        $or: [
+          {
+            normalizedTransactionIds: {
+              $in: normalizedTransactionIds,
+            },
+          },
+          {
+            normalizedTransactionId: {
+              $in: normalizedTransactionIds,
+            },
+          },
+        ],
       }).session(session);
 
       if (duplicate) {
         throw createError(
           409,
-          "Transaction reference already used for another order",
+          "One or more transaction IDs are already used for another order"
         );
       }
+
+      // ========================================
+      // 8.3 FIND EXISTING MANUAL PAYMENT
+      // ========================================
 
       const existing = await ManualPayment.findOne({
         orderId: currentOrder._id,
       }).session(session);
 
-      const screenshots = uploadedFiles.map((file) => ({
-        url: file.url,
-        fileId: file.fileId,
-        uploadedAt: now,
-      }));
+      const screenshots = uploadedFiles.map(
+        (file) => ({
+          url: file.url,
+          fileId: file.fileId,
+          uploadedAt: now,
+        })
+      );
+
+      // ========================================
+      // 9. UPDATE EXISTING MANUAL PAYMENT
+      // ========================================
 
       if (existing) {
         if (
@@ -1390,7 +1806,7 @@ export const submitManualProof = async (req, res) => {
         ) {
           throw createError(
             409,
-            "Order and payment status mismatch",
+            "Order and payment status mismatch"
           );
         }
 
@@ -1402,36 +1818,63 @@ export const submitManualProof = async (req, res) => {
         ) {
           throw createError(
             409,
-            "Payment has been finalized and cannot be updated",
+            "Payment has been finalized and cannot be updated"
           );
         }
 
         if (
           !sameId(existing.userId, userId) ||
-          !sameId(existing.assetId, currentOrder.assetId)
+          !sameId(
+            existing.assetId,
+            currentOrder.assetId
+          )
         ) {
           throw createError(
             409,
-            "Manual payment ownership mismatch",
+            "Manual payment ownership mismatch"
           );
         }
 
+        // Save previous screenshot IDs.
         oldScreenshots = (
           existing.paymentScreenshots || []
         ).map((file) => ({
           fileId: file.fileId,
         }));
 
-        existing.transactionId = utr;
-        existing.normalizedTransactionId = utr;
+        // ------------------------------------
+        // UPDATE SINGLE / MULTIPLE UTRs
+        // ------------------------------------
+
+        existing.transactionId =
+          normalizedTransactionString;
+
+        existing.normalizedTransactionId =
+          normalizedTransactionString;
+
+        existing.normalizedTransactionIds =
+          normalizedTransactionIds;
+
+        // ------------------------------------
+        // UPDATE PAYMENT DETAILS
+        // ------------------------------------
 
         existing.paymentMethod = paymentMethod;
-        existing.amountPaid = Number(amountPaid);
-        existing.paymentDate = new Date(paymentDate);
 
-        existing.paymentScreenshots = screenshots;
+        existing.amountPaid =
+          Number(amountPaid);
 
-        existing.status = "PENDING_VERIFICATION";
+        existing.paymentDate =
+          new Date(paymentDate);
+
+        // Replace old screenshots.
+        existing.paymentScreenshots =
+          screenshots;
+
+        // Reset verification information.
+        existing.status =
+          "PENDING_VERIFICATION";
+
         existing.adminRemark = null;
 
         existing.bankCreditVerified = false;
@@ -1453,134 +1896,219 @@ export const submitManualProof = async (req, res) => {
         manualPaymentId = existing._id;
         isUpdated = true;
       } else {
+        // ====================================
+        // 10. CREATE NEW MANUAL PAYMENT
+        // ====================================
+
         if (
-          currentOrder.status !== "PENDING_PAYMENT"
+          currentOrder.status !==
+          "PENDING_PAYMENT"
         ) {
           throw createError(
             409,
-            "Order already awaiting verification",
+            "Order already awaiting verification"
           );
         }
 
-        const [manual] = await ManualPayment.create(
-          [
-            {
-              userId,
-              orderId: currentOrder._id,
-              assetId: currentOrder.assetId,
+        const [manual] =
+          await ManualPayment.create(
+            [
+              {
+                userId,
 
-              fractions: currentOrder.fractions,
+                orderId: currentOrder._id,
 
-              amountPerFraction:
-                currentOrder.amountPerFraction,
+                assetId: currentOrder.assetId,
 
-              totalAmount:
-                currentOrder.totalAmount,
+                fractions:
+                  currentOrder.fractions,
 
-              amountPaid: Number(amountPaid),
+                amountPerFraction:
+                  currentOrder.amountPerFraction,
 
-              paymentMethod,
+                totalAmount:
+                  currentOrder.totalAmount,
 
-              transactionId: utr,
-              normalizedTransactionId: utr,
+                amountPaid:
+                  Number(amountPaid),
 
-              paymentDate: new Date(paymentDate),
+                paymentMethod,
 
-              paymentScreenshots: screenshots,
+                // --------------------------------
+                // SINGLE OR MULTIPLE TRANSACTIONS
+                // --------------------------------
 
-              status: "PENDING_VERIFICATION",
+                transactionId:
+                  normalizedTransactionString,
 
-              submittedAt: now,
+                normalizedTransactionId:
+                  normalizedTransactionString,
 
-              expiresAt: currentOrder.expiresAt,
-            },
-          ],
-          { session },
-        );
+                normalizedTransactionIds,
+
+                paymentDate:
+                  new Date(paymentDate),
+
+                paymentScreenshots:
+                  screenshots,
+
+                status:
+                  "PENDING_VERIFICATION",
+
+                submittedAt: now,
+
+                expiresAt:
+                  currentOrder.expiresAt,
+              },
+            ],
+            { session }
+          );
 
         manualPaymentId = manual._id;
 
+        // Move order into verification.
         currentOrder.status =
           "PENDING_VERIFICATION";
 
-        await currentOrder.save({ session });
+        await currentOrder.save({
+          session,
+        });
 
         isUpdated = false;
       }
     });
 
+    // ==========================================
+    // 11. TRANSACTION COMMITTED
+    // ==========================================
+
     committed = true;
 
-    if (isUpdated && oldScreenshots.length > 0) {
+    // ==========================================
+    // 12. DELETE OLD SCREENSHOTS
+    // ==========================================
+
+    if (
+      isUpdated &&
+      oldScreenshots.length > 0
+    ) {
       const cleanup = await Promise.allSettled(
         oldScreenshots
           .filter((file) => file.fileId)
           .map((file) =>
-            deleteManualPaymentScreenshot(file.fileId)
-          ),
+            deleteManualPaymentScreenshot(
+              file.fileId
+            )
+          )
       );
 
       for (const result of cleanup) {
         if (result.status === "rejected") {
           console.error(
             "OLD MANUAL SCREENSHOT CLEANUP FAILED:",
-            result.reason,
+            result.reason
           );
         }
       }
     }
 
+    // ==========================================
+    // 13. SEND PAYMENT SUBMISSION EMAIL
+    // ==========================================
+
     await sendEmailSafely(
       sendManualPaymentSubmittedEmail,
-      orderId,
+      orderId
     );
 
-    return res.status(isUpdated ? 200 : 201).json({
-      success: true,
+    // ==========================================
+    // 14. SUCCESS RESPONSE
+    // ==========================================
 
-      message: isUpdated
-        ? "Manual payment proof updated successfully"
-        : "Manual payment proof submitted successfully",
+    return res
+      .status(isUpdated ? 200 : 201)
+      .json({
+        success: true,
 
-      data: {
-        manualPaymentId,
-        orderId,
+        message: isUpdated
+          ? "Manual payment proof updated successfully"
+          : "Manual payment proof submitted successfully",
 
-        transactionId: utr,
-        paymentMethod,
-        amountPaid: Number(amountPaid),
-        paymentDate: new Date(paymentDate),
+        data: {
+          manualPaymentId,
+          orderId,
 
-        screenshotCount: uploadedFiles.length,
+          // Comma-separated transaction IDs.
+          transactionId:
+            normalizedTransactionString,
 
-        status: "PENDING_VERIFICATION",
+          // Individual transaction IDs.
+          transactionIds,
 
-        isUpdated,
-      },
+          // Indicates multiple transfers.
+          isMultiplePayment,
 
-      note:
-        "Payment will be verified by the Bunndle admin team.",
-    });
+          transactionCount:
+            transactionIds.length,
+
+          paymentMethod,
+
+          // Total payment across all transfers.
+          amountPaid:
+            Number(amountPaid),
+
+          paymentDate:
+            new Date(paymentDate),
+
+          screenshotCount:
+            uploadedFiles.length,
+
+          status:
+            "PENDING_VERIFICATION",
+
+          isUpdated,
+        },
+
+        note:
+          "Payment will be verified by the Bunndle admin team.",
+      });
+
   } catch (error) {
+    // ==========================================
+    // 15. ERROR HANDLING
+    // ==========================================
+
     return handleError(
       res,
       error,
-      "SUBMIT MANUAL PROOF",
+      "SUBMIT MANUAL PROOF"
     );
+
   } finally {
+    // ==========================================
+    // 16. CLEANUP
+    // ==========================================
+
     if (session) {
       await session.endSession();
     }
 
+    // Remove newly uploaded screenshots
+    // if the database transaction failed.
     if (!committed) {
       await Promise.allSettled(
-        uploadedFiles.map((file) =>
-          deleteManualPaymentScreenshot(file.fileId)
-        ),
+        uploadedFiles
+          .filter((file) => file.fileId)
+          .map((file) =>
+            deleteManualPaymentScreenshot(
+              file.fileId
+            )
+          )
       );
     }
   }
 };
+
 
 
 // ============================================================
@@ -1786,9 +2314,9 @@ export const getAdminManualPayment = async (req, res) => {
 // 8. ADMIN: APPROVE MANUAL PAYMENT
 // ============================================================
 
+
 export const approveManualPayment = async (req, res) => {
   const adminId = getUserId(req);
-
   const { manualPaymentId } = req.params;
 
   const {
@@ -1799,28 +2327,7 @@ export const approveManualPayment = async (req, res) => {
     remark,
   } = req.body || {};
 
-  const creditRef = normalizeUTR(bankCreditReference);
-
-  if (!isId(adminId) || !isId(manualPaymentId)) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid admin or manual payment ID",
-    });
-  }
-
-  if (
-    bankCreditVerified !== true ||
-    !/^[A-Z0-9-]{6,80}$/.test(creditRef) ||
-    !Number.isFinite(toPaise(bankCreditAmount)) ||
-    !validDate(bankCreditDate)
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Verified bank credit details required",
-    });
-  }
-
-  const session = await mongoose.startSession();
+  let session = null;
 
   let purchaseHistoryId = null;
   let paymentId = null;
@@ -1828,15 +2335,81 @@ export const approveManualPayment = async (req, res) => {
   let alreadyProcessed = false;
 
   try {
+    // ========================================================
+    // 1. VALIDATE ADMIN AND MANUAL PAYMENT ID
+    // ========================================================
+
+    if (!isId(adminId) || !isId(manualPaymentId)) {
+      throw createError(
+        400,
+        "Invalid admin or manual payment ID"
+      );
+    }
+
+    // ========================================================
+    // 2. NORMALIZE SINGLE OR MULTIPLE BANK REFERENCES
+    // ========================================================
+
+    // Examples:
+    //
+    // Single:
+    // "UTR123456789"
+    //
+    // Multiple:
+    // "UTR123456789, UTR987654321"
+    //
+    // normalizeMultipleUTRs() already supports both.
+
+    const {
+      transactionId: creditRef,
+      transactionIds: verifiedTransactionIds,
+      isMultiplePayment,
+    } = normalizeMultipleUTRs(bankCreditReference);
+
+    // ========================================================
+    // 3. VALIDATE BANK CREDIT DETAILS
+    // ========================================================
+
+    if (
+      bankCreditVerified !== true ||
+      !Number.isFinite(toPaise(bankCreditAmount)) ||
+      !validDate(bankCreditDate)
+    ) {
+      throw createError(
+        400,
+        "Valid verified bank credit details are required"
+      );
+    }
+
+    // ========================================================
+    // 4. START MONGODB SESSION
+    // ========================================================
+
+    session = await mongoose.startSession();
+
     await session.withTransaction(async () => {
-      const manual =
-        await ManualPayment.findById(manualPaymentId).session(session);
+      // ======================================================
+      // 5. FETCH MANUAL PAYMENT
+      // ======================================================
+
+      const manual = await ManualPayment.findById(
+        manualPaymentId
+      ).session(session);
 
       if (!manual) {
-        throw createError(404, "Manual payment not found");
+        throw createError(
+          404,
+          "Manual payment not found"
+        );
       }
 
-      const order = await Order.findById(manual.orderId).session(session);
+      // ======================================================
+      // 6. FETCH AND VALIDATE ORDER
+      // ======================================================
+
+      const order = await Order.findById(
+        manual.orderId
+      ).session(session);
 
       if (
         !order ||
@@ -1844,107 +2417,230 @@ export const approveManualPayment = async (req, res) => {
         !sameId(order.userId, manual.userId) ||
         !sameId(order.assetId, manual.assetId)
       ) {
-        throw createError(409, "Order and manual payment mismatch");
+        throw createError(
+          409,
+          "Order and manual payment mismatch"
+        );
       }
 
-      // ----------------------------------------
-      // IDEMPOTENCY
-      // ----------------------------------------
+      // ======================================================
+      // 7. IDEMPOTENCY: ALREADY APPROVED
+      // ======================================================
 
-      if (manual.status === "APPROVED" && order.status === "COMPLETED") {
-        const existing = await PurchaseHistory.findOne({
-          orderId: order._id,
-        }).session(session);
+      if (
+        manual.status === "APPROVED" &&
+        order.status === "COMPLETED"
+      ) {
+        const existingPurchase =
+          await PurchaseHistory.findOne({
+            orderId: order._id,
+          }).session(session);
 
         if (
-          !existing ||
+          !existingPurchase ||
           !manual.paymentId ||
-          !sameId(existing.paymentId, manual.paymentId)
+          !sameId(
+            existingPurchase.paymentId,
+            manual.paymentId
+          )
         ) {
-          throw createError(409, "Previous approval requires reconciliation");
+          throw createError(
+            409,
+            "Previous approval requires reconciliation"
+          );
         }
 
-        const existingPayment = await Payment.findById(
-          manual.paymentId,
-        ).session(session);
+        const existingPayment =
+          await Payment.findById(
+            manual.paymentId
+          ).session(session);
 
-        if (!existingPayment || existingPayment.status !== "SUCCESS") {
-          throw createError(409, "Existing payment is inconsistent");
+        if (
+          !existingPayment ||
+          existingPayment.status !== "SUCCESS"
+        ) {
+          throw createError(
+            409,
+            "Existing payment is inconsistent"
+          );
         }
 
         paymentId = existingPayment._id;
-
-        purchaseHistoryId = existing._id;
+        purchaseHistoryId = existingPurchase._id;
 
         alreadyProcessed = true;
+
         return;
       }
+
+      // ======================================================
+      // 8. VALIDATE PENDING APPROVAL STATUS
+      // ======================================================
 
       if (
         order.status !== "PENDING_VERIFICATION" ||
         !REVIEW_STATUSES.includes(manual.status)
       ) {
-        throw createError(409, "Payment is not awaiting approval");
+        throw createError(
+          409,
+          "Payment is not awaiting approval"
+        );
       }
 
-      // ----------------------------------------
-      // VALIDATE SUBMITTED PROOF
-      // ----------------------------------------
+      // ======================================================
+      // 9. VALIDATE SUBMITTED PAYMENT PROOF
+      // ======================================================
 
       if (
-        !manual.normalizedTransactionId ||
-        !manual.paymentScreenshots ||
+        !manual.transactionId ||
+        !Array.isArray(manual.paymentScreenshots) ||
         manual.paymentScreenshots.length < 1 ||
         manual.paymentScreenshots.length > 3
       ) {
-        throw createError(409, "UTR or payment screenshots missing");
+        throw createError(
+          409,
+          "Transaction ID or payment screenshots missing"
+        );
       }
 
-      if (normalizeUTR(manual.normalizedTransactionId) !== creditRef) {
-        throw createError(409, "Bank reference does not match submitted UTR");
+      // ======================================================
+      // 10. NORMALIZE SUBMITTED TRANSACTION IDs
+      // ======================================================
+
+      // Support both new and existing manual payment records.
+      //
+      // New records may contain:
+      // normalizedTransactionIds: ["UTR1", "UTR2"]
+      //
+      // Existing records may only contain:
+      // transactionId: "UTR1"
+
+      const submittedTransactionIds =
+        normalizeMultipleUTRs(
+          manual.transactionId
+        ).transactionIds;
+
+      // ======================================================
+      // 11. COMPARE ALL TRANSACTION IDs
+      // ======================================================
+
+      const submittedSet = new Set(
+        submittedTransactionIds
+      );
+
+      const verifiedSet = new Set(
+        verifiedTransactionIds
+      );
+
+      const referencesMatch =
+        submittedSet.size === verifiedSet.size &&
+        [...submittedSet].every(
+          (utr) => verifiedSet.has(utr)
+        );
+
+      if (!referencesMatch) {
+        throw createError(
+          409,
+          "Bank references do not match all submitted transaction IDs"
+        );
       }
+
+      // ======================================================
+      // 12. VALIDATE VERIFIED AMOUNT
+      // ======================================================
+
+      const orderAmountPaise = toPaise(
+        order.totalAmount
+      );
+
+      const manualAmountPaise = toPaise(
+        manual.totalAmount
+      );
+
+      const submittedAmountPaise = toPaise(
+        manual.amountPaid
+      );
+
+      const verifiedAmountPaise = toPaise(
+        bankCreditAmount
+      );
 
       if (
-        toPaise(order.totalAmount) !== toPaise(manual.totalAmount) ||
-        toPaise(order.totalAmount) !== toPaise(manual.amountPaid) ||
-        toPaise(order.totalAmount) !== toPaise(bankCreditAmount)
+        orderAmountPaise !== manualAmountPaise ||
+        orderAmountPaise !== submittedAmountPaise ||
+        orderAmountPaise !== verifiedAmountPaise
       ) {
-        throw createError(409, "Verified amount does not match order");
-      }
-
-      const existingPayment = await Payment.findOne({
-        orderId: order._id,
-      }).session(session);
-
-      if (existingPayment) {
-        throw createError(409, "Payment already exists for this order");
-      }
-
-      const existingPurchase = await PurchaseHistory.findOne({
-        orderId: order._id,
-      }).session(session);
-
-      if (existingPurchase) {
-        throw createError(409, "Purchase history already exists");
-      }
-
-      // ----------------------------------------
-      // ALLOCATE AVAILABLE FRACTIONS
-      // ----------------------------------------
-
-      const count = Number(order.fractions);
-
-      if (!Number.isSafeInteger(count) || count <= 0) {
-        throw createError(409, "Invalid fraction count");
+        throw createError(
+          409,
+          "Verified total bank credit amount does not match order amount"
+        );
       }
 
       // IMPORTANT:
-      // This deduction assumes allocateFractions()
-      // does NOT deduct availableFractions.
+      // Admin must verify each transaction against
+      // actual bank credits before approving.
       //
-      // Confirm this against ownerShipService.js.
-      // Available fractions are checked at approval,
-      // because manual orders do not reserve them.
+      // A matching UTR string alone does not establish
+      // that the payment was received.
+
+      // ======================================================
+      // 13. CHECK EXISTING PAYMENT
+      // ======================================================
+
+      const existingPayment =
+        await Payment.findOne({
+          orderId: order._id,
+        }).session(session);
+
+      if (existingPayment) {
+        throw createError(
+          409,
+          "Payment already exists for this order"
+        );
+      }
+
+      // ======================================================
+      // 14. CHECK EXISTING PURCHASE HISTORY
+      // ======================================================
+
+      const existingPurchase =
+        await PurchaseHistory.findOne({
+          orderId: order._id,
+        }).session(session);
+
+      if (existingPurchase) {
+        throw createError(
+          409,
+          "Purchase history already exists"
+        );
+      }
+
+      // ======================================================
+      // 15. VALIDATE FRACTIONS
+      // ======================================================
+
+      const count = Number(order.fractions);
+
+      if (
+        !Number.isSafeInteger(count) ||
+        count <= 0
+      ) {
+        throw createError(
+          409,
+          "Invalid fraction count"
+        );
+      }
+
+      // ======================================================
+      // 16. ALLOCATE AVAILABLE FRACTIONS
+      // ======================================================
+
+      // Manual orders do not reserve fractions.
+      // So availability is checked during approval.
+      //
+      // IMPORTANT:
+      // Confirm allocateFractions() does not also
+      // decrement availableFractions.
 
       const asset = await Asset.findOneAndUpdate(
         {
@@ -1964,15 +2660,19 @@ export const approveManualPayment = async (req, res) => {
         {
           new: true,
           session,
-        },
+        }
       );
 
       if (!asset) {
         throw createError(
           409,
-          "Fractions unavailable. Verified payment requires reconciliation or refund.",
+          "Fractions unavailable. Verified payment requires reconciliation or refund."
         );
       }
+
+      // ======================================================
+      // 17. CREATE OWNERSHIP ALLOCATION
+      // ======================================================
 
       await allocateFractions({
         assetId: order.assetId,
@@ -1981,9 +2681,9 @@ export const approveManualPayment = async (req, res) => {
         session,
       });
 
-      // ----------------------------------------
-      // CREATE SUCCESSFUL PAYMENT
-      // ----------------------------------------
+      // ======================================================
+      // 18. CREATE SUCCESSFUL PAYMENT
+      // ======================================================
 
       const paidAt = new Date(bankCreditDate);
 
@@ -1991,6 +2691,7 @@ export const approveManualPayment = async (req, res) => {
         [
           {
             userId: order.userId,
+
             orderId: order._id,
 
             paymentGateway: "MANUAL",
@@ -2006,70 +2707,97 @@ export const approveManualPayment = async (req, res) => {
             paidAt,
           },
         ],
-        { session },
+        {
+          session,
+        }
       );
 
       paymentId = payment._id;
 
-      // ----------------------------------------
-      // CREATE PURCHASE HISTORY
-      // ----------------------------------------
+      // ======================================================
+      // 19. FETCH CUSTOMER INFORMATION
+      // ======================================================
 
-      const user = await User.findById(order.userId)
-        .select("name fullName email phone mobile fullPhone")
+      const user = await User.findById(
+        order.userId
+      )
+        .select(
+          "name fullName email phone mobile fullPhone"
+        )
         .session(session)
         .lean();
 
       if (!user) {
-        throw createError(404, "Customer not found");
+        throw createError(
+          404,
+          "Customer not found"
+        );
       }
 
-      const [purchase] = await PurchaseHistory.create(
-        [
+      // ======================================================
+      // 20. CREATE PURCHASE HISTORY
+      // ======================================================
+
+      const [purchase] =
+        await PurchaseHistory.create(
+          [
+            {
+              userId: order.userId,
+
+              assetId: order.assetId,
+
+              orderId: order._id,
+
+              paymentId: payment._id,
+
+              paymentGateway: "MANUAL",
+
+              fractionsPurchased: count,
+
+              amountPerFraction: Number(
+                order.amountPerFraction
+              ),
+
+              totalAmount: Number(
+                order.totalAmount
+              ),
+
+              userSnapshot:
+                buildUserSnapshot(user),
+
+              assetSnapshot:
+                buildAssetSnapshot(asset, count),
+
+              paymentStatus: "SUCCESS",
+
+              paymentMethod:
+                manual.paymentMethod,
+
+              // Store one or multiple bank UTRs
+              // as a comma-separated string.
+              transactionReference: creditRef,
+
+              paidAt,
+
+              paymentEmailStatus: "PENDING",
+
+              paymentEmailAttempts: 0,
+
+              paymentEmailSentAt: null,
+
+              paymentEmailClaimedAt: null,
+            },
+          ],
           {
-            userId: order.userId,
-            assetId: order.assetId,
-
-            orderId: order._id,
-            paymentId: payment._id,
-
-            paymentGateway: "MANUAL",
-
-            fractionsPurchased: count,
-
-            amountPerFraction: Number(order.amountPerFraction),
-
-            totalAmount: Number(order.totalAmount),
-
-            userSnapshot: buildUserSnapshot(user),
-
-            assetSnapshot: buildAssetSnapshot(asset, count),
-
-            paymentStatus: "SUCCESS",
-
-            paymentMethod: manual.paymentMethod,
-
-            transactionReference: creditRef,
-
-            paidAt,
-
-            paymentEmailStatus: "PENDING",
-
-            paymentEmailAttempts: 0,
-
-            paymentEmailSentAt: null,
-
-            paymentEmailClaimedAt: null,
-          },
-        ],
-        { session },
-      );
+            session,
+          }
+        );
 
       purchaseHistoryId = purchase._id;
 
-      // ----------------------------------------
-      // COMPLETE ORDER
-      // ----------------------------------------
+      // ======================================================
+      // 21. COMPLETE ORDER
+      // ======================================================
 
       order.status = "COMPLETED";
 
@@ -2077,9 +2805,9 @@ export const approveManualPayment = async (req, res) => {
         session,
       });
 
-      // ----------------------------------------
-      // APPROVE MANUAL PAYMENT
-      // ----------------------------------------
+      // ======================================================
+      // 22. APPROVE MANUAL PAYMENT
+      // ======================================================
 
       const now = new Date();
 
@@ -2087,9 +2815,13 @@ export const approveManualPayment = async (req, res) => {
 
       manual.bankCreditVerified = true;
 
+      // One or multiple UTRs, comma-separated.
       manual.bankCreditReference = creditRef;
 
-      manual.bankCreditAmount = Number(bankCreditAmount);
+      // Combined verified bank credit amount.
+      manual.bankCreditAmount = Number(
+        bankCreditAmount
+      );
 
       manual.bankCreditDate = paidAt;
 
@@ -2099,43 +2831,103 @@ export const approveManualPayment = async (req, res) => {
 
       manual.approvedAt = now;
 
-      manual.adminRemark = String(remark || "").trim() || null;
+      manual.adminRemark =
+        String(remark || "").trim() || null;
 
       manual.paymentId = payment._id;
 
-      manual.purchaseHistoryId = purchase._id;
+      manual.purchaseHistoryId =
+        purchase._id;
+
+      // Preserve normalized individual references
+      // for records created before the new schema.
+      manual.normalizedTransactionIds =
+        submittedTransactionIds;
 
       await manual.save({
         session,
       });
     });
 
-    // ----------------------------------------
-    // SEND SUCCESS EMAIL AFTER COMMIT
-    // ----------------------------------------
+    // ========================================================
+    // 23. SEND WELCOME EMAIL AFTER COMMIT
+    // ========================================================
 
-    if (!alreadyProcessed && purchaseHistoryId) {
-      await sendEmailSafely(sendPurchaseConfirmation, purchaseHistoryId);
+    // Send only when this request performed the approval.
+    // Avoid duplicate welcome emails on repeated approval.
+
+    if (
+      !alreadyProcessed &&
+      purchaseHistoryId
+    ) {
+      await sendEmailSafely(
+        sendPurchaseConfirmation,
+        purchaseHistoryId
+      );
     }
+
+    // ========================================================
+    // 24. SUCCESS RESPONSE
+    // ========================================================
 
     return res.status(200).json({
       success: true,
 
       alreadyProcessed,
 
-      manualPaymentId,
-      paymentId,
-      purchaseHistoryId,
+      message: alreadyProcessed
+        ? "Manual payment was already approved"
+        : "Manual payment approved. Ownership, Payment and PurchaseHistory created successfully.",
 
-      message:
-        "Manual payment approved. Ownership, Payment and PurchaseHistory created successfully.",
+      data: {
+        manualPaymentId,
+
+        paymentId,
+
+        purchaseHistoryId,
+
+        status: "APPROVED",
+
+        paymentGateway: "MANUAL",
+
+        transactionId: creditRef,
+
+        transactionIds: verifiedTransactionIds,
+
+        isMultiplePayment,
+
+        transactionCount:
+          verifiedTransactionIds.length,
+
+        bankCreditVerified: true,
+
+        bankCreditAmount: Number(
+          bankCreditAmount
+        ),
+
+        bankCreditDate: new Date(
+          bankCreditDate
+        ),
+
+        welcomeEmailTriggered:
+          !alreadyProcessed &&
+          Boolean(purchaseHistoryId),
+      },
     });
+
   } catch (error) {
-    return handleError(res, error, "APPROVE MANUAL PAYMENT");
+    return handleError(
+      res,
+      error,
+      "APPROVE MANUAL PAYMENT"
+    );
   } finally {
-    await session.endSession();
+    if (session) {
+      await session.endSession();
+    }
   }
 };
+
 
 // ============================================================
 // 9. ADMIN: REJECT MANUAL PAYMENT
@@ -2317,12 +3109,9 @@ export const markManualReviewRequired = async (req, res) => {
   }
 };
 
-
-
 // ============================================================
 // CHECK EXISTING PENDING MANUAL ORDER
 // ============================================================
-
 
 export const checkPendingManualOrder = async (req, res) => {
   try {
@@ -2355,7 +3144,7 @@ export const checkPendingManualOrder = async (req, res) => {
       ],
     })
       .select(
-        "_id userId assetId paymentGateway fractions amountPerFraction totalAmount status expiresAt bankDetailsSentAt createdAt"
+        "_id userId assetId paymentGateway fractions amountPerFraction totalAmount status expiresAt bankDetailsSentAt createdAt",
       )
       .sort({ createdAt: -1, _id: -1 })
       .lean();
@@ -2373,16 +3162,13 @@ export const checkPendingManualOrder = async (req, res) => {
     const manualPayment = await ManualPayment.findOne({
       orderId: order._id,
     })
-      .select(
-        "_id status transactionId amountPaid paymentMethod submittedAt"
-      )
+      .select("_id status transactionId amountPaid paymentMethod submittedAt")
       .lean();
 
     const emailSent = Boolean(order.bankDetailsSentAt);
 
     const proofSubmitted =
-      order.status === "PENDING_VERIFICATION" ||
-      Boolean(manualPayment);
+      order.status === "PENDING_VERIFICATION" || Boolean(manualPayment);
 
     return res.status(200).json({
       success: true,
@@ -2429,5 +3215,3 @@ export const checkPendingManualOrder = async (req, res) => {
     return handleError(res, error, "CHECK PENDING MANUAL ORDER");
   }
 };
-
-
