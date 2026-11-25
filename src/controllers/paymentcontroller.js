@@ -707,7 +707,9 @@ import {
 } from "../utils/razorpaySignature.js";
 
 import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPaymentService.js";
-import { calculateOrderPayment } from "../utils/payment_charges.js";
+import {
+  getExpectedPaymentAmount,
+} from "../utils/payment_charges.js";
 
 // const expireAndReleaseOrder = async (orderId) => {
 //   const session = await mongoose.startSession();
@@ -1568,9 +1570,11 @@ const expireAndReleaseOrder = async (
 // ============================================================
 
 
+
 export const createOrder = async (req, res) => {
   let order = null;
   let asset = null;
+  let paymentBreakdown = null;
 
   try {
     const userId = req.user?.id || req.user?._id;
@@ -1581,9 +1585,9 @@ export const createOrder = async (req, res) => {
       paymentGateway = "PAYU",
     } = req.body || {};
 
-    // =====================================================
+    // ========================================================
     // 1. BASIC VALIDATION
-    // =====================================================
+    // ========================================================
 
     if (!mongoose.isValidObjectId(userId)) {
       return res.status(401).json({
@@ -1606,11 +1610,13 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    const gateway = String(paymentGateway)
+    const gateway = String(paymentGateway || "")
       .trim()
       .toUpperCase();
 
-    // Preserve the currently enabled gateways.
+    // Currently enabled payment gateways.
+    // Razorpay code is preserved but disabled.
+
     const allowedGateways = [
       // "RAZORPAY",
       "CASHFREE",
@@ -1639,9 +1645,9 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // =====================================================
-    // 2. PAYU CONFIGURATION
-    // =====================================================
+    // ========================================================
+    // 2. PAYU CONFIGURATION VALIDATION
+    // ========================================================
 
     if (gateway === "PAYU") {
       if (
@@ -1663,9 +1669,9 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // =====================================================
+    // ========================================================
     // 3. FETCH USER AND VERIFY KYC
-    // =====================================================
+    // ========================================================
 
     const user = await User.findById(userId).select(
       "name kycStatus isKycVerified email phone mobile mobileNumber phoneNumber"
@@ -1689,9 +1695,9 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // =====================================================
+    // ========================================================
     // 4. CUSTOMER DETAILS
-    // =====================================================
+    // ========================================================
 
     let customerPhone = null;
     let customerName = null;
@@ -1707,8 +1713,10 @@ export const createOrder = async (req, res) => {
         user.mobile ??
         user.phone;
 
-      const digits = String(rawPhone ?? "")
-        .replace(/\D/g, "");
+      const digits = String(rawPhone ?? "").replace(
+        /\D/g,
+        ""
+      );
 
       customerPhone =
         digits.length === 12 &&
@@ -1724,6 +1732,10 @@ export const createOrder = async (req, res) => {
         });
       }
     }
+
+    // ========================================================
+    // 5. PAYU CUSTOMER VALIDATION
+    // ========================================================
 
     if (gateway === "PAYU") {
       customerName = String(
@@ -1755,9 +1767,9 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // =====================================================
-    // 5. GENERATE PAYU TRANSACTION ID
-    // =====================================================
+    // ========================================================
+    // 6. GENERATE PAYU TRANSACTION ID
+    // ========================================================
 
     let payuTxnId = null;
 
@@ -1767,31 +1779,17 @@ export const createOrder = async (req, res) => {
         crypto.randomBytes(10).toString("hex");
     }
 
-    // =====================================================
-    // 6. PAYMENT AMOUNTS
-    // =====================================================
-
-    let paymentBreakdown = null;
-
-    // Values below are populated inside transaction
-    // after asset availability and price are confirmed.
-    let baseAmount = 0;
-    let processingFeePercentage = 0;
-    let processingFee = 0;
-    let totalPayableAmount = 0;
-    let totalPayablePaise = 0;
-
-    // =====================================================
-    // 7. RESERVE FRACTIONS AND CREATE ORDER
-    // =====================================================
+    // ========================================================
+    // 7. RESERVE FRACTIONS AND CREATE INTERNAL ORDER
+    // ========================================================
 
     const session = await mongoose.startSession();
 
     try {
       await session.withTransaction(async () => {
-        // -------------------------------------------------
+        // ----------------------------------------------------
         // 7.1 RESERVE AVAILABLE FRACTIONS
-        // -------------------------------------------------
+        // ----------------------------------------------------
 
         asset = await Asset.findOneAndUpdate(
           {
@@ -1803,7 +1801,7 @@ export const createOrder = async (req, res) => {
               $gte: fractionCount,
             },
 
-            // Preserve existing 80% public limit.
+            // Maximum 80% public purchase.
             $expr: {
               $lte: [
                 {
@@ -1849,9 +1847,9 @@ export const createOrder = async (req, res) => {
           throw error;
         }
 
-        // -------------------------------------------------
-        // 7.2 CALCULATE ASSET PURCHASE AMOUNT
-        // -------------------------------------------------
+        // ----------------------------------------------------
+        // 7.2 CALCULATE BASE ASSET AMOUNT
+        // ----------------------------------------------------
 
         const amountPerFraction = Number(
           asset.amountPerFraction
@@ -1869,7 +1867,9 @@ export const createOrder = async (req, res) => {
           throw error;
         }
 
-        // Use paise for money calculations.
+        // Work in paise to prevent floating-point
+        // calculation errors.
+
         const fractionPricePaise = Math.round(
           amountPerFraction * 100
         );
@@ -1889,7 +1889,10 @@ export const createOrder = async (req, res) => {
         const basePaise =
           fractionPricePaise * fractionCount;
 
-        if (!Number.isSafeInteger(basePaise)) {
+        if (
+          !Number.isSafeInteger(basePaise) ||
+          basePaise <= 0
+        ) {
           const error = new Error(
             "Payment amount exceeds supported range"
           );
@@ -1898,37 +1901,39 @@ export const createOrder = async (req, res) => {
           throw error;
         }
 
-        baseAmount = basePaise / 100;
+        const baseAmount = basePaise / 100;
 
-        // -------------------------------------------------
-        // 7.3 ADD 0.5% ONLINE PROCESSING CHARGE
-        // -------------------------------------------------
+        // ----------------------------------------------------
+        // 7.3 CALCULATE 0.5% ONLINE PROCESSING FEE
+        // ----------------------------------------------------
 
         paymentBreakdown = calculateOrderPayment({
           baseAmount,
           paymentGateway: gateway,
         });
 
-        processingFeePercentage =
-          paymentBreakdown.processingFeePercentage;
+        const {
+          processingFeePercentage,
+          processingFee,
+          totalPayableAmount,
+          totalPayablePaise,
+        } = paymentBreakdown;
 
-        processingFee =
-          paymentBreakdown.processingFee;
+        // ----------------------------------------------------
+        // 7.4 VALIDATE PAYMENT BREAKDOWN
+        // ----------------------------------------------------
 
-        totalPayableAmount =
-          paymentBreakdown.totalPayableAmount;
+        const processingFeePaise = Math.round(
+          processingFee * 100
+        );
 
-        totalPayablePaise =
-          paymentBreakdown.totalPayablePaise;
-
-        // Basic consistency checks.
         if (
+          !Number.isSafeInteger(processingFeePaise) ||
           !Number.isSafeInteger(totalPayablePaise) ||
           totalPayablePaise <= 0 ||
-          Math.round(totalPayableAmount * 100) !==
+          basePaise + processingFeePaise !==
             totalPayablePaise ||
-          Math.round(processingFee * 100) +
-            basePaise !==
+          Math.round(totalPayableAmount * 100) !==
             totalPayablePaise
         ) {
           const error = new Error(
@@ -1939,14 +1944,15 @@ export const createOrder = async (req, res) => {
           throw error;
         }
 
-        // -------------------------------------------------
-        // 7.4 CREATE INTERNAL ORDER
-        // -------------------------------------------------
+        // ----------------------------------------------------
+        // 7.5 CREATE INTERNAL ORDER
+        // ----------------------------------------------------
 
         const createdOrders = await Order.create(
           [
             {
               userId,
+
               assetId,
 
               paymentGateway: gateway,
@@ -1959,16 +1965,17 @@ export const createOrder = async (req, res) => {
               fractions: fractionCount,
 
               amountPerFraction:
-                asset.amountPerFraction,
+                fractionPricePaise / 100,
 
-              // Actual asset ownership value.
+              // Asset purchase amount without fee.
               totalAmount: baseAmount,
 
-              // Extra 0.5% charge.
+              // Additional online processing fee.
               processingFeePercentage,
+
               processingFee,
 
-              // Amount payable through gateway.
+              // Actual amount customer pays.
               totalPayableAmount,
 
               status: "PENDING_PAYMENT",
@@ -1978,35 +1985,70 @@ export const createOrder = async (req, res) => {
               ),
             },
           ],
-          { session }
+          {
+            session,
+          }
         );
 
         order = createdOrders[0];
 
-        // -------------------------------------------------
-        // 7.5 CREATE PAYU PENDING PAYMENT
-        // -------------------------------------------------
+        // ----------------------------------------------------
+        // 7.6 VERIFY SAVED ORDER PAYABLE AMOUNT
+        // ----------------------------------------------------
+
+        // The helper returns paise.
+        // Must match calculateOrderPayment exactly.
+
+        const expectedPaymentPaise =
+          getExpectedPaymentAmount(order);
+
+        if (
+          expectedPaymentPaise !==
+          totalPayablePaise
+        ) {
+          const error = new Error(
+            "Order payable amount calculation mismatch"
+          );
+
+          error.statusCode = 500;
+          throw error;
+        }
+
+        // ----------------------------------------------------
+        // 7.7 CREATE PAYU PENDING PAYMENT
+        // ----------------------------------------------------
+
+        // PayU does not require separate gateway
+        // order creation through an API.
+        //
+        // Pending Payment is created atomically
+        // with the internal Order.
 
         if (gateway === "PAYU") {
           await Payment.create(
             [
               {
                 userId,
+
                 orderId: order._id,
 
                 paymentGateway: "PAYU",
 
                 payuTxnId,
+
                 payuMihpayId: null,
 
-                // Includes 0.5% processing charge.
-                amount: totalPayableAmount,
+                // Amount includes 0.5% fee.
+                amount: expectedPaymentPaise / 100,
 
                 currency: "INR",
+
                 status: "PENDING",
               },
             ],
-            { session }
+            {
+              session,
+            }
           );
         }
       });
@@ -2014,42 +2056,93 @@ export const createOrder = async (req, res) => {
       await session.endSession();
     }
 
-    // =====================================================
-    // 8. CREATE PAYMENT GATEWAY ORDER
-    // =====================================================
+    // ========================================================
+    // 8. VALIDATE EXPECTED AMOUNT AFTER COMMIT
+    // ========================================================
+
+    const expectedPaymentPaise =
+      getExpectedPaymentAmount(order);
+
+    const finalPayableAmount =
+      expectedPaymentPaise / 100;
+
+    if (
+      !paymentBreakdown ||
+      expectedPaymentPaise !==
+        paymentBreakdown.totalPayablePaise
+    ) {
+      console.error("ORDER AMOUNT VALIDATION FAILED:", {
+        orderId: String(order._id),
+
+        baseAmount: order.totalAmount,
+
+        processingFee: order.processingFee,
+
+        totalPayableAmount:
+          order.totalPayableAmount,
+
+        expectedPaymentPaise,
+      });
+
+      // Internal data mismatch after database commit.
+      // Do not create a gateway order.
+      // Reconcile and release this reservation safely.
+      return res.status(500).json({
+        success: false,
+
+        message:
+          "Order amount validation failed. Please contact support.",
+
+        orderId: order._id,
+      });
+    }
+
+    // ========================================================
+    // 9. CREATE PAYMENT GATEWAY ORDER
+    // ========================================================
 
     let razorpayOrder = null;
     let cashfreeOrder = null;
     let payuOrder = null;
 
     try {
-      // -------------------------------------------------
-      // 8.1 RAZORPAY
-      // -------------------------------------------------
+      // ----------------------------------------------------
+      // 9.1 RAZORPAY
+      // ----------------------------------------------------
 
       if (gateway === "RAZORPAY") {
-        razorpayOrder =
-          await razorpay.orders.create({
-            // Razorpay expects amount in paise.
-            amount: totalPayablePaise,
+        razorpayOrder = await razorpay.orders.create({
+          // Razorpay expects paise.
+          amount: expectedPaymentPaise,
 
-            currency: "INR",
+          currency: "INR",
 
-            receipt: `receipt_${order._id}`,
-          });
+          receipt: `receipt_${order._id}`,
+        });
+
+        // Verify Razorpay gateway order amount.
+        if (
+          !razorpayOrder?.id ||
+          Number(razorpayOrder.amount) !==
+            expectedPaymentPaise
+        ) {
+          throw new Error(
+            "Razorpay gateway order amount mismatch"
+          );
+        }
       }
 
-      // -------------------------------------------------
-      // 8.2 CASHFREE
-      // -------------------------------------------------
+      // ----------------------------------------------------
+      // 9.2 CASHFREE
+      // ----------------------------------------------------
 
       else if (gateway === "CASHFREE") {
         const cashfreeResponse =
           await cashfree.PGCreateOrder({
             order_id: `BUNNDLE_${order._id}`,
 
-            // Cashfree expects INR amount.
-            order_amount: totalPayableAmount,
+            // Cashfree expects INR.
+            order_amount: finalPayableAmount,
 
             order_currency: "INR",
 
@@ -2060,8 +2153,7 @@ export const createOrder = async (req, res) => {
 
               ...(user.email
                 ? {
-                    customer_email:
-                      user.email,
+                    customer_email: user.email,
                   }
                 : {}),
             },
@@ -2073,7 +2165,7 @@ export const createOrder = async (req, res) => {
               `Bunndle asset purchase ${order._id}`,
           });
 
-        cashfreeOrder = cashfreeResponse.data;
+        cashfreeOrder = cashfreeResponse?.data;
 
         if (
           !cashfreeOrder?.order_id ||
@@ -2083,18 +2175,44 @@ export const createOrder = async (req, res) => {
             "Invalid Cashfree order response"
           );
         }
+
+        // Some Cashfree order responses contain
+        // order_amount. Verify it when present.
+        if (
+          cashfreeOrder.order_amount != null
+        ) {
+          const gatewayAmountPaise = Math.round(
+            Number(cashfreeOrder.order_amount) * 100
+          );
+
+          if (
+            !Number.isSafeInteger(gatewayAmountPaise) ||
+            gatewayAmountPaise !==
+              expectedPaymentPaise
+          ) {
+            throw new Error(
+              "Cashfree gateway order amount mismatch"
+            );
+          }
+        }
+
+        if (
+          String(cashfreeOrder.order_id) !==
+          `BUNNDLE_${order._id}`
+        ) {
+          throw new Error(
+            "Cashfree gateway order ID mismatch"
+          );
+        }
       }
 
-      // -------------------------------------------------
-      // 8.3 PAYU
-      // -------------------------------------------------
+      // ----------------------------------------------------
+      // 9.3 PAYU
+      // ----------------------------------------------------
 
       else if (gateway === "PAYU") {
-        // PayU amount must match the amount
-        // used for generating payment hashes.
-
         const payableAmountString =
-          totalPayableAmount.toFixed(2);
+          finalPayableAmount.toFixed(2);
 
         payuOrder = {
           orderId: String(order._id),
@@ -2104,7 +2222,7 @@ export const createOrder = async (req, res) => {
           merchantKey:
             process.env.PAYU_MERCHANT_KEY,
 
-          // Includes processing fee.
+          // Base amount + 0.5% fee.
           amount: payableAmountString,
 
           currency: "INR",
@@ -2128,30 +2246,18 @@ export const createOrder = async (req, res) => {
       }
     } catch (gatewayError) {
       console.error(
-        `${gateway} Order Creation Error:`,
+        `${gateway} ORDER CREATION ERROR:`,
         gatewayError
       );
 
-      // Only Razorpay initialization failure
-      // is handled by existing immediate release.
+      // Razorpay: only release immediately when
+      // failure is confirmed before gateway creation.
       //
-      // Cashfree may have created a gateway order
-      // even if the request timed out.
-      // PayU is initialized via checkout parameters.
-
-      if (gateway === "RAZORPAY") {
-        try {
-          await expireAndReleaseOrder(
-            order._id,
-            { initializationFailed: true }
-          );
-        } catch (releaseError) {
-          console.error(
-            "Razorpay reservation release failed:",
-            releaseError
-          );
-        }
-      }
+      // For uncertain gateway outcomes, reconcile
+      // before releasing reserved fractions.
+      //
+      // Cashfree may have created its order before
+      // the API returned an error or timeout.
 
       return res.status(502).json({
         success: false,
@@ -2163,11 +2269,14 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // =====================================================
-    // 9. CREATE PAYMENT RECORD FOR CASHFREE / RAZORPAY
-    // =====================================================
+    // ========================================================
+    // 10. CREATE PAYMENT RECORD
+    // CASHFREE / RAZORPAY
+    // ========================================================
 
-    // PayU pending payment already exists.
+    // PayU pending Payment was already created
+    // inside the database transaction.
+
     if (gateway !== "PAYU") {
       try {
         await Payment.create({
@@ -2188,9 +2297,8 @@ export const createOrder = async (req, res) => {
               ? String(cashfreeOrder.cf_order_id)
               : null,
 
-          // Actual amount paid via gateway,
-          // including the additional 0.5%.
-          amount: totalPayableAmount,
+          // Fee-inclusive payable amount.
+          amount: finalPayableAmount,
 
           currency: "INR",
 
@@ -2198,28 +2306,28 @@ export const createOrder = async (req, res) => {
         });
       } catch (paymentError) {
         console.error(
-          "Payment Record Creation Error:",
+          "PAYMENT RECORD CREATION ERROR:",
           paymentError
         );
 
-        // If gateway order already exists,
-        // do not blindly expire/release fractions.
-        // Reconcile the gateway order first.
+        // Gateway order may already exist.
+        // Do not automatically release inventory.
+        // Reconcile first.
 
         return res.status(500).json({
           success: false,
 
           message:
-            "Payment order was initialized but internal payment registration failed. Please check order status before retrying.",
+            "Gateway order initialized but internal payment registration failed. Please check order status before retrying.",
 
           orderId: order._id,
         });
       }
     }
 
-    // =====================================================
-    // 10. PUBLIC / COMPANY FRACTION DETAILS
-    // =====================================================
+    // ========================================================
+    // 11. CALCULATE PUBLIC / COMPANY FRACTIONS
+    // ========================================================
 
     const publicLimit = Math.floor(
       asset.totalFractions * 0.8
@@ -2237,19 +2345,47 @@ export const createOrder = async (req, res) => {
       publicLimit - publicUsed
     );
 
-    // =====================================================
-    // 11. FINAL RESPONSE
-    // =====================================================
+    // ========================================================
+    // 12. LOG PAYMENT BREAKDOWN
+    // ========================================================
+
+    console.log("ONLINE ORDER CREATED:", {
+      orderId: String(order._id),
+
+      paymentGateway: gateway,
+
+      fractions: fractionCount,
+
+      baseAmount: order.totalAmount,
+
+      processingFeePercentage:
+        order.processingFeePercentage,
+
+      processingFee:
+        order.processingFee,
+
+      totalPayableAmount:
+        order.totalPayableAmount,
+
+      expectedPaymentPaise,
+    });
+
+    // ========================================================
+    // 13. FINAL RESPONSE
+    // ========================================================
 
     return res.status(201).json({
       success: true,
 
       message: "Order created successfully",
 
-      // Keep original order response.
       order,
 
       razorpayOrder,
+
+      // ----------------------------------------------------
+      // CASHFREE RESPONSE
+      // ----------------------------------------------------
 
       ...(gateway === "CASHFREE"
         ? {
@@ -2269,13 +2405,20 @@ export const createOrder = async (req, res) => {
           }
         : {}),
 
+      // ----------------------------------------------------
+      // PAYU RESPONSE
+      // ----------------------------------------------------
+
       ...(gateway === "PAYU"
         ? {
             payuOrder,
           }
         : {}),
 
-      // Additional payment breakdown.
+      // ----------------------------------------------------
+      // PAYMENT BREAKDOWN
+      // ----------------------------------------------------
+
       paymentBreakdown: {
         currency: "INR",
 
@@ -2284,17 +2427,22 @@ export const createOrder = async (req, res) => {
         fractions: fractionCount,
 
         amountPerFraction:
-          asset.amountPerFraction,
+          order.amountPerFraction,
 
-        // Ownership value.
-        baseAmount,
+        // Asset ownership value.
+        baseAmount:
+          order.totalAmount,
 
-        processingFeePercentage,
+        // 0.5% fee.
+        processingFeePercentage:
+          order.processingFeePercentage,
 
-        processingFee,
+        processingFee:
+          order.processingFee,
 
-        // Final gateway charge.
-        totalPayableAmount,
+        // Actual payment amount.
+        totalPayableAmount:
+          order.totalPayableAmount,
       },
 
       fractionInfo: {
@@ -2310,7 +2458,7 @@ export const createOrder = async (req, res) => {
     });
   } catch (error) {
     console.error(
-      "Create Order Error:",
+      "CREATE ORDER ERROR:",
       error
     );
 
@@ -2327,31 +2475,286 @@ export const createOrder = async (req, res) => {
 };
 
 
+
+// export const verifyPayment = async (req, res) => {
+//   try {
+//     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
+//       req.body;
+
+//     // ========================================================
+//     // 1. VALIDATION
+//     // ========================================================
+
+//     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Payment verification details are required",
+//       });
+//     }
+
+//     // ========================================================
+//     // 2. VERIFY CHECKOUT SIGNATURE
+//     // ========================================================
+
+//     const validSignature = verifyRazorpayPaymentSignature({
+//       razorpayOrderId: razorpay_order_id,
+
+//       razorpayPaymentId: razorpay_payment_id,
+
+//       razorpaySignature: razorpay_signature,
+//     });
+
+//     if (!validSignature) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Payment verification failed",
+//       });
+//     }
+
+//     // ========================================================
+//     // 3. FIND INTERNAL PAYMENT RECORD
+//     // ========================================================
+
+//     const payment = await Payment.findOne({
+//       razorpayOrderId: razorpay_order_id,
+//     });
+
+//     if (!payment) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Payment record not found",
+//       });
+//     }
+
+//     // ========================================================
+//     // 4. FETCH PAYMENT DIRECTLY FROM RAZORPAY
+//     // ========================================================
+
+//     let razorpayPayment;
+
+//     try {
+//       razorpayPayment = await razorpay.payments.fetch(razorpay_payment_id);
+//     } catch (error) {
+//       console.error("RAZORPAY PAYMENT FETCH ERROR:", error);
+
+//       return res.status(400).json({
+//         success: false,
+//         message: "Unable to verify payment with Razorpay",
+//       });
+//     }
+
+//     if (!razorpayPayment) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Unable to verify payment with Razorpay",
+//       });
+//     }
+
+//     // ========================================================
+//     // 5. VERIFY PAYMENT ID
+//     // ========================================================
+
+//     if (razorpayPayment.id && razorpayPayment.id !== razorpay_payment_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Razorpay payment ID mismatch",
+//       });
+//     }
+
+//     // ========================================================
+//     // 6. VERIFY ORDER RELATION
+//     // ========================================================
+
+//     if (razorpayPayment.order_id !== razorpay_order_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Payment does not belong to this order",
+//       });
+//     }
+
+//     // ========================================================
+//     // 7. VERIFY AMOUNT
+//     // ========================================================
+
+//     const expectedAmount = Math.round(Number(payment.amount) * 100);
+
+//     if (Number(razorpayPayment.amount) !== expectedAmount) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Payment amount mismatch",
+//       });
+//     }
+
+//     // ========================================================
+//     // 8. VERIFY CURRENCY
+//     // ========================================================
+
+//     const expectedCurrency = payment.currency || "INR";
+
+//     if (
+//       razorpayPayment.currency &&
+//       String(razorpayPayment.currency).toUpperCase() !==
+//         String(expectedCurrency).toUpperCase()
+//     ) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Payment currency mismatch",
+//       });
+//     }
+
+//     // ========================================================
+//     // 9. PAYMENT MUST BE CAPTURED
+//     // ========================================================
+
+//     if (razorpayPayment.status !== "captured") {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Payment is not captured. Current status: ${razorpayPayment.status}`,
+//       });
+//     }
+
+//     // ========================================================
+//     // 10. PAYMENT SUCCESS TIMESTAMP
+//     // ========================================================
+
+//     const paidAt = new Date();
+
+//     // ========================================================
+//     // 11. FINALIZE SUCCESSFUL PAYMENT
+//     // ========================================================
+
+//     const result = await finalizeSuccessfulPayment({
+//       razorpayOrderId: razorpay_order_id,
+
+//       razorpayPaymentId: razorpay_payment_id,
+
+//       razorpaySignature: razorpay_signature,
+
+//       paymentMethod: razorpayPayment.method || null,
+
+//       webhookVerified: false,
+
+//       paidAt,
+//     });
+
+//     // ========================================================
+//     // 12. INDIA DATE
+//     // ========================================================
+
+//     const finalPaidAt = result.paidAt || paidAt;
+
+//     const purchaseDate = new Intl.DateTimeFormat("en-IN", {
+//       day: "2-digit",
+
+//       month: "2-digit",
+
+//       year: "numeric",
+
+//       timeZone: "Asia/Kolkata",
+//     }).format(finalPaidAt);
+
+//     // ========================================================
+//     // 13. INDIA TIME
+//     // ========================================================
+
+//     const purchaseTime = new Intl.DateTimeFormat("en-IN", {
+//       hour: "2-digit",
+
+//       minute: "2-digit",
+
+//       second: "2-digit",
+
+//       hour12: true,
+
+//       timeZone: "Asia/Kolkata",
+//     })
+//       .format(finalPaidAt)
+//       .toLowerCase();
+
+//     // ========================================================
+//     // 14. RESPONSE
+//     // ========================================================
+
+//     return res.status(200).json({
+//       success: true,
+
+//       message: result.alreadyProcessed
+//         ? "Payment already verified and purchase already completed"
+//         : "Payment verified and purchase completed successfully",
+
+//       data: {
+//         purchaseHistoryId: result.purchaseHistoryId,
+
+//         paymentStatus: "SUCCESS",
+
+//         paidAt: finalPaidAt,
+
+//         purchaseDate,
+
+//         purchaseTime,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("VERIFY PAYMENT ERROR:", error);
+
+//     return res.status(error.statusCode || 500).json({
+//       success: false,
+
+//       message: error.message || "Unable to verify payment",
+//     });
+//   }
+// };
+
+// ============================================================
+// NEW: VERIFY CASHFREE ORDER WITH GATEWAY
+//
+// Shared by:
+// - verifyCashfreePayment
+// - cashfreeWebhook
+//
+// Never trust frontend payment status.
+// ============================================================
+
+
 export const verifyPayment = async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
-      req.body;
+    const userId = req.user?.id;
+
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+    } = req.body || {};
 
     // ========================================================
     // 1. VALIDATION
     // ========================================================
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    if (
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature
+    ) {
       return res.status(400).json({
         success: false,
         message: "Payment verification details are required",
       });
     }
 
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
     // ========================================================
-    // 2. VERIFY CHECKOUT SIGNATURE
+    // 2. VERIFY RAZORPAY CHECKOUT SIGNATURE
     // ========================================================
 
     const validSignature = verifyRazorpayPaymentSignature({
       razorpayOrderId: razorpay_order_id,
-
       razorpayPaymentId: razorpay_payment_id,
-
       razorpaySignature: razorpay_signature,
     });
 
@@ -2363,11 +2766,13 @@ export const verifyPayment = async (req, res) => {
     }
 
     // ========================================================
-    // 3. FIND INTERNAL PAYMENT RECORD
+    // 3. FIND INTERNAL PAYMENT
     // ========================================================
 
     const payment = await Payment.findOne({
       razorpayOrderId: razorpay_order_id,
+      paymentGateway: "RAZORPAY",
+      userId,
     });
 
     if (!payment) {
@@ -2378,17 +2783,39 @@ export const verifyPayment = async (req, res) => {
     }
 
     // ========================================================
-    // 4. FETCH PAYMENT DIRECTLY FROM RAZORPAY
+    // 4. FIND INTERNAL ORDER
+    // ========================================================
+
+    const order = await Order.findOne({
+      _id: payment.orderId,
+      userId,
+      paymentGateway: "RAZORPAY",
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Razorpay order not found",
+      });
+    }
+
+    // ========================================================
+    // 5. FETCH PAYMENT DIRECTLY FROM RAZORPAY
     // ========================================================
 
     let razorpayPayment;
 
     try {
-      razorpayPayment = await razorpay.payments.fetch(razorpay_payment_id);
+      razorpayPayment = await razorpay.payments.fetch(
+        razorpay_payment_id
+      );
     } catch (error) {
-      console.error("RAZORPAY PAYMENT FETCH ERROR:", error);
+      console.error(
+        "RAZORPAY PAYMENT FETCH ERROR:",
+        error
+      );
 
-      return res.status(400).json({
+      return res.status(502).json({
         success: false,
         message: "Unable to verify payment with Razorpay",
       });
@@ -2397,15 +2824,18 @@ export const verifyPayment = async (req, res) => {
     if (!razorpayPayment) {
       return res.status(400).json({
         success: false,
-        message: "Unable to verify payment with Razorpay",
+        message: "Payment not found at Razorpay",
       });
     }
 
     // ========================================================
-    // 5. VERIFY PAYMENT ID
+    // 6. VERIFY PAYMENT ID
     // ========================================================
 
-    if (razorpayPayment.id && razorpayPayment.id !== razorpay_payment_id) {
+    if (
+      String(razorpayPayment.id) !==
+      String(razorpay_payment_id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Razorpay payment ID mismatch",
@@ -2413,10 +2843,13 @@ export const verifyPayment = async (req, res) => {
     }
 
     // ========================================================
-    // 6. VERIFY ORDER RELATION
+    // 7. VERIFY GATEWAY ORDER RELATION
     // ========================================================
 
-    if (razorpayPayment.order_id !== razorpay_order_id) {
+    if (
+      String(razorpayPayment.order_id) !==
+      String(razorpay_order_id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Payment does not belong to this order",
@@ -2424,28 +2857,67 @@ export const verifyPayment = async (req, res) => {
     }
 
     // ========================================================
-    // 7. VERIFY AMOUNT
+    // 8. VERIFY PAYMENT AMOUNT
+    // INCLUDING ADDITIONAL 0.5% PROCESSING FEE
     // ========================================================
 
-    const expectedAmount = Math.round(Number(payment.amount) * 100);
+    // Returns expected amount in paise.
+    const expectedAmountPaise =
+      getExpectedPaymentAmount(order);
 
-    if (Number(razorpayPayment.amount) !== expectedAmount) {
-      return res.status(400).json({
+    // Payment.amount is stored in INR.
+    const storedPaymentPaise = Math.round(
+      Number(payment.amount) * 100
+    );
+
+    // Razorpay returns payment amount in paise.
+    const gatewayPaymentPaise =
+      Number(razorpayPayment.amount);
+
+    if (
+      !Number.isSafeInteger(storedPaymentPaise) ||
+      !Number.isSafeInteger(gatewayPaymentPaise) ||
+      storedPaymentPaise <= 0 ||
+      gatewayPaymentPaise <= 0 ||
+      expectedAmountPaise !== storedPaymentPaise ||
+      expectedAmountPaise !== gatewayPaymentPaise
+    ) {
+      console.error("RAZORPAY AMOUNT MISMATCH:", {
+        orderId: String(order._id),
+
+        razorpayOrderId: razorpay_order_id,
+
+        baseAmount: order.totalAmount,
+
+        processingFee: order.processingFee,
+
+        totalPayableAmount:
+          order.totalPayableAmount,
+
+        storedPaymentAmount: payment.amount,
+
+        expectedAmountPaise,
+
+        storedPaymentPaise,
+
+        gatewayPaymentPaise,
+      });
+
+      return res.status(409).json({
         success: false,
         message: "Payment amount mismatch",
       });
     }
 
     // ========================================================
-    // 8. VERIFY CURRENCY
+    // 9. VERIFY CURRENCY
     // ========================================================
 
-    const expectedCurrency = payment.currency || "INR";
-
     if (
-      razorpayPayment.currency &&
-      String(razorpayPayment.currency).toUpperCase() !==
-        String(expectedCurrency).toUpperCase()
+      String(razorpayPayment.currency || "").toUpperCase() !==
+      "INR" ||
+      String(payment.currency || "INR").toUpperCase() !==
+      "INR"
     ) {
       return res.status(400).json({
         success: false,
@@ -2454,34 +2926,58 @@ export const verifyPayment = async (req, res) => {
     }
 
     // ========================================================
-    // 9. PAYMENT MUST BE CAPTURED
+    // 10. PAYMENT MUST BE CAPTURED
     // ========================================================
 
     if (razorpayPayment.status !== "captured") {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
-        message: `Payment is not captured. Current status: ${razorpayPayment.status}`,
+        message:
+          `Payment is not captured. Current status: ${razorpayPayment.status}`,
       });
     }
 
     // ========================================================
-    // 10. PAYMENT SUCCESS TIMESTAMP
+    // 11. VERIFY EXISTING PAYMENT REFERENCE
     // ========================================================
 
-    const paidAt = new Date();
+    if (
+      payment.razorpayPaymentId &&
+      String(payment.razorpayPaymentId) !==
+      String(razorpay_payment_id)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This order is associated with another Razorpay payment",
+      });
+    }
 
     // ========================================================
-    // 11. FINALIZE SUCCESSFUL PAYMENT
+    // 12. PAYMENT SUCCESS TIMESTAMP
+    // ========================================================
+
+    const paidAt = razorpayPayment.created_at
+      ? new Date(
+          Number(razorpayPayment.created_at) * 1000
+        )
+      : new Date();
+
+    // ========================================================
+    // 13. FINALIZE SUCCESSFUL PAYMENT
     // ========================================================
 
     const result = await finalizeSuccessfulPayment({
+      paymentGateway: "RAZORPAY",
+
       razorpayOrderId: razorpay_order_id,
 
       razorpayPaymentId: razorpay_payment_id,
 
       razorpaySignature: razorpay_signature,
 
-      paymentMethod: razorpayPayment.method || null,
+      paymentMethod:
+        razorpayPayment.method || null,
 
       webhookVerified: false,
 
@@ -2489,41 +2985,36 @@ export const verifyPayment = async (req, res) => {
     });
 
     // ========================================================
-    // 12. INDIA DATE
+    // 14. FORMAT INDIA DATE AND TIME
     // ========================================================
 
     const finalPaidAt = result.paidAt || paidAt;
 
-    const purchaseDate = new Intl.DateTimeFormat("en-IN", {
-      day: "2-digit",
+    const purchaseDate = new Intl.DateTimeFormat(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "Asia/Kolkata",
+      }
+    ).format(new Date(finalPaidAt));
 
-      month: "2-digit",
-
-      year: "numeric",
-
-      timeZone: "Asia/Kolkata",
-    }).format(finalPaidAt);
-
-    // ========================================================
-    // 13. INDIA TIME
-    // ========================================================
-
-    const purchaseTime = new Intl.DateTimeFormat("en-IN", {
-      hour: "2-digit",
-
-      minute: "2-digit",
-
-      second: "2-digit",
-
-      hour12: true,
-
-      timeZone: "Asia/Kolkata",
-    })
-      .format(finalPaidAt)
+    const purchaseTime = new Intl.DateTimeFormat(
+      "en-IN",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Kolkata",
+      }
+    )
+      .format(new Date(finalPaidAt))
       .toLowerCase();
 
     // ========================================================
-    // 14. RESPONSE
+    // 15. SUCCESS RESPONSE
     // ========================================================
 
     return res.status(200).json({
@@ -2534,9 +3025,29 @@ export const verifyPayment = async (req, res) => {
         : "Payment verified and purchase completed successfully",
 
       data: {
-        purchaseHistoryId: result.purchaseHistoryId,
+        orderId: order._id,
+
+        purchaseHistoryId:
+          result.purchaseHistoryId,
+
+        paymentGateway: "RAZORPAY",
 
         paymentStatus: "SUCCESS",
+
+        razorpayOrderId: razorpay_order_id,
+
+        razorpayPaymentId: razorpay_payment_id,
+
+        baseAmount: Number(order.totalAmount),
+
+        processingFeePercentage:
+          Number(order.processingFeePercentage || 0),
+
+        processingFee:
+          Number(order.processingFee || 0),
+
+        totalPayableAmount:
+          expectedAmountPaise / 100,
 
         paidAt: finalPaidAt,
 
@@ -2551,22 +3062,348 @@ export const verifyPayment = async (req, res) => {
     return res.status(error.statusCode || 500).json({
       success: false,
 
-      message: error.message || "Unable to verify payment",
+      message:
+        error.message || "Unable to verify payment",
     });
   }
 };
 
+
+// const verifyCashfreeOrderWithGateway = async (payment, order) => {
+//   if (!payment || !order || !payment.cashfreeOrderId) {
+//     return {
+//       verified: false,
+//       message: "Cashfree payment details not found",
+//     };
+//   }
+
+//   if (
+//     payment.paymentGateway !== "CASHFREE" ||
+//     order.paymentGateway !== "CASHFREE"
+//   ) {
+//     return {
+//       verified: false,
+//       message: "Invalid payment gateway",
+//     };
+//   }
+
+//   const cashfreeOrderId = payment.cashfreeOrderId;
+
+//   // ==========================================
+//   // FETCH ORDER FROM CASHFREE
+//   // ==========================================
+
+//   const orderResponse = await cashfree.PGFetchOrder(cashfreeOrderId);
+
+//   const gatewayOrder = orderResponse.data;
+
+//   if (!gatewayOrder) {
+//     return {
+//       verified: false,
+//       message: "Cashfree order not found",
+//     };
+//   }
+
+//   // ==========================================
+//   // VERIFY ORDER ID
+//   // ==========================================
+
+//   if (gatewayOrder.order_id !== cashfreeOrderId) {
+//     return {
+//       verified: false,
+//       message: "Cashfree order ID mismatch",
+//     };
+//   }
+
+//   // ==========================================
+//   // VERIFY ORDER AMOUNT
+//   //
+//   // Cashfree order_amount is in rupees.
+//   // ==========================================
+
+//   const expectedAmountPaise = Math.round(Number(order.totalAmount) * 100);
+
+//   const gatewayOrderAmountPaise = Math.round(
+//     Number(gatewayOrder.order_amount) * 100,
+//   );
+
+//   const paymentAmountPaise = Math.round(Number(payment.amount) * 100);
+
+//   if (
+//     !Number.isFinite(expectedAmountPaise) ||
+//     expectedAmountPaise <= 0 ||
+//     expectedAmountPaise !== gatewayOrderAmountPaise ||
+//     expectedAmountPaise !== paymentAmountPaise
+//   ) {
+//     return {
+//       verified: false,
+//       message: "Cashfree order amount mismatch",
+//     };
+//   }
+
+//   // ==========================================
+//   // VERIFY CURRENCY
+//   // ==========================================
+
+//   const expectedCurrency = String(payment.currency || "INR").toUpperCase();
+
+//   if (
+//     String(gatewayOrder.order_currency || "").toUpperCase() !== expectedCurrency
+//   ) {
+//     return {
+//       verified: false,
+//       message: "Cashfree order currency mismatch",
+//     };
+//   }
+
+//   // ==========================================
+//   // ORDER MUST BE PAID
+//   // ==========================================
+
+//   if (gatewayOrder.order_status !== "PAID") {
+//     return {
+//       verified: false,
+//       message: `Cashfree order is not paid. Current status: ${gatewayOrder.order_status}`,
+//     };
+//   }
+
+//   // ==========================================
+//   // FETCH PAYMENT TRANSACTIONS
+//   // ==========================================
+
+//   const paymentsResponse = await cashfree.PGOrderFetchPayments(cashfreeOrderId);
+
+//   const transactions = paymentsResponse.data;
+
+//   if (!Array.isArray(transactions)) {
+//     return {
+//       verified: false,
+//       message: "Unable to fetch Cashfree payment transactions",
+//     };
+//   }
+
+//   // ==========================================
+//   // FIND A SUCCESSFUL PAYMENT
+//   // ==========================================
+
+//   const successfulPayment = transactions.find((transaction) => {
+//     const transactionAmountPaise = Math.round(
+//       Number(transaction.payment_amount) * 100,
+//     );
+
+//     return (
+//       transaction.payment_status === "SUCCESS" &&
+//       transaction.cf_payment_id != null &&
+//       String(transaction.order_id) === String(cashfreeOrderId) &&
+//       transactionAmountPaise === expectedAmountPaise &&
+//       String(transaction.payment_currency || "").toUpperCase() ===
+//         expectedCurrency
+//     );
+//   });
+
+//   if (!successfulPayment) {
+//     return {
+//       verified: false,
+//       message: "No successful Cashfree payment found for this order",
+//     };
+//   }
+
+//   // ==========================================
+//   // PAYMENT METHOD
+//   // ==========================================
+
+//   const paymentMethod =
+//     successfulPayment.payment_group ||
+//     successfulPayment.payment_method?.type ||
+//     null;
+
+//   // ==========================================
+//   // PAYMENT TIMESTAMP
+//   // ==========================================
+
+//   const gatewayPaidAt = successfulPayment.payment_completion_time;
+
+//   const parsedPaidAt = gatewayPaidAt ? new Date(gatewayPaidAt) : new Date();
+
+//   const paidAt = Number.isNaN(parsedPaidAt.getTime())
+//     ? new Date()
+//     : parsedPaidAt;
+
+//   return {
+//     verified: true,
+
+//     cashfreeOrderId,
+
+//     cashfreePaymentId: String(successfulPayment.cf_payment_id),
+
+//     paymentMethod,
+
+//     paidAt,
+//   };
+// };
+
 // ============================================================
-// NEW: VERIFY CASHFREE ORDER WITH GATEWAY
-//
-// Shared by:
-// - verifyCashfreePayment
-// - cashfreeWebhook
-//
-// Never trust frontend payment status.
+// NEW: VERIFY CASHFREE PAYMENT
 // ============================================================
 
+// export const verifyCashfreePayment = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+
+//     const { orderId } = req.body;
+
+//     // ==========================================
+//     // VALIDATION
+//     // ==========================================
+
+//     if (!orderId || !mongoose.isValidObjectId(orderId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Valid orderId is required",
+//       });
+//     }
+
+//     // ==========================================
+//     // FIND INTERNAL ORDER
+//     // ==========================================
+
+//     const order = await Order.findOne({
+//       _id: orderId,
+
+//       userId,
+
+//       paymentGateway: "CASHFREE",
+//     });
+
+//     if (!order) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Cashfree order not found",
+//       });
+//     }
+
+//     // ==========================================
+//     // FIND INTERNAL PAYMENT
+//     // ==========================================
+
+//     const payment = await Payment.findOne({
+//       orderId: order._id,
+
+//       userId,
+
+//       paymentGateway: "CASHFREE",
+//     });
+
+//     if (!payment) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Cashfree payment record not found",
+//       });
+//     }
+
+//     // ==========================================
+//     // VERIFY DIRECTLY WITH CASHFREE
+//     // ==========================================
+
+//     const verification = await verifyCashfreeOrderWithGateway(payment, order);
+
+//     if (!verification.verified) {
+//       return res.status(400).json({
+//         success: false,
+//         message: verification.message,
+//       });
+//     }
+
+//     // ==========================================
+//     // FINALIZE PURCHASE
+//     //
+//     // Shared service creates PurchaseHistory,
+//     // allocates Ownership and completes Order.
+//     // ==========================================
+
+//     const result = await finalizeSuccessfulPayment({
+//       paymentGateway: "CASHFREE",
+
+//       cashfreeOrderId: verification.cashfreeOrderId,
+
+//       cashfreePaymentId: verification.cashfreePaymentId,
+
+//       paymentMethod: verification.paymentMethod,
+
+//       webhookVerified: false,
+
+//       paidAt: verification.paidAt,
+//     });
+
+//     // ==========================================
+//     // FORMAT INDIA DATE AND TIME
+//     // ==========================================
+
+//     const finalPaidAt = result.paidAt || verification.paidAt;
+
+//     const purchaseDate = new Intl.DateTimeFormat("en-IN", {
+//       day: "2-digit",
+//       month: "2-digit",
+//       year: "numeric",
+//       timeZone: "Asia/Kolkata",
+//     }).format(finalPaidAt);
+
+//     const purchaseTime = new Intl.DateTimeFormat("en-IN", {
+//       hour: "2-digit",
+//       minute: "2-digit",
+//       second: "2-digit",
+//       hour12: true,
+//       timeZone: "Asia/Kolkata",
+//     })
+//       .format(finalPaidAt)
+//       .toLowerCase();
+
+//     // ==========================================
+//     // RESPONSE
+//     // ==========================================
+
+//     return res.status(200).json({
+//       success: true,
+
+//       message: result.alreadyProcessed
+//         ? "Payment already verified and purchase already completed"
+//         : "Cashfree payment verified and purchase completed successfully",
+
+//       data: {
+//         purchaseHistoryId: result.purchaseHistoryId,
+
+//         paymentGateway: "CASHFREE",
+
+//         paymentStatus: "SUCCESS",
+
+//         cashfreeOrderId: verification.cashfreeOrderId,
+
+//         cashfreePaymentId: verification.cashfreePaymentId,
+
+//         paidAt: finalPaidAt,
+
+//         purchaseDate,
+
+//         purchaseTime,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("VERIFY CASHFREE PAYMENT ERROR:", error);
+
+//     return res.status(error.statusCode || 500).json({
+//       success: false,
+
+//       message: error.message || "Unable to verify Cashfree payment",
+//     });
+//   }
+// };
+
+
 const verifyCashfreeOrderWithGateway = async (payment, order) => {
+  // ========================================================
+  // 1. BASIC VALIDATION
+  // ========================================================
+
   if (!payment || !order || !payment.cashfreeOrderId) {
     return {
       verified: false,
@@ -2584,15 +3421,100 @@ const verifyCashfreeOrderWithGateway = async (payment, order) => {
     };
   }
 
-  const cashfreeOrderId = payment.cashfreeOrderId;
+  if (
+    String(payment.orderId) !== String(order._id) ||
+    String(payment.userId) !== String(order.userId)
+  ) {
+    return {
+      verified: false,
+      message: "Cashfree order and payment record mismatch",
+    };
+  }
 
-  // ==========================================
-  // FETCH ORDER FROM CASHFREE
-  // ==========================================
+  const cashfreeOrderId = String(payment.cashfreeOrderId);
 
-  const orderResponse = await cashfree.PGFetchOrder(cashfreeOrderId);
+  // ========================================================
+  // 2. CALCULATE EXPECTED AMOUNT
+  // INCLUDES 0.5% ONLINE PROCESSING CHARGE
+  // ========================================================
 
-  const gatewayOrder = orderResponse.data;
+  // Returns amount in paise.
+  //
+  // New orders:
+  // order.totalPayableAmount = base + 0.5%
+  //
+  // Historical orders:
+  // Falls back to order.totalAmount.
+  //
+  // Do not calculate the fee again.
+
+  const expectedAmountPaise =
+    getExpectedPaymentAmount(order);
+
+  const paymentAmountValue = Number(payment.amount);
+
+  const paymentAmountPaise = Math.round(
+    paymentAmountValue * 100
+  );
+
+  if (
+    !Number.isFinite(paymentAmountValue) ||
+    !Number.isSafeInteger(paymentAmountPaise) ||
+    paymentAmountPaise <= 0 ||
+    expectedAmountPaise !== paymentAmountPaise
+  ) {
+    console.error("CASHFREE STORED AMOUNT MISMATCH:", {
+      orderId: String(order._id),
+
+      cashfreeOrderId,
+
+      baseAmount: order.totalAmount,
+
+      processingFeePercentage:
+        order.processingFeePercentage ?? 0,
+
+      processingFee: order.processingFee ?? 0,
+
+      totalPayableAmount:
+        order.totalPayableAmount ?? order.totalAmount,
+
+      storedPaymentAmount: payment.amount,
+
+      expectedAmountPaise,
+
+      paymentAmountPaise,
+    });
+
+    return {
+      verified: false,
+      message: "Cashfree stored payment amount mismatch",
+    };
+  }
+
+  // ========================================================
+  // 3. VERIFY CURRENCY
+  // ========================================================
+
+  const expectedCurrency = String(
+    payment.currency || "INR"
+  ).toUpperCase();
+
+  if (expectedCurrency !== "INR") {
+    return {
+      verified: false,
+      message: "Invalid payment currency",
+    };
+  }
+
+  // ========================================================
+  // 4. FETCH ORDER FROM CASHFREE
+  // ========================================================
+
+  const orderResponse = await cashfree.PGFetchOrder(
+    cashfreeOrderId
+  );
+
+  const gatewayOrder = orderResponse?.data;
 
   if (!gatewayOrder) {
     return {
@@ -2601,51 +3523,73 @@ const verifyCashfreeOrderWithGateway = async (payment, order) => {
     };
   }
 
-  // ==========================================
-  // VERIFY ORDER ID
-  // ==========================================
+  // ========================================================
+  // 5. VERIFY CASHFREE ORDER ID
+  // ========================================================
 
-  if (gatewayOrder.order_id !== cashfreeOrderId) {
+  if (
+    String(gatewayOrder.order_id) !==
+    cashfreeOrderId
+  ) {
     return {
       verified: false,
       message: "Cashfree order ID mismatch",
     };
   }
 
-  // ==========================================
-  // VERIFY ORDER AMOUNT
-  //
-  // Cashfree order_amount is in rupees.
-  // ==========================================
+  // ========================================================
+  // 6. VERIFY CASHFREE ORDER AMOUNT
+  // ========================================================
 
-  const expectedAmountPaise = Math.round(Number(order.totalAmount) * 100);
+  // Cashfree order_amount is in INR.
 
-  const gatewayOrderAmountPaise = Math.round(
-    Number(gatewayOrder.order_amount) * 100,
+  const gatewayOrderAmountValue = Number(
+    gatewayOrder.order_amount
   );
 
-  const paymentAmountPaise = Math.round(Number(payment.amount) * 100);
+  const gatewayOrderAmountPaise = Math.round(
+    gatewayOrderAmountValue * 100
+  );
 
   if (
-    !Number.isFinite(expectedAmountPaise) ||
-    expectedAmountPaise <= 0 ||
-    expectedAmountPaise !== gatewayOrderAmountPaise ||
-    expectedAmountPaise !== paymentAmountPaise
+    !Number.isFinite(gatewayOrderAmountValue) ||
+    !Number.isSafeInteger(gatewayOrderAmountPaise) ||
+    gatewayOrderAmountPaise <= 0 ||
+    gatewayOrderAmountPaise !== expectedAmountPaise
   ) {
+    console.error("CASHFREE GATEWAY ORDER AMOUNT MISMATCH:", {
+      orderId: String(order._id),
+
+      cashfreeOrderId,
+
+      baseAmount: order.totalAmount,
+
+      processingFee: order.processingFee ?? 0,
+
+      expectedPayableAmount:
+        expectedAmountPaise / 100,
+
+      gatewayOrderAmount:
+        gatewayOrder.order_amount,
+
+      expectedAmountPaise,
+
+      gatewayOrderAmountPaise,
+    });
+
     return {
       verified: false,
       message: "Cashfree order amount mismatch",
     };
   }
 
-  // ==========================================
-  // VERIFY CURRENCY
-  // ==========================================
-
-  const expectedCurrency = String(payment.currency || "INR").toUpperCase();
+  // ========================================================
+  // 7. VERIFY CASHFREE ORDER CURRENCY
+  // ========================================================
 
   if (
-    String(gatewayOrder.order_currency || "").toUpperCase() !== expectedCurrency
+    String(gatewayOrder.order_currency || "")
+      .toUpperCase() !== expectedCurrency
   ) {
     return {
       verified: false,
@@ -2653,122 +3597,214 @@ const verifyCashfreeOrderWithGateway = async (payment, order) => {
     };
   }
 
-  // ==========================================
-  // ORDER MUST BE PAID
-  // ==========================================
+  // ========================================================
+  // 8. CASHFREE ORDER MUST BE PAID
+  // ========================================================
 
   if (gatewayOrder.order_status !== "PAID") {
     return {
       verified: false,
-      message: `Cashfree order is not paid. Current status: ${gatewayOrder.order_status}`,
+      message:
+        `Cashfree order is not paid. Current status: ${gatewayOrder.order_status}`,
     };
   }
 
-  // ==========================================
-  // FETCH PAYMENT TRANSACTIONS
-  // ==========================================
+  // ========================================================
+  // 9. FETCH CASHFREE PAYMENT TRANSACTIONS
+  // ========================================================
 
-  const paymentsResponse = await cashfree.PGOrderFetchPayments(cashfreeOrderId);
+  const paymentsResponse =
+    await cashfree.PGOrderFetchPayments(
+      cashfreeOrderId
+    );
 
-  const transactions = paymentsResponse.data;
+  const transactions = paymentsResponse?.data;
 
   if (!Array.isArray(transactions)) {
     return {
       verified: false,
-      message: "Unable to fetch Cashfree payment transactions",
+      message:
+        "Unable to fetch Cashfree payment transactions",
     };
   }
 
-  // ==========================================
-  // FIND A SUCCESSFUL PAYMENT
-  // ==========================================
+  // ========================================================
+  // 10. FIND MATCHING SUCCESSFUL PAYMENT
+  // ========================================================
 
-  const successfulPayment = transactions.find((transaction) => {
-    const transactionAmountPaise = Math.round(
-      Number(transaction.payment_amount) * 100,
-    );
+  const successfulPayment = transactions.find(
+    (transaction) => {
+      if (
+        transaction.payment_status !== "SUCCESS" ||
+        transaction.cf_payment_id == null ||
+        String(transaction.order_id) !== cashfreeOrderId
+      ) {
+        return false;
+      }
 
-    return (
-      transaction.payment_status === "SUCCESS" &&
-      transaction.cf_payment_id != null &&
-      String(transaction.order_id) === String(cashfreeOrderId) &&
-      transactionAmountPaise === expectedAmountPaise &&
-      String(transaction.payment_currency || "").toUpperCase() ===
-        expectedCurrency
-    );
-  });
+      // Cashfree payment_amount is in INR.
+      const transactionAmountValue = Number(
+        transaction.payment_amount
+      );
+
+      if (
+        transaction.payment_amount === null ||
+        transaction.payment_amount === undefined ||
+        !Number.isFinite(transactionAmountValue)
+      ) {
+        return false;
+      }
+
+      const transactionAmountPaise = Math.round(
+        transactionAmountValue * 100
+      );
+
+      if (
+        !Number.isSafeInteger(transactionAmountPaise) ||
+        transactionAmountPaise !== expectedAmountPaise
+      ) {
+        return false;
+      }
+
+      return (
+        String(transaction.payment_currency || "")
+          .toUpperCase() === expectedCurrency
+      );
+    }
+  );
 
   if (!successfulPayment) {
+    console.error(
+      "CASHFREE SUCCESSFUL PAYMENT NOT FOUND:",
+      {
+        cashfreeOrderId,
+        expectedAmountPaise,
+        transactionCount: transactions.length,
+      }
+    );
+
     return {
       verified: false,
-      message: "No successful Cashfree payment found for this order",
+      message:
+        "No matching successful Cashfree payment found for this order",
     };
   }
 
-  // ==========================================
-  // PAYMENT METHOD
-  // ==========================================
+  // ========================================================
+  // 11. VERIFY EXISTING PAYMENT REFERENCE
+  // ========================================================
+
+  const cashfreePaymentId = String(
+    successfulPayment.cf_payment_id
+  );
+
+  if (
+    payment.cashfreePaymentId &&
+    String(payment.cashfreePaymentId) !== cashfreePaymentId
+  ) {
+    return {
+      verified: false,
+      message:
+        "Cashfree payment ID does not match the stored payment",
+    };
+  }
+
+  // ========================================================
+  // 12. PAYMENT METHOD
+  // ========================================================
 
   const paymentMethod =
     successfulPayment.payment_group ||
     successfulPayment.payment_method?.type ||
     null;
 
-  // ==========================================
-  // PAYMENT TIMESTAMP
-  // ==========================================
+  // ========================================================
+  // 13. PAYMENT COMPLETION TIMESTAMP
+  // ========================================================
 
-  const gatewayPaidAt = successfulPayment.payment_completion_time;
+  const gatewayPaidAt =
+    successfulPayment.payment_completion_time;
 
-  const parsedPaidAt = gatewayPaidAt ? new Date(gatewayPaidAt) : new Date();
+  const parsedPaidAt = gatewayPaidAt
+    ? new Date(gatewayPaidAt)
+    : new Date();
 
-  const paidAt = Number.isNaN(parsedPaidAt.getTime())
+  const paidAt = Number.isNaN(
+    parsedPaidAt.getTime()
+  )
     ? new Date()
     : parsedPaidAt;
+
+  // ========================================================
+  // 14. VERIFIED RESULT
+  // ========================================================
 
   return {
     verified: true,
 
     cashfreeOrderId,
 
-    cashfreePaymentId: String(successfulPayment.cf_payment_id),
+    cashfreePaymentId,
 
     paymentMethod,
 
     paidAt,
+
+    // Additional verified amount information.
+    baseAmount: Number(order.totalAmount),
+
+    processingFeePercentage: Number(
+      order.processingFeePercentage || 0
+    ),
+
+    processingFee: Number(
+      order.processingFee || 0
+    ),
+
+    totalPayableAmount:
+      expectedAmountPaise / 100,
+
+    verifiedAmountPaise: expectedAmountPaise,
+
+    currency: expectedCurrency,
   };
 };
 
-// ============================================================
-// NEW: VERIFY CASHFREE PAYMENT
-// ============================================================
 
 export const verifyCashfreePayment = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
 
-    const { orderId } = req.body;
+    const { orderId } = req.body || {};
 
-    // ==========================================
-    // VALIDATION
-    // ==========================================
+    // ========================================================
+    // 1. VALIDATION
+    // ========================================================
 
-    if (!orderId || !mongoose.isValidObjectId(orderId)) {
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication is required",
+      });
+    }
+
+    if (
+      !orderId ||
+      !mongoose.isValidObjectId(orderId)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Valid orderId is required",
       });
     }
 
-    // ==========================================
-    // FIND INTERNAL ORDER
-    // ==========================================
+    // ========================================================
+    // 2. FIND INTERNAL ORDER
+    // ========================================================
 
     const order = await Order.findOne({
       _id: orderId,
-
       userId,
-
       paymentGateway: "CASHFREE",
     });
 
@@ -2779,15 +3815,13 @@ export const verifyCashfreePayment = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // FIND INTERNAL PAYMENT
-    // ==========================================
+    // ========================================================
+    // 3. FIND INTERNAL PAYMENT
+    // ========================================================
 
     const payment = await Payment.findOne({
       orderId: order._id,
-
       userId,
-
       paymentGateway: "CASHFREE",
     });
 
@@ -2798,66 +3832,197 @@ export const verifyCashfreePayment = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // VERIFY DIRECTLY WITH CASHFREE
-    // ==========================================
+    // ========================================================
+    // 4. VERIFY STORED PAYMENT AMOUNT
+    // INCLUDING 0.5% PROCESSING CHARGE
+    // ========================================================
 
-    const verification = await verifyCashfreeOrderWithGateway(payment, order);
+    // Expected amount in paise.
+    // New orders include the 0.5% processing charge.
+    // Old orders fall back to totalAmount.
 
-    if (!verification.verified) {
-      return res.status(400).json({
+    const expectedAmountPaise =
+      getExpectedPaymentAmount(order);
+
+    const storedAmount = Number(payment.amount);
+
+    const storedPaymentPaise = Math.round(
+      storedAmount * 100
+    );
+
+    if (
+      !Number.isFinite(storedAmount) ||
+      !Number.isSafeInteger(storedPaymentPaise) ||
+      storedPaymentPaise <= 0 ||
+      expectedAmountPaise !== storedPaymentPaise
+    ) {
+      console.error(
+        "CASHFREE STORED PAYMENT AMOUNT MISMATCH:",
+        {
+          orderId: String(order._id),
+
+          paymentId: String(payment._id),
+
+          baseAmount: order.totalAmount,
+
+          processingFee:
+            order.processingFee ?? 0,
+
+          totalPayableAmount:
+            order.totalPayableAmount ??
+            order.totalAmount,
+
+          storedPaymentAmount: payment.amount,
+
+          expectedAmountPaise,
+          storedPaymentPaise,
+        }
+      );
+
+      return res.status(409).json({
         success: false,
-        message: verification.message,
+        message:
+          "Stored order and Cashfree payment amount mismatch",
       });
     }
 
-    // ==========================================
-    // FINALIZE PURCHASE
+    // ========================================================
+    // 5. VERIFY PAYMENT CURRENCY
+    // ========================================================
+
+    if (
+      String(payment.currency || "INR")
+        .toUpperCase() !== "INR"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment currency mismatch",
+      });
+    }
+
+    // ========================================================
+    // 6. VERIFY DIRECTLY WITH CASHFREE
+    // ========================================================
+
+    // IMPORTANT:
+    // This helper must validate the actual gateway amount
+    // against order.totalPayableAmount, not order.totalAmount.
     //
-    // Shared service creates PurchaseHistory,
-    // allocates Ownership and completes Order.
-    // ==========================================
+    // It must also verify:
+    // - Cashfree order belongs to the internal order
+    // - Payment status is SUCCESS
+    // - Correct gateway payment reference
+    // - INR currency
+
+    const verification =
+      await verifyCashfreeOrderWithGateway(
+        payment,
+        order
+      );
+
+    if (!verification?.verified) {
+      return res.status(400).json({
+        success: false,
+        message:
+          verification?.message ||
+          "Cashfree payment verification failed",
+      });
+    }
+
+    // ========================================================
+    // 7. VERIFY GATEWAY PAYMENT REFERENCES
+    // ========================================================
+
+    if (
+      !verification.cashfreeOrderId ||
+      !verification.cashfreePaymentId
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Cashfree gateway payment details are missing",
+      });
+    }
+
+    if (
+      String(verification.cashfreeOrderId) !==
+      String(payment.cashfreeOrderId)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "Cashfree order ID mismatch",
+      });
+    }
+
+    if (
+      payment.cashfreePaymentId &&
+      String(payment.cashfreePaymentId) !==
+      String(verification.cashfreePaymentId)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "Cashfree payment ID mismatch",
+      });
+    }
+
+    // ========================================================
+    // 8. FINALIZE SUCCESSFUL PAYMENT
+    // ========================================================
 
     const result = await finalizeSuccessfulPayment({
       paymentGateway: "CASHFREE",
 
-      cashfreeOrderId: verification.cashfreeOrderId,
+      cashfreeOrderId:
+        verification.cashfreeOrderId,
 
-      cashfreePaymentId: verification.cashfreePaymentId,
+      cashfreePaymentId:
+        verification.cashfreePaymentId,
 
-      paymentMethod: verification.paymentMethod,
+      paymentMethod:
+        verification.paymentMethod || null,
 
       webhookVerified: false,
 
-      paidAt: verification.paidAt,
+      paidAt:
+        verification.paidAt || new Date(),
     });
 
-    // ==========================================
-    // FORMAT INDIA DATE AND TIME
-    // ==========================================
+    // ========================================================
+    // 9. FORMAT INDIA DATE AND TIME
+    // ========================================================
 
-    const finalPaidAt = result.paidAt || verification.paidAt;
+    const finalPaidAt = new Date(
+      result.paidAt ||
+      verification.paidAt ||
+      new Date()
+    );
 
-    const purchaseDate = new Intl.DateTimeFormat("en-IN", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      timeZone: "Asia/Kolkata",
-    }).format(finalPaidAt);
+    const purchaseDate = new Intl.DateTimeFormat(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "Asia/Kolkata",
+      }
+    ).format(finalPaidAt);
 
-    const purchaseTime = new Intl.DateTimeFormat("en-IN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Kolkata",
-    })
+    const purchaseTime = new Intl.DateTimeFormat(
+      "en-IN",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Kolkata",
+      }
+    )
       .format(finalPaidAt)
       .toLowerCase();
 
-    // ==========================================
-    // RESPONSE
-    // ==========================================
+    // ========================================================
+    // 10. RESPONSE
+    // ========================================================
 
     return res.status(200).json({
       success: true,
@@ -2867,15 +4032,33 @@ export const verifyCashfreePayment = async (req, res) => {
         : "Cashfree payment verified and purchase completed successfully",
 
       data: {
-        purchaseHistoryId: result.purchaseHistoryId,
+        orderId: order._id,
+
+        purchaseHistoryId:
+          result.purchaseHistoryId,
 
         paymentGateway: "CASHFREE",
 
         paymentStatus: "SUCCESS",
 
-        cashfreeOrderId: verification.cashfreeOrderId,
+        cashfreeOrderId:
+          verification.cashfreeOrderId,
 
-        cashfreePaymentId: verification.cashfreePaymentId,
+        cashfreePaymentId:
+          verification.cashfreePaymentId,
+
+        baseAmount: Number(order.totalAmount),
+
+        processingFeePercentage:
+          Number(
+            order.processingFeePercentage || 0
+          ),
+
+        processingFee:
+          Number(order.processingFee || 0),
+
+        totalPayableAmount:
+          expectedAmountPaise / 100,
 
         paidAt: finalPaidAt,
 
@@ -2885,15 +4068,24 @@ export const verifyCashfreePayment = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("VERIFY CASHFREE PAYMENT ERROR:", error);
+    console.error(
+      "VERIFY CASHFREE PAYMENT ERROR:",
+      error
+    );
 
-    return res.status(error.statusCode || 500).json({
+    return res.status(
+      error.statusCode || 500
+    ).json({
       success: false,
 
-      message: error.message || "Unable to verify Cashfree payment",
+      message:
+        error.message ||
+        "Unable to verify Cashfree payment",
     });
   }
 };
+
+
 
 // ============================================================
 // RAZORPAY WEBHOOK - EXISTING

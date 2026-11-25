@@ -1594,6 +1594,851 @@
 //   }
 // };
 
+// import mongoose from "mongoose";
+
+// import Order from "../model/OrderModel.js";
+// import Payment from "../model/PaymentModel.js";
+// import Asset from "../model/coAssetModel.js";
+// import PurchaseHistory from "../model/purchaseHistoryModel.js";
+
+// import { allocateFractions } from "./ownerShipService.js";
+// import { sendPaymentWelcomeEmail } from "./paymentWelcomeEmail.service.js";
+// import {
+//   getExpectedPaymentAmount,
+// } from "../utils/payment_charges.js";
+
+// // ============================================================
+// // HELPERS
+// // ============================================================
+
+// const createError = (statusCode, message) => {
+//   const error = new Error(message);
+//   error.statusCode = statusCode;
+//   return error;
+// };
+
+// const normalizePaidAt = (paidAt) => {
+//   if (paidAt) {
+//     const date = new Date(paidAt);
+
+//     if (!Number.isNaN(date.getTime())) {
+//       return date;
+//     }
+//   }
+
+//   return new Date();
+// };
+
+// // ============================================================
+// // ASSET SNAPSHOT
+// // ============================================================
+
+// const buildAssetSnapshot = (asset, fractionsPurchased) => ({
+//   assetName: asset.assetName ?? null,
+//   assetCode: asset.assetCode ?? null,
+//   specification: asset.specification ?? null,
+//   assetCost: asset.assetCost ?? null,
+//   registeredLegalOwner: asset.registeredLegalOwner ?? null,
+//   totalFractions: asset.totalFractions ?? null,
+//   amountPerFraction: asset.amountPerFraction ?? null,
+//   rentalAmountPerFraction: asset.rentalAmountPerFraction ?? null,
+
+//   totalMonthlyRental:
+//     asset.rentalAmountPerFraction == null
+//       ? null
+//       : Number(asset.rentalAmountPerFraction) * Number(fractionsPurchased),
+
+//   durationMonths: asset.durationMonths ?? null,
+//   lockInMonths: asset.lockInMonths ?? null,
+// });
+
+// // ============================================================
+// // FIND EXISTING PURCHASE
+// // ============================================================
+
+// const findExistingPurchase = async ({ orderId, paymentId, session = null }) => {
+//   let query = PurchaseHistory.findOne({
+//     $or: [{ orderId }, { paymentId }],
+//   });
+
+//   if (session) {
+//     query = query.session(session);
+//   }
+
+//   return query;
+// };
+
+// // ============================================================
+// // USER SNAPSHOT
+// // ============================================================
+
+// const getUserSnapshot = async (userId, session = null) => {
+//   const User = mongoose.model("User");
+
+//   let query = User.findById(userId)
+//     .select("name fullName email phone mobile fullPhone")
+//     .lean();
+
+//   if (session) {
+//     query = query.session(session);
+//   }
+
+//   const user = await query;
+
+//   return {
+//     name: user?.name || user?.fullName || null,
+//     email: user?.email || null,
+//     phone: user?.fullPhone || user?.phone || user?.mobile || null,
+//   };
+// };
+
+// // ============================================================
+// // PAYMENT CONFIRMATION EMAIL
+// // ============================================================
+
+// const sendPurchaseConfirmation = async (purchaseHistoryId) => {
+//   const purchase = await PurchaseHistory.findOneAndUpdate(
+//     {
+//       _id: purchaseHistoryId,
+
+//       paymentStatus: "SUCCESS",
+
+//       $or: [
+//         { paymentEmailStatus: "PENDING" },
+//         { paymentEmailStatus: { $exists: false } },
+//       ],
+//     },
+//     {
+//       $set: {
+//         paymentEmailStatus: "SENDING",
+//         paymentEmailClaimedAt: new Date(),
+//       },
+
+//       $inc: {
+//         paymentEmailAttempts: 1,
+//       },
+//     },
+//     {
+//       new: true,
+//     },
+//   );
+
+//   if (!purchase) return;
+
+//   try {
+//     const userSnapshot = purchase.userSnapshot || {};
+//     const assetSnapshot = purchase.assetSnapshot || {};
+
+//     let customerEmail = userSnapshot.email || null;
+//     let customerName = userSnapshot.name || null;
+
+//     if (!customerEmail || !customerName) {
+//       const user = await getUserSnapshot(purchase.userId);
+
+//       customerEmail = customerEmail || user.email;
+//       customerName = customerName || user.name;
+//     }
+
+//     if (!customerEmail) {
+//       throw new Error("Customer email not found");
+//     }
+
+//     customerName = customerName || "Customer";
+
+//     const asset = await Asset.findById(purchase.assetId)
+//       .select(
+//         "assetName assetCode registeredLegalOwner totalFractions assetCost rentalAmountPerFraction",
+//       )
+//       .lean();
+
+//     const fractionsPurchased = Number(purchase.fractionsPurchased || 0);
+
+//     const monthlyRentalPerFraction =
+//       assetSnapshot.rentalAmountPerFraction ??
+//       asset?.rentalAmountPerFraction ??
+//       null;
+
+//     const totalFixedMonthlyRental =
+//       assetSnapshot.totalMonthlyRental ??
+//       (monthlyRentalPerFraction == null
+//         ? null
+//         : Number(monthlyRentalPerFraction) * fractionsPurchased);
+
+//     // ========================================================
+//     // COMMON EMAIL DETAILS - ALL GATEWAYS
+//     // ========================================================
+
+//     const emailDetails = {
+//       email: customerEmail,
+
+//       name: customerName,
+
+//       assetName: assetSnapshot.assetName ?? asset?.assetName ?? null,
+
+//       assetCode: assetSnapshot.assetCode ?? asset?.assetCode ?? null,
+
+//       registeredLegalOwner: customerName,
+
+//       totalAssetValue: assetSnapshot.assetCost ?? asset?.assetCost ?? null,
+
+//       totalFractions:
+//         assetSnapshot.totalFractions ?? asset?.totalFractions ?? null,
+
+//       amountPerFraction: purchase.amountPerFraction,
+
+//       fractionsPurchased,
+
+//       totalAmountPaid: purchase.totalAmount,
+
+//       acquisitionDate: purchase.paidAt,
+
+//       monthlyRentalPerFraction,
+
+//       totalFixedMonthlyRental,
+
+//       transactionId:
+//         purchase.transactionReference ||
+//         purchase.cashfreePaymentId ||
+//         purchase.razorpayPaymentId,
+//     };
+
+//     console.log("PAYMENT EMAIL DETAILS:", {
+//       purchaseHistoryId: String(purchase._id),
+//       assetName: emailDetails.assetName,
+//       assetCode: emailDetails.assetCode,
+//       registeredLegalOwner: emailDetails.registeredLegalOwner,
+//       totalAssetValue: emailDetails.totalAssetValue,
+//       totalFractions: emailDetails.totalFractions,
+//       amountPerFraction: emailDetails.amountPerFraction,
+//       fractionsPurchased: emailDetails.fractionsPurchased,
+//       totalAmountPaid: emailDetails.totalAmountPaid,
+//       acquisitionDate: emailDetails.acquisitionDate,
+//       monthlyRentalPerFraction: emailDetails.monthlyRentalPerFraction,
+//       totalFixedMonthlyRental,
+//     });
+
+//     await sendPaymentWelcomeEmail(emailDetails);
+
+//     await PurchaseHistory.updateOne(
+//       {
+//         _id: purchase._id,
+//         paymentEmailStatus: "SENDING",
+//       },
+//       {
+//         $set: {
+//           paymentEmailStatus: "SENT",
+//           paymentEmailSentAt: new Date(),
+//         },
+
+//         $unset: {
+//           paymentEmailClaimedAt: "",
+//         },
+//       },
+//     );
+
+//     console.log("PAYMENT SUCCESS EMAIL SENT:", purchase.transactionReference);
+//   } catch (error) {
+//     console.error("PAYMENT SUCCESS EMAIL FAILED:", purchaseHistoryId, error);
+
+//     try {
+//       await PurchaseHistory.updateOne(
+//         {
+//           _id: purchase._id,
+//           paymentEmailStatus: "SENDING",
+//         },
+//         {
+//           $set: {
+//             paymentEmailStatus: "FAILED",
+//           },
+
+//           $unset: {
+//             paymentEmailClaimedAt: "",
+//           },
+//         },
+//       );
+//     } catch (updateError) {
+//       console.error("PAYMENT EMAIL STATUS UPDATE FAILED:", updateError);
+//     }
+//   }
+// };
+
+// // ============================================================
+// // FINALIZE SUCCESSFUL PAYMENT
+// // RAZORPAY + CASHFREE + PAYU
+// //
+// // IMPORTANT:
+// // Call ONLY after independent gateway verification
+// // of success, amount, currency and transaction ID.
+// // ============================================================
+
+// export const finalizeSuccessfulPayment = async ({
+//   paymentGateway = "RAZORPAY",
+
+//   // ==========================================
+//   // RAZORPAY
+//   // ==========================================
+
+//   razorpayOrderId = null,
+//   razorpayPaymentId = null,
+//   razorpaySignature = null,
+
+//   // ==========================================
+//   // CASHFREE
+//   // ==========================================
+
+//   cashfreeOrderId = null,
+//   cashfreePaymentId = null,
+
+//   // ==========================================
+//   // PAYU
+//   // ==========================================
+
+//   payuTxnId = null,
+//   payuMihpayId = null,
+
+//   // ==========================================
+//   // COMMON
+//   // ==========================================
+
+//   paymentMethod = null,
+//   webhookVerified = false,
+//   paidAt = null,
+// }) => {
+//   // ========================================================
+//   // 1. VALIDATION
+//   // ========================================================
+
+//   const allowedGateways = ["RAZORPAY", "CASHFREE", "PAYU"];
+
+//   if (!allowedGateways.includes(paymentGateway)) {
+//     throw createError(400, "Invalid payment gateway");
+//   }
+
+//   if (paymentGateway === "RAZORPAY") {
+//     if (!razorpayOrderId || !razorpayPaymentId) {
+//       throw createError(400, "Razorpay order ID and payment ID are required");
+//     }
+//   }
+
+//   if (paymentGateway === "CASHFREE") {
+//     if (!cashfreeOrderId || !cashfreePaymentId) {
+//       throw createError(400, "Cashfree order ID and payment ID are required");
+//     }
+//   }
+
+//   if (paymentGateway === "PAYU") {
+//     if (!payuTxnId || !payuMihpayId) {
+//       throw createError(400, "PayU transaction ID and mihpayid are required");
+//     }
+//   }
+
+//   const finalPaidAt = normalizePaidAt(paidAt);
+
+//   // ========================================================
+//   // 2. FIND PAYMENT
+//   // ========================================================
+
+//   const paymentQuery =
+//     paymentGateway === "RAZORPAY"
+//       ? {
+//           razorpayOrderId,
+//           paymentGateway: "RAZORPAY",
+//         }
+//       : paymentGateway === "CASHFREE"
+//         ? {
+//             cashfreeOrderId,
+//             paymentGateway: "CASHFREE",
+//           }
+//         : {
+//             payuTxnId,
+//             paymentGateway: "PAYU",
+//           };
+
+//   const gatewayPaymentId = String(
+//     paymentGateway === "RAZORPAY"
+//       ? razorpayPaymentId
+//       : paymentGateway === "CASHFREE"
+//         ? cashfreePaymentId
+//         : payuMihpayId,
+//   );
+
+//   const paymentIdField =
+//     paymentGateway === "RAZORPAY"
+//       ? "razorpayPaymentId"
+//       : paymentGateway === "CASHFREE"
+//         ? "cashfreePaymentId"
+//         : "payuMihpayId";
+
+//   const payment = await Payment.findOne(paymentQuery);
+
+//   if (!payment) {
+//     throw createError(404, "Payment record not found");
+//   }
+
+//   // ========================================================
+//   // 3. FIND ORDER
+//   // ========================================================
+
+//   const order = await Order.findById(payment.orderId);
+
+//   if (!order) {
+//     throw createError(404, "Order not found");
+//   }
+
+//   if (order.paymentGateway !== paymentGateway) {
+//     throw createError(409, "Order payment gateway mismatch");
+//   }
+
+//   if (String(order.userId) !== String(payment.userId)) {
+//     throw createError(409, "Order and payment customer mismatch");
+//   }
+
+//   if (
+//     paymentGateway === "PAYU" &&
+//     String(order.payuTxnId) !== String(payuTxnId)
+//   ) {
+//     throw createError(409, "PayU transaction does not match order");
+//   }
+
+//   // ========================================================
+//   // 4. VERIFY STORED PAYMENT AMOUNT
+//   // ========================================================
+
+//   const orderAmount = Math.round(Number(order.totalAmount) * 100);
+
+//   const paymentAmount = Math.round(Number(payment.amount) * 100);
+
+//   if (orderAmount !== paymentAmount) {
+//     throw createError(409, "Stored order and payment amount mismatch");
+//   }
+
+//   if (String(payment.currency || "INR").toUpperCase() !== "INR") {
+//     throw createError(409, "Unexpected payment currency");
+//   }
+
+//   // ========================================================
+//   // 5. PREVENT DUPLICATE GATEWAY PAYMENT REFERENCE
+//   // ========================================================
+
+//   const reusedPayment = await Payment.findOne({
+//     _id: { $ne: payment._id },
+//     [paymentIdField]: gatewayPaymentId,
+//   });
+
+//   if (reusedPayment) {
+//     throw createError(409, "Gateway payment reference already used");
+//   }
+
+//   if (
+//     payment[paymentIdField] &&
+//     String(payment[paymentIdField]) !== gatewayPaymentId
+//   ) {
+//     throw createError(
+//       409,
+//       "Order already associated with a different gateway payment",
+//     );
+//   }
+
+//   // ========================================================
+//   // 6. START DATABASE TRANSACTION
+//   // ========================================================
+
+//   let purchaseHistory = null;
+//   let createdPurchase = false;
+
+//   const session = await mongoose.startSession();
+
+//   try {
+//     await session.withTransaction(async () => {
+//       const currentPayment = await Payment.findById(payment._id).session(
+//         session,
+//       );
+
+//       const currentOrder = await Order.findById(order._id).session(session);
+
+//       if (!currentPayment || !currentOrder) {
+//         throw createError(404, "Order or payment record not found");
+//       }
+
+//       // ====================================================
+//       // VERIFY GATEWAY MATCH
+//       // ====================================================
+
+//       if (
+//         currentPayment.paymentGateway !== paymentGateway ||
+//         currentOrder.paymentGateway !== paymentGateway
+//       ) {
+//         throw createError(409, "Gateway mismatch during finalization");
+//       }
+
+//       if (
+//         currentPayment[paymentIdField] &&
+//         String(currentPayment[paymentIdField]) !== gatewayPaymentId
+//       ) {
+//         throw createError(409, "Gateway payment reference mismatch");
+//       }
+
+//       // ====================================================
+//       // CHECK EXISTING PURCHASE INSIDE TRANSACTION
+//       // ====================================================
+
+//       const existing = await findExistingPurchase({
+//         orderId: currentOrder._id,
+//         paymentId: currentPayment._id,
+//         session,
+//       });
+
+//       if (existing) {
+//         if (currentOrder.status !== "COMPLETED") {
+//           throw createError(
+//             409,
+//             "Purchase exists but order is not completed; reconciliation required",
+//           );
+//         }
+
+//         if (
+//           String(existing.orderId) !== String(currentOrder._id) ||
+//           String(existing.paymentId) !== String(currentPayment._id)
+//         ) {
+//           throw createError(
+//             409,
+//             "Existing purchase belongs to another order/payment",
+//           );
+//         }
+
+//         if (
+//           existing.transactionReference &&
+//           String(existing.transactionReference) !== gatewayPaymentId
+//         ) {
+//           throw createError(
+//             409,
+//             "Existing purchase has a different transaction reference",
+//           );
+//         }
+
+//         // ==============================================
+//         // ALREADY PROCESSED PAYMENT
+//         // ==============================================
+
+//         currentPayment[paymentIdField] = gatewayPaymentId;
+
+//         if (paymentGateway === "RAZORPAY" && razorpaySignature) {
+//           currentPayment.razorpaySignature = razorpaySignature;
+//         }
+
+//         currentPayment.status = "SUCCESS";
+
+//         currentPayment.paidAt ||= existing.paidAt || finalPaidAt;
+
+//         if (paymentMethod && !currentPayment.paymentMethod) {
+//           currentPayment.paymentMethod = paymentMethod;
+//         }
+
+//         if (webhookVerified) {
+//           currentPayment.webhookVerified = true;
+//         }
+
+//         await currentPayment.save({ session });
+
+//         if (!existing.paidAt) {
+//           existing.paidAt = currentPayment.paidAt;
+
+//           await existing.save({ session });
+//         }
+
+//         purchaseHistory = existing;
+//         createdPurchase = false;
+
+//         return;
+//       }
+
+//       // ====================================================
+//       // CHECK EXISTING STATUS
+//       // ====================================================
+
+//       if (
+//         currentPayment.status === "SUCCESS" ||
+//         currentOrder.status === "COMPLETED"
+//       ) {
+//         throw createError(
+//           409,
+//           "Payment/order marked complete without purchase; manual reconciliation required",
+//         );
+//       }
+
+//       if (
+//         currentOrder.status !== "PENDING_PAYMENT" ||
+//         currentPayment.status !== "PENDING"
+//       ) {
+//         throw createError(
+//           409,
+//           "Order or payment is no longer pending; manual reconciliation required",
+//         );
+//       }
+
+//       // ====================================================
+//       // ORDER EXPIRATION
+//       // ====================================================
+
+//       if (new Date(currentOrder.expiresAt).getTime() <= Date.now()) {
+//         throw createError(
+//           409,
+//           "Order reservation expired; payment requires manual reconciliation",
+//         );
+//       }
+
+//       // ====================================================
+//       // 7. ALLOCATE OWNERSHIP FRACTIONS
+//       // ====================================================
+
+//       await allocateFractions({
+//         assetId: currentOrder.assetId,
+
+//         userId: currentOrder.userId,
+
+//         fractions: currentOrder.fractions,
+
+//         razorpayOrderId: paymentGateway === "RAZORPAY" ? razorpayOrderId : null,
+
+//         razorpayPaymentId:
+//           paymentGateway === "RAZORPAY" ? razorpayPaymentId : null,
+
+//         session,
+//       });
+
+//       // ====================================================
+//       // 8. UPDATE RESERVED FRACTIONS
+//       // ====================================================
+
+//       const assetUpdate = await Asset.updateOne(
+//         {
+//           _id: currentOrder.assetId,
+
+//           reservedFractions: {
+//             $gte: currentOrder.fractions,
+//           },
+//         },
+//         {
+//           $inc: {
+//             reservedFractions: -Number(currentOrder.fractions),
+//           },
+//         },
+//         {
+//           session,
+//         },
+//       );
+
+//       if (assetUpdate.modifiedCount !== 1) {
+//         throw createError(409, "Unable to finalize reserved fractions");
+//       }
+
+//       // ====================================================
+//       // 9. UPDATE PAYMENT DETAILS
+//       // ====================================================
+
+//       currentPayment[paymentIdField] = gatewayPaymentId;
+
+//       if (paymentGateway === "RAZORPAY" && razorpaySignature) {
+//         currentPayment.razorpaySignature = razorpaySignature;
+//       }
+
+//       currentPayment.status = "SUCCESS";
+
+//       if (!currentPayment.paidAt) {
+//         currentPayment.paidAt = finalPaidAt;
+//       }
+
+//       if (paymentMethod) {
+//         currentPayment.paymentMethod = paymentMethod;
+//       }
+
+//       if (webhookVerified) {
+//         currentPayment.webhookVerified = true;
+//       }
+
+//       await currentPayment.save({ session });
+
+//       // ====================================================
+//       // 10. UPDATE ORDER STATUS
+//       // ====================================================
+
+//       currentOrder.status = "COMPLETED";
+
+//       await currentOrder.save({ session });
+
+//       // ====================================================
+//       // 11. GET ASSET DETAILS
+//       // ====================================================
+
+//       const currentAsset = await Asset.findById(currentOrder.assetId).session(
+//         session,
+//       );
+
+//       if (!currentAsset) {
+//         throw createError(404, "Asset not found");
+//       }
+
+//       const fractionsPurchased = Number(currentOrder.fractions);
+
+//       // ====================================================
+//       // 12. CREATE PURCHASE HISTORY
+//       // ====================================================
+
+//       const records = await PurchaseHistory.create(
+//         [
+//           {
+//             userId: currentOrder.userId,
+
+//             assetId: currentOrder.assetId,
+
+//             orderId: currentOrder._id,
+
+//             paymentId: currentPayment._id,
+
+//             paymentGateway,
+
+//             fractionsPurchased,
+
+//             amountPerFraction: Number(currentOrder.amountPerFraction),
+
+//             totalAmount: Number(currentOrder.totalAmount),
+
+//             userSnapshot: await getUserSnapshot(currentOrder.userId, session),
+
+//             assetSnapshot: buildAssetSnapshot(currentAsset, fractionsPurchased),
+
+//             paymentStatus: "SUCCESS",
+
+//             // ==================================
+//             // RAZORPAY DETAILS
+//             // ==================================
+
+//             razorpayOrderId:
+//               paymentGateway === "RAZORPAY" ? razorpayOrderId : null,
+
+//             razorpayPaymentId:
+//               paymentGateway === "RAZORPAY" ? razorpayPaymentId : null,
+
+//             razorpaySignature:
+//               paymentGateway === "RAZORPAY" ? razorpaySignature || null : null,
+
+//             // ==================================
+//             // CASHFREE DETAILS
+//             // ==================================
+
+//             cashfreeOrderId:
+//               paymentGateway === "CASHFREE" ? cashfreeOrderId : null,
+
+//             cashfreeCfOrderId:
+//               paymentGateway === "CASHFREE"
+//                 ? currentPayment.cashfreeCfOrderId
+//                 : null,
+
+//             cashfreePaymentId:
+//               paymentGateway === "CASHFREE" ? gatewayPaymentId : null,
+
+//             // ==================================
+//             // PAYU DETAILS
+//             // ==================================
+
+//             payuTxnId: paymentGateway === "PAYU" ? payuTxnId : null,
+
+//             payuMihpayId: paymentGateway === "PAYU" ? gatewayPaymentId : null,
+
+//             // ==================================
+//             // COMMON PAYMENT DETAILS
+//             // ==================================
+
+//             paymentMethod:
+//               paymentMethod || currentPayment.paymentMethod || null,
+
+//             transactionReference: gatewayPaymentId,
+
+//             paidAt: currentPayment.paidAt,
+
+//             paymentEmailStatus: "PENDING",
+
+//             paymentEmailAttempts: 0,
+
+//             paymentEmailSentAt: null,
+
+//             paymentEmailClaimedAt: null,
+//           },
+//         ],
+//         {
+//           session,
+//         },
+//       );
+
+//       purchaseHistory = records[0];
+//       createdPurchase = true;
+//     });
+
+//     // ========================================================
+//     // 13. FIND PURCHASE HISTORY AFTER TRANSACTION
+//     // ========================================================
+
+//     if (!purchaseHistory) {
+//       purchaseHistory = await findExistingPurchase({
+//         orderId: order._id,
+//         paymentId: payment._id,
+//       });
+//     }
+
+//     if (!purchaseHistory) {
+//       throw createError(
+//         500,
+//         "Payment committed but purchase history not found",
+//       );
+//     }
+
+//     // ========================================================
+//     // 14. SEND PAYMENT CONFIRMATION EMAIL
+//     // ========================================================
+
+//     if (createdPurchase) {
+//       const id = purchaseHistory._id;
+
+//       setImmediate(() => {
+//         void sendPurchaseConfirmation(id).catch((error) => {
+//           console.error("PAYMENT EMAIL PROCESSING ERROR:", error);
+//         });
+//       });
+//     }
+
+//     // ========================================================
+//     // 15. SUCCESS RESPONSE
+//     // ========================================================
+
+//     return {
+//       success: true,
+
+//       alreadyProcessed: !createdPurchase,
+
+//       purchaseHistoryId: purchaseHistory._id,
+
+//       paymentId: payment._id,
+
+//       orderId: order._id,
+
+//       paidAt: purchaseHistory.paidAt || finalPaidAt,
+//     };
+//   } catch (error) {
+//     console.error("FINALIZE SUCCESSFUL PAYMENT ERROR:", error);
+
+//     throw error;
+//   } finally {
+//     await session.endSession();
+//   }
+// };
+
+
+
+
+
+
+
+
 import mongoose from "mongoose";
 
 import Order from "../model/OrderModel.js";
@@ -1604,6 +2449,9 @@ import PurchaseHistory from "../model/purchaseHistoryModel.js";
 import { allocateFractions } from "./ownerShipService.js";
 import { sendPaymentWelcomeEmail } from "./paymentWelcomeEmail.service.js";
 
+import {
+  getExpectedPaymentAmount,
+} from "../utils/payment_charges.js";
 // ============================================================
 // HELPERS
 // ============================================================
@@ -1612,6 +2460,71 @@ const createError = (statusCode, message) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+};
+
+const toStoredPaise = (amount) => {
+  if (
+    amount === null ||
+    amount === undefined ||
+    amount === ""
+  ) {
+    throw createError(409, "Payment amount is missing");
+  }
+
+  const value = Number(amount);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw createError(409, "Invalid stored payment amount");
+  }
+
+  const paise = Math.round(value * 100);
+
+  if (!Number.isSafeInteger(paise)) {
+    throw createError(409, "Invalid payment amount precision");
+  }
+
+  return paise;
+};
+
+const validateStoredPaymentAmount = (order, payment) => {
+  // New online orders use totalPayableAmount.
+  // Historical orders fall back to totalAmount.
+  //
+  // getExpectedPaymentAmount returns paise.
+
+  const expectedPaymentPaise =
+    getExpectedPaymentAmount(order);
+
+  const storedPaymentPaise =
+    toStoredPaise(payment.amount);
+
+  if (expectedPaymentPaise !== storedPaymentPaise) {
+    console.error("PAYMENT AMOUNT MISMATCH:", {
+      orderId: String(order._id),
+      paymentId: String(payment._id),
+      gateway: order.paymentGateway,
+      baseAmount: order.totalAmount,
+      processingFee: order.processingFee,
+      totalPayableAmount: order.totalPayableAmount,
+      storedPaymentAmount: payment.amount,
+      expectedPaymentPaise,
+      storedPaymentPaise,
+    });
+
+    throw createError(
+      409,
+      "Stored order and payment amount mismatch"
+    );
+  }
+
+  if (
+    String(payment.currency || "INR").toUpperCase() !==
+    "INR"
+  ) {
+    throw createError(409, "Unexpected payment currency");
+  }
+
+  return expectedPaymentPaise;
 };
 
 const normalizePaidAt = (paidAt) => {
@@ -1630,22 +2543,37 @@ const normalizePaidAt = (paidAt) => {
 // ASSET SNAPSHOT
 // ============================================================
 
-const buildAssetSnapshot = (asset, fractionsPurchased) => ({
+const buildAssetSnapshot = (
+  asset,
+  fractionsPurchased
+) => ({
   assetName: asset.assetName ?? null,
+
   assetCode: asset.assetCode ?? null,
+
   specification: asset.specification ?? null,
+
   assetCost: asset.assetCost ?? null,
-  registeredLegalOwner: asset.registeredLegalOwner ?? null,
+
+  registeredLegalOwner:
+    asset.registeredLegalOwner ?? null,
+
   totalFractions: asset.totalFractions ?? null,
-  amountPerFraction: asset.amountPerFraction ?? null,
-  rentalAmountPerFraction: asset.rentalAmountPerFraction ?? null,
+
+  amountPerFraction:
+    asset.amountPerFraction ?? null,
+
+  rentalAmountPerFraction:
+    asset.rentalAmountPerFraction ?? null,
 
   totalMonthlyRental:
     asset.rentalAmountPerFraction == null
       ? null
-      : Number(asset.rentalAmountPerFraction) * Number(fractionsPurchased),
+      : Number(asset.rentalAmountPerFraction) *
+        Number(fractionsPurchased),
 
   durationMonths: asset.durationMonths ?? null,
+
   lockInMonths: asset.lockInMonths ?? null,
 });
 
@@ -1653,7 +2581,11 @@ const buildAssetSnapshot = (asset, fractionsPurchased) => ({
 // FIND EXISTING PURCHASE
 // ============================================================
 
-const findExistingPurchase = async ({ orderId, paymentId, session = null }) => {
+const findExistingPurchase = async ({
+  orderId,
+  paymentId,
+  session = null,
+}) => {
   let query = PurchaseHistory.findOne({
     $or: [{ orderId }, { paymentId }],
   });
@@ -1669,11 +2601,16 @@ const findExistingPurchase = async ({ orderId, paymentId, session = null }) => {
 // USER SNAPSHOT
 // ============================================================
 
-const getUserSnapshot = async (userId, session = null) => {
+const getUserSnapshot = async (
+  userId,
+  session = null
+) => {
   const User = mongoose.model("User");
 
   let query = User.findById(userId)
-    .select("name fullName email phone mobile fullPhone")
+    .select(
+      "name fullName email phone mobile fullPhone"
+    )
     .lean();
 
   if (session) {
@@ -1683,9 +2620,18 @@ const getUserSnapshot = async (userId, session = null) => {
   const user = await query;
 
   return {
-    name: user?.name || user?.fullName || null,
+    name:
+      user?.name ||
+      user?.fullName ||
+      null,
+
     email: user?.email || null,
-    phone: user?.fullPhone || user?.phone || user?.mobile || null,
+
+    phone:
+      user?.fullPhone ||
+      user?.phone ||
+      user?.mobile ||
+      null,
   };
 };
 
@@ -1693,7 +2639,9 @@ const getUserSnapshot = async (userId, session = null) => {
 // PAYMENT CONFIRMATION EMAIL
 // ============================================================
 
-const sendPurchaseConfirmation = async (purchaseHistoryId) => {
+const sendPurchaseConfirmation = async (
+  purchaseHistoryId
+) => {
   const purchase = await PurchaseHistory.findOneAndUpdate(
     {
       _id: purchaseHistoryId,
@@ -1702,7 +2650,11 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
 
       $or: [
         { paymentEmailStatus: "PENDING" },
-        { paymentEmailStatus: { $exists: false } },
+        {
+          paymentEmailStatus: {
+            $exists: false,
+          },
+        },
       ],
     },
     {
@@ -1717,38 +2669,56 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
     },
     {
       new: true,
-    },
+    }
   );
 
   if (!purchase) return;
 
   try {
-    const userSnapshot = purchase.userSnapshot || {};
-    const assetSnapshot = purchase.assetSnapshot || {};
+    const userSnapshot =
+      purchase.userSnapshot || {};
 
-    let customerEmail = userSnapshot.email || null;
-    let customerName = userSnapshot.name || null;
+    const assetSnapshot =
+      purchase.assetSnapshot || {};
+
+    let customerEmail =
+      userSnapshot.email || null;
+
+    let customerName =
+      userSnapshot.name || null;
 
     if (!customerEmail || !customerName) {
-      const user = await getUserSnapshot(purchase.userId);
+      const user = await getUserSnapshot(
+        purchase.userId
+      );
 
-      customerEmail = customerEmail || user.email;
-      customerName = customerName || user.name;
+      customerEmail =
+        customerEmail || user.email;
+
+      customerName =
+        customerName || user.name;
     }
 
     if (!customerEmail) {
-      throw new Error("Customer email not found");
+      throw new Error(
+        "Customer email not found"
+      );
     }
 
-    customerName = customerName || "Customer";
+    customerName =
+      customerName || "Customer";
 
-    const asset = await Asset.findById(purchase.assetId)
+    const asset = await Asset.findById(
+      purchase.assetId
+    )
       .select(
-        "assetName assetCode registeredLegalOwner totalFractions assetCost rentalAmountPerFraction",
+        "assetName assetCode registeredLegalOwner totalFractions assetCost rentalAmountPerFraction"
       )
       .lean();
 
-    const fractionsPurchased = Number(purchase.fractionsPurchased || 0);
+    const fractionsPurchased = Number(
+      purchase.fractionsPurchased || 0
+    );
 
     const monthlyRentalPerFraction =
       assetSnapshot.rentalAmountPerFraction ??
@@ -1759,35 +2729,51 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
       assetSnapshot.totalMonthlyRental ??
       (monthlyRentalPerFraction == null
         ? null
-        : Number(monthlyRentalPerFraction) * fractionsPurchased);
+        : Number(monthlyRentalPerFraction) *
+          fractionsPurchased);
 
-    // ========================================================
-    // COMMON EMAIL DETAILS - ALL GATEWAYS
-    // ========================================================
+    // PurchaseHistory.totalAmount is ownership
+    // value excluding processing fee.
+    //
+    // This preserves the existing email format.
 
     const emailDetails = {
       email: customerEmail,
 
       name: customerName,
 
-      assetName: assetSnapshot.assetName ?? asset?.assetName ?? null,
+      assetName:
+        assetSnapshot.assetName ??
+        asset?.assetName ??
+        null,
 
-      assetCode: assetSnapshot.assetCode ?? asset?.assetCode ?? null,
+      assetCode:
+        assetSnapshot.assetCode ??
+        asset?.assetCode ??
+        null,
 
       registeredLegalOwner: customerName,
 
-      totalAssetValue: assetSnapshot.assetCost ?? asset?.assetCost ?? null,
+      totalAssetValue:
+        assetSnapshot.assetCost ??
+        asset?.assetCost ??
+        null,
 
       totalFractions:
-        assetSnapshot.totalFractions ?? asset?.totalFractions ?? null,
+        assetSnapshot.totalFractions ??
+        asset?.totalFractions ??
+        null,
 
-      amountPerFraction: purchase.amountPerFraction,
+      amountPerFraction:
+        purchase.amountPerFraction,
 
       fractionsPurchased,
 
-      totalAmountPaid: purchase.totalAmount,
+      totalAmountPaid:
+        purchase.totalAmount,
 
-      acquisitionDate: purchase.paidAt,
+      acquisitionDate:
+        purchase.paidAt,
 
       monthlyRentalPerFraction,
 
@@ -1796,25 +2782,32 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
       transactionId:
         purchase.transactionReference ||
         purchase.cashfreePaymentId ||
-        purchase.razorpayPaymentId,
+        purchase.razorpayPaymentId ||
+        purchase.payuMihpayId,
     };
 
-    console.log("PAYMENT EMAIL DETAILS:", {
-      purchaseHistoryId: String(purchase._id),
-      assetName: emailDetails.assetName,
-      assetCode: emailDetails.assetCode,
-      registeredLegalOwner: emailDetails.registeredLegalOwner,
-      totalAssetValue: emailDetails.totalAssetValue,
-      totalFractions: emailDetails.totalFractions,
-      amountPerFraction: emailDetails.amountPerFraction,
-      fractionsPurchased: emailDetails.fractionsPurchased,
-      totalAmountPaid: emailDetails.totalAmountPaid,
-      acquisitionDate: emailDetails.acquisitionDate,
-      monthlyRentalPerFraction: emailDetails.monthlyRentalPerFraction,
-      totalFixedMonthlyRental,
-    });
+    console.log(
+      "PAYMENT EMAIL DETAILS:",
+      {
+        purchaseHistoryId:
+          String(purchase._id),
 
-    await sendPaymentWelcomeEmail(emailDetails);
+        assetName:
+          emailDetails.assetName,
+
+        amountPerFraction:
+          emailDetails.amountPerFraction,
+
+        fractionsPurchased,
+
+        totalAmountPaid:
+          emailDetails.totalAmountPaid,
+      }
+    );
+
+    await sendPaymentWelcomeEmail(
+      emailDetails
+    );
 
     await PurchaseHistory.updateOne(
       {
@@ -1830,12 +2823,19 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
         $unset: {
           paymentEmailClaimedAt: "",
         },
-      },
+      }
     );
 
-    console.log("PAYMENT SUCCESS EMAIL SENT:", purchase.transactionReference);
+    console.log(
+      "PAYMENT SUCCESS EMAIL SENT:",
+      purchase.transactionReference
+    );
   } catch (error) {
-    console.error("PAYMENT SUCCESS EMAIL FAILED:", purchaseHistoryId, error);
+    console.error(
+      "PAYMENT SUCCESS EMAIL FAILED:",
+      purchaseHistoryId,
+      error
+    );
 
     try {
       await PurchaseHistory.updateOne(
@@ -1851,10 +2851,13 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
           $unset: {
             paymentEmailClaimedAt: "",
           },
-        },
+        }
       );
     } catch (updateError) {
-      console.error("PAYMENT EMAIL STATUS UPDATE FAILED:", updateError);
+      console.error(
+        "PAYMENT EMAIL STATUS UPDATE FAILED:",
+        updateError
+      );
     }
   }
 };
@@ -1864,38 +2867,43 @@ const sendPurchaseConfirmation = async (purchaseHistoryId) => {
 // RAZORPAY + CASHFREE + PAYU
 //
 // IMPORTANT:
-// Call ONLY after independent gateway verification
-// of success, amount, currency and transaction ID.
+// Caller must independently verify:
+// 1. Gateway success
+// 2. Exact paid amount
+// 3. Currency
+// 4. Gateway transaction reference
+//
+// This function verifies stored order/payment consistency.
 // ============================================================
 
 export const finalizeSuccessfulPayment = async ({
   paymentGateway = "RAZORPAY",
 
-  // ==========================================
+  // ==========================================================
   // RAZORPAY
-  // ==========================================
+  // ==========================================================
 
   razorpayOrderId = null,
   razorpayPaymentId = null,
   razorpaySignature = null,
 
-  // ==========================================
+  // ==========================================================
   // CASHFREE
-  // ==========================================
+  // ==========================================================
 
   cashfreeOrderId = null,
   cashfreePaymentId = null,
 
-  // ==========================================
+  // ==========================================================
   // PAYU
-  // ==========================================
+  // ==========================================================
 
   payuTxnId = null,
   payuMihpayId = null,
 
-  // ==========================================
+  // ==========================================================
   // COMMON
-  // ==========================================
+  // ==========================================================
 
   paymentMethod = null,
   webhookVerified = false,
@@ -1905,31 +2913,58 @@ export const finalizeSuccessfulPayment = async ({
   // 1. VALIDATION
   // ========================================================
 
-  const allowedGateways = ["RAZORPAY", "CASHFREE", "PAYU"];
+  const allowedGateways = [
+    "RAZORPAY",
+    "CASHFREE",
+    "PAYU",
+  ];
 
   if (!allowedGateways.includes(paymentGateway)) {
-    throw createError(400, "Invalid payment gateway");
+    throw createError(
+      400,
+      "Invalid payment gateway"
+    );
   }
 
   if (paymentGateway === "RAZORPAY") {
-    if (!razorpayOrderId || !razorpayPaymentId) {
-      throw createError(400, "Razorpay order ID and payment ID are required");
+    if (
+      !razorpayOrderId ||
+      !razorpayPaymentId
+    ) {
+      throw createError(
+        400,
+        "Razorpay order ID and payment ID are required"
+      );
     }
   }
 
   if (paymentGateway === "CASHFREE") {
-    if (!cashfreeOrderId || !cashfreePaymentId) {
-      throw createError(400, "Cashfree order ID and payment ID are required");
+    if (
+      !cashfreeOrderId ||
+      !cashfreePaymentId
+    ) {
+      throw createError(
+        400,
+        "Cashfree order ID and payment ID are required"
+      );
     }
   }
 
   if (paymentGateway === "PAYU") {
-    if (!payuTxnId || !payuMihpayId) {
-      throw createError(400, "PayU transaction ID and mihpayid are required");
+    if (
+      !payuTxnId ||
+      !payuMihpayId
+    ) {
+      throw createError(
+        400,
+        "PayU transaction ID and mihpayid are required"
+      );
     }
   }
 
-  const finalPaidAt = normalizePaidAt(paidAt);
+  const finalPaidAt = normalizePaidAt(
+    paidAt
+  );
 
   // ========================================================
   // 2. FIND PAYMENT
@@ -1956,7 +2991,7 @@ export const finalizeSuccessfulPayment = async ({
       ? razorpayPaymentId
       : paymentGateway === "CASHFREE"
         ? cashfreePaymentId
-        : payuMihpayId,
+        : payuMihpayId
   );
 
   const paymentIdField =
@@ -1966,73 +3001,127 @@ export const finalizeSuccessfulPayment = async ({
         ? "cashfreePaymentId"
         : "payuMihpayId";
 
-  const payment = await Payment.findOne(paymentQuery);
+  const payment = await Payment.findOne(
+    paymentQuery
+  );
 
   if (!payment) {
-    throw createError(404, "Payment record not found");
+    throw createError(
+      404,
+      "Payment record not found"
+    );
   }
 
   // ========================================================
   // 3. FIND ORDER
   // ========================================================
 
-  const order = await Order.findById(payment.orderId);
+  const order = await Order.findById(
+    payment.orderId
+  );
 
   if (!order) {
-    throw createError(404, "Order not found");
+    throw createError(
+      404,
+      "Order not found"
+    );
   }
 
-  if (order.paymentGateway !== paymentGateway) {
-    throw createError(409, "Order payment gateway mismatch");
+  if (
+    order.paymentGateway !==
+    paymentGateway
+  ) {
+    throw createError(
+      409,
+      "Order payment gateway mismatch"
+    );
   }
 
-  if (String(order.userId) !== String(payment.userId)) {
-    throw createError(409, "Order and payment customer mismatch");
+  if (
+    String(order.userId) !==
+    String(payment.userId)
+  ) {
+    throw createError(
+      409,
+      "Order and payment customer mismatch"
+    );
   }
 
   if (
     paymentGateway === "PAYU" &&
-    String(order.payuTxnId) !== String(payuTxnId)
+    String(order.payuTxnId) !==
+      String(payuTxnId)
   ) {
-    throw createError(409, "PayU transaction does not match order");
+    throw createError(
+      409,
+      "PayU transaction does not match order"
+    );
   }
 
   // ========================================================
   // 4. VERIFY STORED PAYMENT AMOUNT
+  // UPDATED: NOW INCLUDES 0.5% PROCESSING FEE
   // ========================================================
 
-  const orderAmount = Math.round(Number(order.totalAmount) * 100);
+  const expectedPaymentPaise =
+    validateStoredPaymentAmount(
+      order,
+      payment
+    );
 
-  const paymentAmount = Math.round(Number(payment.amount) * 100);
+  console.log("PAYMENT AMOUNT VERIFIED:", {
+    orderId: String(order._id),
 
-  if (orderAmount !== paymentAmount) {
-    throw createError(409, "Stored order and payment amount mismatch");
-  }
+    paymentGateway,
 
-  if (String(payment.currency || "INR").toUpperCase() !== "INR") {
-    throw createError(409, "Unexpected payment currency");
-  }
+    ownershipAmount:
+      order.totalAmount,
+
+    processingFeePercentage:
+      order.processingFeePercentage ?? 0,
+
+    processingFee:
+      order.processingFee ?? 0,
+
+    totalPayableAmount:
+      order.totalPayableAmount ??
+      order.totalAmount,
+
+    paymentAmount:
+      payment.amount,
+
+    expectedPaymentPaise,
+  });
 
   // ========================================================
   // 5. PREVENT DUPLICATE GATEWAY PAYMENT REFERENCE
   // ========================================================
 
-  const reusedPayment = await Payment.findOne({
-    _id: { $ne: payment._id },
-    [paymentIdField]: gatewayPaymentId,
-  });
+  const reusedPayment =
+    await Payment.findOne({
+      _id: {
+        $ne: payment._id,
+      },
+
+      [paymentIdField]:
+        gatewayPaymentId,
+    });
 
   if (reusedPayment) {
-    throw createError(409, "Gateway payment reference already used");
+    throw createError(
+      409,
+      "Gateway payment reference already used"
+    );
   }
 
   if (
     payment[paymentIdField] &&
-    String(payment[paymentIdField]) !== gatewayPaymentId
+    String(payment[paymentIdField]) !==
+      gatewayPaymentId
   ) {
     throw createError(
       409,
-      "Order already associated with a different gateway payment",
+      "Order already associated with a different gateway payment"
     );
   }
 
@@ -2043,349 +3132,551 @@ export const finalizeSuccessfulPayment = async ({
   let purchaseHistory = null;
   let createdPurchase = false;
 
-  const session = await mongoose.startSession();
+  const session =
+    await mongoose.startSession();
 
   try {
-    await session.withTransaction(async () => {
-      const currentPayment = await Payment.findById(payment._id).session(
-        session,
-      );
+    await session.withTransaction(
+      async () => {
+        const currentPayment =
+          await Payment.findById(
+            payment._id
+          ).session(session);
 
-      const currentOrder = await Order.findById(order._id).session(session);
+        const currentOrder =
+          await Order.findById(
+            order._id
+          ).session(session);
 
-      if (!currentPayment || !currentOrder) {
-        throw createError(404, "Order or payment record not found");
-      }
+        if (
+          !currentPayment ||
+          !currentOrder
+        ) {
+          throw createError(
+            404,
+            "Order or payment record not found"
+          );
+        }
 
-      // ====================================================
-      // VERIFY GATEWAY MATCH
-      // ====================================================
+        // ==================================================
+        // 6.1 VERIFY GATEWAY MATCH
+        // ==================================================
 
-      if (
-        currentPayment.paymentGateway !== paymentGateway ||
-        currentOrder.paymentGateway !== paymentGateway
-      ) {
-        throw createError(409, "Gateway mismatch during finalization");
-      }
-
-      if (
-        currentPayment[paymentIdField] &&
-        String(currentPayment[paymentIdField]) !== gatewayPaymentId
-      ) {
-        throw createError(409, "Gateway payment reference mismatch");
-      }
-
-      // ====================================================
-      // CHECK EXISTING PURCHASE INSIDE TRANSACTION
-      // ====================================================
-
-      const existing = await findExistingPurchase({
-        orderId: currentOrder._id,
-        paymentId: currentPayment._id,
-        session,
-      });
-
-      if (existing) {
-        if (currentOrder.status !== "COMPLETED") {
+        if (
+          currentPayment.paymentGateway !==
+            paymentGateway ||
+          currentOrder.paymentGateway !==
+            paymentGateway
+        ) {
           throw createError(
             409,
-            "Purchase exists but order is not completed; reconciliation required",
+            "Gateway mismatch during finalization"
           );
         }
 
         if (
-          String(existing.orderId) !== String(currentOrder._id) ||
-          String(existing.paymentId) !== String(currentPayment._id)
+          String(currentOrder.userId) !==
+          String(currentPayment.userId)
         ) {
           throw createError(
             409,
-            "Existing purchase belongs to another order/payment",
+            "Customer mismatch during finalization"
           );
         }
 
         if (
-          existing.transactionReference &&
-          String(existing.transactionReference) !== gatewayPaymentId
+          paymentGateway === "PAYU" &&
+          String(currentOrder.payuTxnId) !==
+            String(payuTxnId)
         ) {
           throw createError(
             409,
-            "Existing purchase has a different transaction reference",
+            "PayU transaction mismatch during finalization"
           );
         }
 
-        // ==============================================
-        // ALREADY PROCESSED PAYMENT
-        // ==============================================
-
-        currentPayment[paymentIdField] = gatewayPaymentId;
-
-        if (paymentGateway === "RAZORPAY" && razorpaySignature) {
-          currentPayment.razorpaySignature = razorpaySignature;
+        if (
+          currentPayment[paymentIdField] &&
+          String(
+            currentPayment[paymentIdField]
+          ) !== gatewayPaymentId
+        ) {
+          throw createError(
+            409,
+            "Gateway payment reference mismatch"
+          );
         }
 
-        currentPayment.status = "SUCCESS";
+        // ==================================================
+        // 6.2 RECHECK AMOUNT INSIDE TRANSACTION
+        // ==================================================
 
-        currentPayment.paidAt ||= existing.paidAt || finalPaidAt;
+        validateStoredPaymentAmount(
+          currentOrder,
+          currentPayment
+        );
 
-        if (paymentMethod && !currentPayment.paymentMethod) {
-          currentPayment.paymentMethod = paymentMethod;
+        // ==================================================
+        // 6.3 CHECK EXISTING PURCHASE
+        // ==================================================
+
+        const existing =
+          await findExistingPurchase({
+            orderId:
+              currentOrder._id,
+
+            paymentId:
+              currentPayment._id,
+
+            session,
+          });
+
+        if (existing) {
+          if (
+            currentOrder.status !==
+            "COMPLETED"
+          ) {
+            throw createError(
+              409,
+              "Purchase exists but order is not completed; reconciliation required"
+            );
+          }
+
+          if (
+            String(existing.orderId) !==
+              String(currentOrder._id) ||
+            String(existing.paymentId) !==
+              String(currentPayment._id)
+          ) {
+            throw createError(
+              409,
+              "Existing purchase belongs to another order/payment"
+            );
+          }
+
+          if (
+            existing.transactionReference &&
+            String(
+              existing.transactionReference
+            ) !== gatewayPaymentId
+          ) {
+            throw createError(
+              409,
+              "Existing purchase has a different transaction reference"
+            );
+          }
+
+          // ================================================
+          // ALREADY PROCESSED — IDEMPOTENT RETURN
+          // ================================================
+
+          currentPayment[paymentIdField] =
+            gatewayPaymentId;
+
+          if (
+            paymentGateway === "RAZORPAY" &&
+            razorpaySignature
+          ) {
+            currentPayment.razorpaySignature =
+              razorpaySignature;
+          }
+
+          currentPayment.status =
+            "SUCCESS";
+
+          currentPayment.paidAt ||=
+            existing.paidAt ||
+            finalPaidAt;
+
+          if (
+            paymentMethod &&
+            !currentPayment.paymentMethod
+          ) {
+            currentPayment.paymentMethod =
+              paymentMethod;
+          }
+
+          if (webhookVerified) {
+            currentPayment.webhookVerified =
+              true;
+          }
+
+          await currentPayment.save({
+            session,
+          });
+
+          if (!existing.paidAt) {
+            existing.paidAt =
+              currentPayment.paidAt;
+
+            await existing.save({
+              session,
+            });
+          }
+
+          purchaseHistory = existing;
+          createdPurchase = false;
+
+          return;
+        }
+
+        // ==================================================
+        // 6.4 CHECK EXISTING PAYMENT STATUS
+        // ==================================================
+
+        if (
+          currentPayment.status ===
+            "SUCCESS" ||
+          currentOrder.status ===
+            "COMPLETED"
+        ) {
+          throw createError(
+            409,
+            "Payment/order marked complete without purchase; manual reconciliation required"
+          );
+        }
+
+        if (
+          currentOrder.status !==
+            "PENDING_PAYMENT" ||
+          currentPayment.status !==
+            "PENDING"
+        ) {
+          throw createError(
+            409,
+            "Order or payment is no longer pending; manual reconciliation required"
+          );
+        }
+
+        // ==================================================
+        // 6.5 ORDER EXPIRATION
+        // ==================================================
+
+        if (
+          new Date(
+            currentOrder.expiresAt
+          ).getTime() <= Date.now()
+        ) {
+          throw createError(
+            409,
+            "Order reservation expired; payment requires manual reconciliation"
+          );
+        }
+
+        // ==================================================
+        // 7. ALLOCATE OWNERSHIP FRACTIONS
+        // ==================================================
+
+        // Existing reservation was created
+        // when createOrder() ran.
+        //
+        // allocateFractions must use the same
+        // transaction session and must not
+        // decrement availableFractions again.
+
+        await allocateFractions({
+          assetId:
+            currentOrder.assetId,
+
+          userId:
+            currentOrder.userId,
+
+          fractions:
+            currentOrder.fractions,
+
+          razorpayOrderId:
+            paymentGateway === "RAZORPAY"
+              ? razorpayOrderId
+              : null,
+
+          razorpayPaymentId:
+            paymentGateway === "RAZORPAY"
+              ? razorpayPaymentId
+              : null,
+
+          session,
+        });
+
+        // ==================================================
+        // 8. UPDATE RESERVED FRACTIONS
+        // ==================================================
+
+        const assetUpdate =
+          await Asset.updateOne(
+            {
+              _id:
+                currentOrder.assetId,
+
+              reservedFractions: {
+                $gte:
+                  currentOrder.fractions,
+              },
+            },
+            {
+              $inc: {
+                reservedFractions:
+                  -Number(
+                    currentOrder.fractions
+                  ),
+              },
+            },
+            {
+              session,
+            }
+          );
+
+        if (
+          assetUpdate.modifiedCount !== 1
+        ) {
+          throw createError(
+            409,
+            "Unable to finalize reserved fractions"
+          );
+        }
+
+        // ==================================================
+        // 9. UPDATE PAYMENT DETAILS
+        // ==================================================
+
+        currentPayment[paymentIdField] =
+          gatewayPaymentId;
+
+        if (
+          paymentGateway === "RAZORPAY" &&
+          razorpaySignature
+        ) {
+          currentPayment.razorpaySignature =
+            razorpaySignature;
+        }
+
+        currentPayment.status =
+          "SUCCESS";
+
+        if (!currentPayment.paidAt) {
+          currentPayment.paidAt =
+            finalPaidAt;
+        }
+
+        if (paymentMethod) {
+          currentPayment.paymentMethod =
+            paymentMethod;
         }
 
         if (webhookVerified) {
-          currentPayment.webhookVerified = true;
+          currentPayment.webhookVerified =
+            true;
         }
 
-        await currentPayment.save({ session });
+        // Do not replace Payment.amount
+        // with order.totalAmount.
+        //
+        // Payment.amount already includes
+        // the 0.5% processing fee.
 
-        if (!existing.paidAt) {
-          existing.paidAt = currentPayment.paidAt;
+        await currentPayment.save({
+          session,
+        });
 
-          await existing.save({ session });
+        // ==================================================
+        // 10. COMPLETE ORDER
+        // ==================================================
+
+        currentOrder.status =
+          "COMPLETED";
+
+        await currentOrder.save({
+          session,
+        });
+
+        // ==================================================
+        // 11. GET ASSET DETAILS
+        // ==================================================
+
+        const currentAsset =
+          await Asset.findById(
+            currentOrder.assetId
+          ).session(session);
+
+        if (!currentAsset) {
+          throw createError(
+            404,
+            "Asset not found"
+          );
         }
 
-        purchaseHistory = existing;
-        createdPurchase = false;
+        const fractionsPurchased =
+          Number(
+            currentOrder.fractions
+          );
 
-        return;
+        // ==================================================
+        // 12. CREATE PURCHASE HISTORY
+        // ==================================================
+
+        const records =
+          await PurchaseHistory.create(
+            [
+              {
+                userId:
+                  currentOrder.userId,
+
+                assetId:
+                  currentOrder.assetId,
+
+                orderId:
+                  currentOrder._id,
+
+                paymentId:
+                  currentPayment._id,
+
+                paymentGateway,
+
+                fractionsPurchased,
+
+                amountPerFraction:
+                  Number(
+                    currentOrder.amountPerFraction
+                  ),
+
+                // Asset ownership amount only.
+                // Processing fee is excluded.
+                totalAmount:
+                  Number(
+                    currentOrder.totalAmount
+                  ),
+
+                userSnapshot:
+                  await getUserSnapshot(
+                    currentOrder.userId,
+                    session
+                  ),
+
+                assetSnapshot:
+                  buildAssetSnapshot(
+                    currentAsset,
+                    fractionsPurchased
+                  ),
+
+                paymentStatus:
+                  "SUCCESS",
+
+                // ======================================
+                // RAZORPAY
+                // ======================================
+
+                razorpayOrderId:
+                  paymentGateway ===
+                  "RAZORPAY"
+                    ? razorpayOrderId
+                    : null,
+
+                razorpayPaymentId:
+                  paymentGateway ===
+                  "RAZORPAY"
+                    ? razorpayPaymentId
+                    : null,
+
+                razorpaySignature:
+                  paymentGateway ===
+                  "RAZORPAY"
+                    ? razorpaySignature ||
+                      null
+                    : null,
+
+                // ======================================
+                // CASHFREE
+                // ======================================
+
+                cashfreeOrderId:
+                  paymentGateway ===
+                  "CASHFREE"
+                    ? cashfreeOrderId
+                    : null,
+
+                cashfreeCfOrderId:
+                  paymentGateway ===
+                  "CASHFREE"
+                    ? currentPayment
+                        .cashfreeCfOrderId
+                    : null,
+
+                cashfreePaymentId:
+                  paymentGateway ===
+                  "CASHFREE"
+                    ? gatewayPaymentId
+                    : null,
+
+                // ======================================
+                // PAYU
+                // ======================================
+
+                payuTxnId:
+                  paymentGateway ===
+                  "PAYU"
+                    ? payuTxnId
+                    : null,
+
+                payuMihpayId:
+                  paymentGateway ===
+                  "PAYU"
+                    ? gatewayPaymentId
+                    : null,
+
+                // ======================================
+                // COMMON PAYMENT DETAILS
+                // ======================================
+
+                paymentMethod:
+                  paymentMethod ||
+                  currentPayment
+                    .paymentMethod ||
+                  null,
+
+                transactionReference:
+                  gatewayPaymentId,
+
+                paidAt:
+                  currentPayment.paidAt,
+
+                paymentEmailStatus:
+                  "PENDING",
+
+                paymentEmailAttempts: 0,
+
+                paymentEmailSentAt: null,
+
+                paymentEmailClaimedAt: null,
+              },
+            ],
+            {
+              session,
+            }
+          );
+
+        purchaseHistory = records[0];
+        createdPurchase = true;
       }
-
-      // ====================================================
-      // CHECK EXISTING STATUS
-      // ====================================================
-
-      if (
-        currentPayment.status === "SUCCESS" ||
-        currentOrder.status === "COMPLETED"
-      ) {
-        throw createError(
-          409,
-          "Payment/order marked complete without purchase; manual reconciliation required",
-        );
-      }
-
-      if (
-        currentOrder.status !== "PENDING_PAYMENT" ||
-        currentPayment.status !== "PENDING"
-      ) {
-        throw createError(
-          409,
-          "Order or payment is no longer pending; manual reconciliation required",
-        );
-      }
-
-      // ====================================================
-      // ORDER EXPIRATION
-      // ====================================================
-
-      if (new Date(currentOrder.expiresAt).getTime() <= Date.now()) {
-        throw createError(
-          409,
-          "Order reservation expired; payment requires manual reconciliation",
-        );
-      }
-
-      // ====================================================
-      // 7. ALLOCATE OWNERSHIP FRACTIONS
-      // ====================================================
-
-      await allocateFractions({
-        assetId: currentOrder.assetId,
-
-        userId: currentOrder.userId,
-
-        fractions: currentOrder.fractions,
-
-        razorpayOrderId: paymentGateway === "RAZORPAY" ? razorpayOrderId : null,
-
-        razorpayPaymentId:
-          paymentGateway === "RAZORPAY" ? razorpayPaymentId : null,
-
-        session,
-      });
-
-      // ====================================================
-      // 8. UPDATE RESERVED FRACTIONS
-      // ====================================================
-
-      const assetUpdate = await Asset.updateOne(
-        {
-          _id: currentOrder.assetId,
-
-          reservedFractions: {
-            $gte: currentOrder.fractions,
-          },
-        },
-        {
-          $inc: {
-            reservedFractions: -Number(currentOrder.fractions),
-          },
-        },
-        {
-          session,
-        },
-      );
-
-      if (assetUpdate.modifiedCount !== 1) {
-        throw createError(409, "Unable to finalize reserved fractions");
-      }
-
-      // ====================================================
-      // 9. UPDATE PAYMENT DETAILS
-      // ====================================================
-
-      currentPayment[paymentIdField] = gatewayPaymentId;
-
-      if (paymentGateway === "RAZORPAY" && razorpaySignature) {
-        currentPayment.razorpaySignature = razorpaySignature;
-      }
-
-      currentPayment.status = "SUCCESS";
-
-      if (!currentPayment.paidAt) {
-        currentPayment.paidAt = finalPaidAt;
-      }
-
-      if (paymentMethod) {
-        currentPayment.paymentMethod = paymentMethod;
-      }
-
-      if (webhookVerified) {
-        currentPayment.webhookVerified = true;
-      }
-
-      await currentPayment.save({ session });
-
-      // ====================================================
-      // 10. UPDATE ORDER STATUS
-      // ====================================================
-
-      currentOrder.status = "COMPLETED";
-
-      await currentOrder.save({ session });
-
-      // ====================================================
-      // 11. GET ASSET DETAILS
-      // ====================================================
-
-      const currentAsset = await Asset.findById(currentOrder.assetId).session(
-        session,
-      );
-
-      if (!currentAsset) {
-        throw createError(404, "Asset not found");
-      }
-
-      const fractionsPurchased = Number(currentOrder.fractions);
-
-      // ====================================================
-      // 12. CREATE PURCHASE HISTORY
-      // ====================================================
-
-      const records = await PurchaseHistory.create(
-        [
-          {
-            userId: currentOrder.userId,
-
-            assetId: currentOrder.assetId,
-
-            orderId: currentOrder._id,
-
-            paymentId: currentPayment._id,
-
-            paymentGateway,
-
-            fractionsPurchased,
-
-            amountPerFraction: Number(currentOrder.amountPerFraction),
-
-            totalAmount: Number(currentOrder.totalAmount),
-
-            userSnapshot: await getUserSnapshot(currentOrder.userId, session),
-
-            assetSnapshot: buildAssetSnapshot(currentAsset, fractionsPurchased),
-
-            paymentStatus: "SUCCESS",
-
-            // ==================================
-            // RAZORPAY DETAILS
-            // ==================================
-
-            razorpayOrderId:
-              paymentGateway === "RAZORPAY" ? razorpayOrderId : null,
-
-            razorpayPaymentId:
-              paymentGateway === "RAZORPAY" ? razorpayPaymentId : null,
-
-            razorpaySignature:
-              paymentGateway === "RAZORPAY" ? razorpaySignature || null : null,
-
-            // ==================================
-            // CASHFREE DETAILS
-            // ==================================
-
-            cashfreeOrderId:
-              paymentGateway === "CASHFREE" ? cashfreeOrderId : null,
-
-            cashfreeCfOrderId:
-              paymentGateway === "CASHFREE"
-                ? currentPayment.cashfreeCfOrderId
-                : null,
-
-            cashfreePaymentId:
-              paymentGateway === "CASHFREE" ? gatewayPaymentId : null,
-
-            // ==================================
-            // PAYU DETAILS
-            // ==================================
-
-            payuTxnId: paymentGateway === "PAYU" ? payuTxnId : null,
-
-            payuMihpayId: paymentGateway === "PAYU" ? gatewayPaymentId : null,
-
-            // ==================================
-            // COMMON PAYMENT DETAILS
-            // ==================================
-
-            paymentMethod:
-              paymentMethod || currentPayment.paymentMethod || null,
-
-            transactionReference: gatewayPaymentId,
-
-            paidAt: currentPayment.paidAt,
-
-            paymentEmailStatus: "PENDING",
-
-            paymentEmailAttempts: 0,
-
-            paymentEmailSentAt: null,
-
-            paymentEmailClaimedAt: null,
-          },
-        ],
-        {
-          session,
-        },
-      );
-
-      purchaseHistory = records[0];
-      createdPurchase = true;
-    });
+    );
 
     // ========================================================
-    // 13. FIND PURCHASE HISTORY AFTER TRANSACTION
+    // 13. FIND PURCHASE AFTER COMMIT
     // ========================================================
 
     if (!purchaseHistory) {
-      purchaseHistory = await findExistingPurchase({
-        orderId: order._id,
-        paymentId: payment._id,
-      });
+      purchaseHistory =
+        await findExistingPurchase({
+          orderId:
+            order._id,
+
+          paymentId:
+            payment._id,
+        });
     }
 
     if (!purchaseHistory) {
       throw createError(
         500,
-        "Payment committed but purchase history not found",
+        "Payment committed but purchase history not found"
       );
     }
 
@@ -2394,11 +3685,17 @@ export const finalizeSuccessfulPayment = async ({
     // ========================================================
 
     if (createdPurchase) {
-      const id = purchaseHistory._id;
+      const purchaseId =
+        purchaseHistory._id;
 
       setImmediate(() => {
-        void sendPurchaseConfirmation(id).catch((error) => {
-          console.error("PAYMENT EMAIL PROCESSING ERROR:", error);
+        void sendPurchaseConfirmation(
+          purchaseId
+        ).catch((error) => {
+          console.error(
+            "PAYMENT EMAIL PROCESSING ERROR:",
+            error
+          );
         });
       });
     }
@@ -2410,18 +3707,42 @@ export const finalizeSuccessfulPayment = async ({
     return {
       success: true,
 
-      alreadyProcessed: !createdPurchase,
+      alreadyProcessed:
+        !createdPurchase,
 
-      purchaseHistoryId: purchaseHistory._id,
+      purchaseHistoryId:
+        purchaseHistory._id,
 
-      paymentId: payment._id,
+      paymentId:
+        payment._id,
 
-      orderId: order._id,
+      orderId:
+        order._id,
 
-      paidAt: purchaseHistory.paidAt || finalPaidAt,
+      paidAt:
+        purchaseHistory.paidAt ||
+        finalPaidAt,
+
+      // Ownership amount excluding processing fee.
+      ownershipAmount:
+        Number(order.totalAmount),
+
+      // Fee charged on the order.
+      processingFee:
+        Number(order.processingFee || 0),
+
+      // Total amount paid through gateway.
+      totalPayableAmount:
+        Number(
+          order.totalPayableAmount ??
+          order.totalAmount
+        ),
     };
   } catch (error) {
-    console.error("FINALIZE SUCCESSFUL PAYMENT ERROR:", error);
+    console.error(
+      "FINALIZE SUCCESSFUL PAYMENT ERROR:",
+      error
+    );
 
     throw error;
   } finally {
