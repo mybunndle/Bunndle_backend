@@ -708,9 +708,9 @@ import {
 
 import { finalizeSuccessfulPayment } from "../services/finalizeSuccessfulPaymentService.js";
 import {
+  calculateOrderPayment,
   getExpectedPaymentAmount,
 } from "../utils/payment_charges.js";
-
 // const expireAndReleaseOrder = async (orderId) => {
 //   const session = await mongoose.startSession();
 
@@ -2473,7 +2473,6 @@ export const createOrder = async (req, res) => {
     });
   }
 };
-
 
 
 // export const verifyPayment = async (req, res) => {
