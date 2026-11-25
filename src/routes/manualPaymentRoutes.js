@@ -148,7 +148,7 @@ router.get("/admin/:manualPaymentId", getAdminManualPayment);
 router.patch("/admin/update_status/:manualPaymentId", approveManualPayment);
 
 // Reject manual payment.
-router.patch("/admin/:manualPaymentId/reject", rejectManualPayment);
+router.patch("/admin/reject/:manualPaymentId", rejectManualPayment);
 
 // Mark payment for further review.
 router.patch("/admin/:manualPaymentId/review", markManualReviewRequired);
