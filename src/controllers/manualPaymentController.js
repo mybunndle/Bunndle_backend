@@ -2280,19 +2280,26 @@ export const getAdminManualPayment = async (req, res) => {
       throw createError(404, "Manual payment not found");
     }
 
-    const [order, user, asset] = await Promise.all([
+    const [order, user, asset, verifiedByAdmin] = await Promise.all([
       Order.findById(manual.orderId).lean(),
 
-      User.findById(manual.userId).select("name email phone").lean(),
+      User.findById(manual.userId)
+        .select("name email phone")
+        .lean(),
 
       Asset.findById(manual.assetId)
         .select("assetName assetCode totalFractions availableFractions")
         .lean(),
+
+      manual.verifiedBy
+        ? User.findById(manual.verifiedBy)
+            .select("name email")
+            .lean()
+        : Promise.resolve(null),
     ]);
 
     const screenshots = (manual.paymentScreenshots || []).map((file) => ({
       fileId: file.fileId,
-
       signedUrl: getManualPaymentScreenshotSignedUrl(file.url),
     }));
 
@@ -2301,13 +2308,21 @@ export const getAdminManualPayment = async (req, res) => {
 
       manualPayment: {
         ...manual,
-
         paymentScreenshots: screenshots,
       },
 
       order,
       user,
       asset,
+
+      verifiedByAdmin: verifiedByAdmin
+        ? {
+            id: verifiedByAdmin._id,
+            name: verifiedByAdmin.name,
+            email: verifiedByAdmin.email,
+            verifiedAt: manual.verifiedAt,
+          }
+        : null,
     });
   } catch (error) {
     return handleError(res, error, "GET ADMIN MANUAL PAYMENT");
