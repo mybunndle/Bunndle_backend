@@ -2935,148 +2935,1034 @@ export const getAdminManualPayment = async (req, res) => {
 
 
 
+// export const approveManualPayment = async (req, res) => {
+//   const adminId = getUserId(req);
+//   const { manualPaymentId } = req.params;
+
+//   const {
+//     action = "APPROVE",
+//     transactionId,
+//     bankCreditVerified,
+//     bankCreditReference,
+//     bankCreditAmount,
+//     bankCreditDate,
+//     remark,
+//     reason,
+//     bankCreditConfirmedAbsent,
+//   } = req.body || {};
+
+//   const selectedAction = String(action).trim().toUpperCase();
+
+//   let session = null;
+//   let result = null;
+//   let welcomePurchaseId = null;
+//   let rejectionOrderId = null;
+
+//   try {
+//     // ====================================================
+//     // 1. BASIC VALIDATION
+//     // ====================================================
+
+//     if (!isId(adminId) || !isId(manualPaymentId)) {
+//       throw createError(400, "Invalid admin or manual payment ID");
+//     }
+
+//     if (
+//       !["APPROVE", "UPDATE_REFERENCE", "REJECT"].includes(
+//         selectedAction
+//       )
+//     ) {
+//       throw createError(
+//         400,
+//         "Invalid action. Use APPROVE, UPDATE_REFERENCE or REJECT"
+//       );
+//     }
+
+//     const isApprove = selectedAction === "APPROVE";
+//     const isUpdate = selectedAction === "UPDATE_REFERENCE";
+//     const isReject = selectedAction === "REJECT";
+
+//     const adminRemark = String(remark || "").trim();
+
+//     // ====================================================
+//     // 2. PARSE REFERENCE / BANK DETAILS
+//     // ====================================================
+
+//     let submittedCorrection = null;
+//     let verifiedReference = null;
+//     let creditDate = null;
+
+//     if (!isReject) {
+//       // Correction is optional for first approval,
+//       // but mandatory when updating payment details.
+
+//       if (transactionId !== undefined) {
+//         submittedCorrection = normalizeMultipleUTRs(
+//           transactionId
+//         );
+//       }
+
+//       if (isUpdate && !submittedCorrection) {
+//         throw createError(
+//           400,
+//           "transactionId is required for UPDATE_REFERENCE"
+//         );
+//       }
+
+//       verifiedReference = normalizeMultipleUTRs(
+//         bankCreditReference
+//       );
+
+//       creditDate = parseAdminBankCreditDate(
+//         bankCreditDate
+//       );
+
+//       if (bankCreditVerified !== true) {
+//         throw createError(
+//           400,
+//           "bankCreditVerified must be boolean true"
+//         );
+//       }
+
+//       if (!Number.isFinite(toPaise(bankCreditAmount))) {
+//         throw createError(
+//           400,
+//           "Valid positive bankCreditAmount is required"
+//         );
+//       }
+
+//       if (isUpdate && !adminRemark) {
+//         throw createError(
+//           400,
+//           "Admin correction remark is required"
+//         );
+//       }
+//     }
+
+//     // ====================================================
+//     // 3. REJECTION VALIDATION
+//     // ====================================================
+
+//     const rejectionReason = String(
+//       reason || remark || ""
+//     ).trim();
+
+//     if (isReject) {
+//       if (!rejectionReason) {
+//         throw createError(
+//           400,
+//           "Rejection reason is required"
+//         );
+//       }
+
+//       if (bankCreditConfirmedAbsent !== true) {
+//         throw createError(
+//           400,
+//           "bankCreditConfirmedAbsent must be boolean true"
+//         );
+//       }
+//     }
+
+//     // ====================================================
+//     // 4. CASE-INSENSITIVE REFERENCE COMPARISON
+//     // ====================================================
+
+//     const sameReferences = (first, second) => {
+//       if (!first || !second) return false;
+
+//       const a = new Set(
+//         first.normalizedTransactionIds
+//       );
+
+//       const b = new Set(
+//         second.normalizedTransactionIds
+//       );
+
+//       return (
+//         a.size === b.size &&
+//         [...a].every((value) => b.has(value))
+//       );
+//     };
+
+//     if (
+//       !isReject &&
+//       submittedCorrection &&
+//       !sameReferences(submittedCorrection, verifiedReference)
+//     ) {
+//       throw createError(
+//         409,
+//         "transactionId and bankCreditReference do not match"
+//       );
+//     }
+
+//     // ====================================================
+//     // 5. START MONGODB TRANSACTION
+//     // ====================================================
+
+//     session = await mongoose.startSession();
+
+//     await session.withTransaction(async () => {
+//       const now = new Date();
+
+//       // ------------------------------------------------
+//       // 5.1 FETCH MANUAL PAYMENT AND ORDER
+//       // ------------------------------------------------
+
+//       const manual = await ManualPayment.findById(
+//         manualPaymentId
+//       ).session(session);
+
+//       if (!manual) {
+//         throw createError(404, "Manual payment not found");
+//       }
+
+//       const order = await Order.findById(
+//         manual.orderId
+//       ).session(session);
+
+//       if (
+//         !order ||
+//         order.paymentGateway !== "MANUAL" ||
+//         !sameId(order.userId, manual.userId) ||
+//         !sameId(order.assetId, manual.assetId)
+//       ) {
+//         throw createError(
+//           409,
+//           "Manual payment and order mismatch"
+//         );
+//       }
+
+//       const isApproved =
+//         manual.status === "APPROVED" &&
+//         order.status === "COMPLETED";
+
+//       const isPending =
+//         REVIEW_STATUSES.includes(manual.status) &&
+//         order.status === "PENDING_VERIFICATION";
+
+//       const isRejected =
+//         manual.status === "REJECTED" &&
+//         order.status === "REJECTED";
+
+//       // ====================================================
+//       // 6. REJECT ACTION
+//       // ====================================================
+
+//       if (isReject) {
+//         if (isRejected) {
+//           result = {
+//             success: true,
+//             alreadyRejected: true,
+//             message: "Manual payment was already rejected",
+//             data: {
+//               manualPaymentId: manual._id,
+//               orderId: order._id,
+//               status: "REJECTED",
+//             },
+//           };
+
+//           return;
+//         }
+
+//         if (!isPending) {
+//           throw createError(
+//             409,
+//             "Only pending payments can be rejected. Approved payments require a separate refund/reversal process."
+//           );
+//         }
+
+//         // Prevent rejection if a successful payment
+//         // or purchase has already been created.
+//         const payment = await Payment.findOne({
+//           orderId: order._id,
+//         }).session(session);
+
+//         const purchase = await PurchaseHistory.findOne({
+//           orderId: order._id,
+//         }).session(session);
+
+//         if (payment || purchase) {
+//           throw createError(
+//             409,
+//             "Payment or PurchaseHistory already exists. Reconciliation required."
+//           );
+//         }
+
+//         manual.status = "REJECTED";
+//         manual.rejectionReason = rejectionReason;
+//         manual.rejectedAt = now;
+
+//         manual.bankCreditVerified = false;
+//         manual.verifiedBy = adminId;
+//         manual.verifiedAt = now;
+//         manual.adminRemark = rejectionReason;
+
+//         order.status = "REJECTED";
+
+//         await manual.save({ session });
+//         await order.save({ session });
+
+//         rejectionOrderId = order._id;
+
+//         result = {
+//           success: true,
+//           alreadyRejected: false,
+//           message: "Manual payment rejected successfully",
+//           data: {
+//             manualPaymentId: manual._id,
+//             orderId: order._id,
+//             status: "REJECTED",
+//             rejectionReason,
+//             rejectedAt: now,
+//             paymentApproved: false,
+//             ownershipAllocated: false,
+//           },
+//         };
+
+//         return;
+//       }
+
+//       // ====================================================
+//       // 7. VALIDATE UPDATE / APPROVE STATUS
+//       // ====================================================
+
+//       if (!isApproved && !isPending) {
+//         throw createError(
+//           409,
+//           "Payment cannot be updated or approved in its current status"
+//         );
+//       }
+
+//       // ------------------------------------------------
+//       // 7.1 ORIGINAL & FINAL REFERENCES
+//       // ------------------------------------------------
+
+//       const previousReference = normalizeMultipleUTRs(
+//         manual.transactionId
+//       );
+
+//       const finalReference =
+//         submittedCorrection || previousReference;
+
+//       const previousDate = manual.bankCreditDate
+//         ? new Date(manual.bankCreditDate)
+//         : null;
+
+//       const transactionIdEdited =
+//         manual.transactionId !== finalReference.transactionId;
+
+//       const bankCreditDateEdited =
+//         !previousDate ||
+//         previousDate.getTime() !== creditDate.getTime();
+
+//       // ------------------------------------------------
+//       // 7.2 VERIFY REFERENCES
+//       // ------------------------------------------------
+
+//       if (
+//         !sameReferences(finalReference, verifiedReference)
+//       ) {
+//         throw createError(
+//           409,
+//           "Verified bank references do not match transaction IDs"
+//         );
+//       }
+
+//       // ------------------------------------------------
+//       // 7.3 CHECK DUPLICATE TRANSACTIONS
+//       // ------------------------------------------------
+
+//       const duplicate = await ManualPayment.findOne({
+//         _id: { $ne: manual._id },
+
+//         $or: [
+//           {
+//             normalizedTransactionIds: {
+//               $in: finalReference.normalizedTransactionIds,
+//             },
+//           },
+//           {
+//             normalizedTransactionId: {
+//               $in: finalReference.normalizedTransactionIds,
+//             },
+//           },
+//         ],
+//       }).session(session);
+
+//       if (duplicate) {
+//         throw createError(
+//           409,
+//           "One or more transaction IDs are already associated with another payment"
+//         );
+//       }
+
+//       // ------------------------------------------------
+//       // 7.4 VALIDATE AMOUNT
+//       // ------------------------------------------------
+
+//       const expectedAmount = toPaise(
+//         order.totalAmount
+//       );
+
+//       if (
+//         expectedAmount !== toPaise(manual.totalAmount) ||
+//         expectedAmount !== toPaise(manual.amountPaid) ||
+//         expectedAmount !== toPaise(bankCreditAmount)
+//       ) {
+//         throw createError(
+//           409,
+//           "Verified bank credit amount does not match order amount"
+//         );
+//       }
+
+//       // ====================================================
+//       // 8. UPDATE_REFERENCE ACTION
+//       // ====================================================
+
+//       if (isUpdate) {
+//         let payment = null;
+//         let purchase = null;
+
+//         // ----------------------------------------------
+//         // 8.1 APPROVED PAYMENT RECORDS
+//         // ----------------------------------------------
+
+//         if (isApproved) {
+//           payment = manual.paymentId
+//             ? await Payment.findById(
+//                 manual.paymentId
+//               ).session(session)
+//             : null;
+
+//           purchase = await PurchaseHistory.findOne({
+//             orderId: order._id,
+//           }).session(session);
+
+//           if (
+//             !payment ||
+//             payment.status !== "SUCCESS" ||
+//             !purchase ||
+//             !sameId(purchase.paymentId, payment._id)
+//           ) {
+//             throw createError(
+//               409,
+//               "Approved payment records require reconciliation"
+//             );
+//           }
+//         }
+
+//         // ----------------------------------------------
+//         // 8.2 SAVE OLD DETAILS FOR AUDIT
+//         // ----------------------------------------------
+
+//         const before = {
+//           transactionId: manual.transactionId,
+
+//           normalizedTransactionIds:
+//             manual.normalizedTransactionIds || [],
+
+//           bankCreditReference:
+//             manual.bankCreditReference || null,
+
+//           bankCreditAmount:
+//             manual.bankCreditAmount ?? null,
+
+//           bankCreditDate:
+//             manual.bankCreditDate || null,
+
+//           status: manual.status,
+//         };
+
+//         // ----------------------------------------------
+//         // 8.3 UPDATE MANUAL PAYMENT
+//         // ----------------------------------------------
+
+//         manual.transactionId =
+//           finalReference.transactionId;
+
+//         manual.normalizedTransactionId =
+//           finalReference.normalizedTransactionId;
+
+//         manual.normalizedTransactionIds =
+//           finalReference.normalizedTransactionIds;
+
+//         manual.bankCreditDate = creditDate;
+
+//         manual.adminRemark = adminRemark;
+
+//         if (isApproved) {
+//           // Keep approved status.
+//           // Admin confirms the bank records again.
+//           manual.bankCreditVerified = true;
+
+//           manual.bankCreditReference =
+//             verifiedReference.transactionId;
+
+//           manual.bankCreditAmount =
+//             Number(bankCreditAmount);
+
+//           manual.verifiedBy = adminId;
+//           manual.verifiedAt = now;
+
+//           // Synchronize existing records.
+//           // Do NOT create any new records.
+//           purchase.transactionReference =
+//             finalReference.transactionId;
+
+//           purchase.paidAt = creditDate;
+//           payment.paidAt = creditDate;
+
+//           await payment.save({ session });
+//           await purchase.save({ session });
+
+//         } else {
+//           // Still pending verification.
+//           // Editing does not automatically approve.
+//           manual.status = "PENDING_VERIFICATION";
+
+//           manual.bankCreditVerified = false;
+//           manual.bankCreditReference = null;
+//           manual.bankCreditAmount = null;
+
+//           manual.verifiedBy = null;
+//           manual.verifiedAt = null;
+//         }
+
+//         await manual.save({ session });
+
+//         // ----------------------------------------------
+//         // 8.4 APPEND-ONLY ADMIN AUDIT LOG
+//         // ----------------------------------------------
+
+//         await mongoose.connection
+//           .collection("manual_payment_corrections")
+//           .insertOne(
+//             {
+//               manualPaymentId: manual._id,
+//               orderId: order._id,
+//               adminId,
+//               action: "UPDATE_REFERENCE",
+//               before,
+
+//               after: {
+//                 transactionId: manual.transactionId,
+
+//                 normalizedTransactionIds:
+//                   finalReference.normalizedTransactionIds,
+
+//                 bankCreditReference:
+//                   manual.bankCreditReference || null,
+
+//                 bankCreditAmount:
+//                   manual.bankCreditAmount ?? null,
+
+//                 bankCreditDate:
+//                   manual.bankCreditDate || null,
+
+//                 status: manual.status,
+//               },
+
+//               remark: adminRemark,
+//               correctedAt: now,
+//             },
+//             { session }
+//           );
+
+//         result = {
+//           success: true,
+
+//           message:
+//             "Manual payment details updated successfully",
+
+//           data: {
+//             manualPaymentId: manual._id,
+//             orderId: order._id,
+
+//             status: manual.status,
+//             paymentApproved: isApproved,
+
+//             previousTransactionId:
+//               before.transactionId,
+
+//             transactionId:
+//               finalReference.transactionId,
+
+//             transactionIds:
+//               finalReference.transactionIds,
+
+//             transactionCount:
+//               finalReference.transactionIds.length,
+
+//             transactionIdEdited,
+//             bankCreditDateEdited,
+
+//             bankCreditReference:
+//               manual.bankCreditReference || null,
+
+//             bankCreditAmount:
+//               manual.bankCreditAmount ?? null,
+
+//             bankCreditDate:
+//               manual.bankCreditDate,
+
+//             newPaymentCreated: false,
+//             ownershipReallocated: false,
+//             welcomeEmailTriggered: false,
+//           },
+//         };
+
+//         return;
+//       }
+
+//       // ====================================================
+//       // 9. APPROVE ACTION — ALREADY APPROVED
+//       // ====================================================
+
+//       if (isApproved) {
+//         const payment = manual.paymentId
+//           ? await Payment.findById(
+//               manual.paymentId
+//             ).session(session)
+//           : null;
+
+//         const purchase = await PurchaseHistory.findOne({
+//           orderId: order._id,
+//         }).session(session);
+
+//         if (
+//           !payment ||
+//           payment.status !== "SUCCESS" ||
+//           !purchase ||
+//           !sameId(purchase.paymentId, payment._id)
+//         ) {
+//           throw createError(
+//             409,
+//             "Existing approval requires reconciliation"
+//           );
+//         }
+
+//         // APPROVE is idempotent.
+//         // To edit, explicitly use UPDATE_REFERENCE.
+
+//         result = {
+//           success: true,
+//           alreadyProcessed: true,
+
+//           message:
+//             "Manual payment was already approved. Use UPDATE_REFERENCE to edit details.",
+
+//           data: {
+//             manualPaymentId: manual._id,
+//             orderId: order._id,
+
+//             paymentId: payment._id,
+//             purchaseHistoryId: purchase._id,
+
+//             status: "APPROVED",
+
+//             transactionId: manual.transactionId,
+//             bankCreditReference:
+//               manual.bankCreditReference,
+
+//             bankCreditAmount:
+//               manual.bankCreditAmount,
+
+//             bankCreditDate:
+//               manual.bankCreditDate,
+
+//             welcomeEmailTriggered: false,
+//           },
+//         };
+
+//         return;
+//       }
+
+//       // ====================================================
+//       // 10. APPROVE — VALIDATE PAYMENT PROOF
+//       // ====================================================
+
+//       if (
+//         !Array.isArray(manual.paymentScreenshots) ||
+//         manual.paymentScreenshots.length < 1 ||
+//         manual.paymentScreenshots.length > 3
+//       ) {
+//         throw createError(
+//           409,
+//           "Payment screenshots are missing or invalid"
+//         );
+//       }
+
+//       // Independently verify each bank credit
+//       // before calling APPROVE.
+//       // The API validates values but does not
+//       // contact the bank.
+
+//       // ====================================================
+//       // 11. PREVENT DUPLICATE PAYMENT/PURCHASE
+//       // ====================================================
+
+//       const existingPayment = await Payment.findOne({
+//         orderId: order._id,
+//       }).session(session);
+
+//       if (existingPayment) {
+//         throw createError(
+//           409,
+//           "Payment already exists for this order"
+//         );
+//       }
+
+//       const existingPurchase =
+//         await PurchaseHistory.findOne({
+//           orderId: order._id,
+//         }).session(session);
+
+//       if (existingPurchase) {
+//         throw createError(
+//           409,
+//           "PurchaseHistory already exists for this order"
+//         );
+//       }
+
+//       // ====================================================
+//       // 12. VERIFY FRACTIONS
+//       // ====================================================
+
+//       const fractionCount = Number(
+//         order.fractions
+//       );
+
+//       if (
+//         !Number.isSafeInteger(fractionCount) ||
+//         fractionCount <= 0
+//       ) {
+//         throw createError(
+//           409,
+//           "Invalid fraction count"
+//         );
+//       }
+
+//       // ====================================================
+//       // 13. DEDUCT AVAILABLE FRACTIONS
+//       // ====================================================
+
+//       const asset = await Asset.findOneAndUpdate(
+//         {
+//           _id: order.assetId,
+//           status: "ACTIVE",
+//           availableFractions: {
+//             $gte: fractionCount,
+//           },
+//         },
+//         {
+//           $inc: {
+//             availableFractions: -fractionCount,
+//           },
+//         },
+//         {
+//           new: true,
+//           session,
+//         }
+//       );
+
+//       if (!asset) {
+//         throw createError(
+//           409,
+//           "Fractions unavailable. Payment requires reconciliation or refund."
+//         );
+//       }
+
+//       // ====================================================
+//       // 14. ALLOCATE OWNERSHIP
+//       // ====================================================
+
+//       // IMPORTANT:
+//       // Verify that allocateFractions() uses this session
+//       // for all writes and does not also decrement
+//       // availableFractions.
+
+//       await allocateFractions({
+//         assetId: order.assetId,
+//         userId: order.userId,
+//         fractions: fractionCount,
+//         session,
+//       });
+
+//       // ====================================================
+//       // 15. CREATE SUCCESSFUL PAYMENT
+//       // ====================================================
+
+//       const [payment] = await Payment.create(
+//         [
+//           {
+//             userId: order.userId,
+//             orderId: order._id,
+
+//             paymentGateway: "MANUAL",
+
+//             amount: Number(
+//               order.totalAmount
+//             ),
+
+//             currency: "INR",
+//             status: "SUCCESS",
+
+//             paymentMethod:
+//               manual.paymentMethod,
+
+//             paidAt: creditDate,
+//           },
+//         ],
+//         { session }
+//       );
+
+//       // ====================================================
+//       // 16. FETCH USER
+//       // ====================================================
+
+//       const user = await User.findById(
+//         order.userId
+//       )
+//         .select(
+//           "name fullName email phone mobile fullPhone"
+//         )
+//         .session(session)
+//         .lean();
+
+//       if (!user) {
+//         throw createError(
+//           404,
+//           "Customer not found"
+//         );
+//       }
+
+//       // ====================================================
+//       // 17. CREATE PURCHASE HISTORY
+//       // ====================================================
+
+//       const [purchase] = await PurchaseHistory.create(
+//         [
+//           {
+//             userId: order.userId,
+//             assetId: order.assetId,
+
+//             orderId: order._id,
+//             paymentId: payment._id,
+
+//             paymentGateway: "MANUAL",
+
+//             fractionsPurchased: fractionCount,
+
+//             amountPerFraction: Number(
+//               order.amountPerFraction
+//             ),
+
+//             totalAmount: Number(
+//               order.totalAmount
+//             ),
+
+//             userSnapshot:
+//               buildUserSnapshot(user),
+
+//             assetSnapshot:
+//               buildAssetSnapshot(
+//                 asset,
+//                 fractionCount
+//               ),
+
+//             paymentStatus: "SUCCESS",
+
+//             paymentMethod:
+//               manual.paymentMethod,
+
+//             transactionReference:
+//               finalReference.transactionId,
+
+//             paidAt: creditDate,
+
+//             paymentEmailStatus: "PENDING",
+//             paymentEmailAttempts: 0,
+
+//             paymentEmailSentAt: null,
+//             paymentEmailClaimedAt: null,
+//           },
+//         ],
+//         { session }
+//       );
+
+//       // ====================================================
+//       // 18. COMPLETE ORDER
+//       // ====================================================
+
+//       order.status = "COMPLETED";
+
+//       await order.save({ session });
+
+//       // ====================================================
+//       // 19. MARK MANUAL PAYMENT APPROVED
+//       // ====================================================
+
+//       manual.transactionId =
+//         finalReference.transactionId;
+
+//       manual.normalizedTransactionId =
+//         finalReference.normalizedTransactionId;
+
+//       manual.normalizedTransactionIds =
+//         finalReference.normalizedTransactionIds;
+
+//       manual.bankCreditVerified = true;
+
+//       manual.bankCreditReference =
+//         verifiedReference.transactionId;
+
+//       manual.bankCreditAmount =
+//         Number(bankCreditAmount);
+
+//       manual.bankCreditDate = creditDate;
+
+//       manual.status = "APPROVED";
+
+//       manual.verifiedBy = adminId;
+//       manual.verifiedAt = now;
+//       manual.approvedAt = now;
+
+//       manual.paymentId = payment._id;
+//       manual.purchaseHistoryId = purchase._id;
+
+//       manual.adminRemark =
+//         adminRemark ||
+//         "Bank credits verified and payment approved";
+
+//       await manual.save({ session });
+
+//       welcomePurchaseId = purchase._id;
+
+//       result = {
+//         success: true,
+//         alreadyProcessed: false,
+
+//         message:
+//           "Manual payment approved successfully",
+
+//         data: {
+//           manualPaymentId: manual._id,
+//           orderId: order._id,
+
+//           paymentId: payment._id,
+//           purchaseHistoryId: purchase._id,
+
+//           status: "APPROVED",
+
+//           transactionId:
+//             finalReference.transactionId,
+
+//           transactionIds:
+//             finalReference.transactionIds,
+
+//           transactionCount:
+//             finalReference.transactionIds.length,
+
+//           bankCreditVerified: true,
+
+//           bankCreditReference:
+//             verifiedReference.transactionId,
+
+//           bankCreditAmount:
+//             Number(bankCreditAmount),
+
+//           bankCreditDate:
+//             creditDate,
+
+//           ownershipAllocated: true,
+//           welcomeEmailTriggered: true,
+//         },
+//       };
+//     });
+
+//     // ====================================================
+//     // 20. EMAIL AFTER SUCCESSFUL TRANSACTION COMMIT
+//     // ====================================================
+
+//     if (rejectionOrderId) {
+//       await sendEmailSafely(
+//         sendManualPaymentRejectedEmail,
+//         rejectionOrderId
+//       );
+//     }
+
+//     if (welcomePurchaseId) {
+//       await sendEmailSafely(
+//         sendPurchaseConfirmation,
+//         welcomePurchaseId
+//       );
+//     }
+
+//     return res.status(200).json(result);
+
+//   } catch (error) {
+//     return handleError(
+//       res,
+//       error,
+//       "ADMIN MANUAL PAYMENT ACTION"
+//     );
+
+//   } finally {
+//     if (session) {
+//       await session.endSession();
+//     }
+//   }
+// };
+
+
 export const approveManualPayment = async (req, res) => {
   const adminId = getUserId(req);
   const { manualPaymentId } = req.params;
 
   const {
-    action = "APPROVE",
-    transactionId,
     bankCreditVerified,
     bankCreditReference,
     bankCreditAmount,
     bankCreditDate,
     remark,
-    reason,
-    bankCreditConfirmedAbsent,
   } = req.body || {};
-
-  const selectedAction = String(action).trim().toUpperCase();
 
   let session = null;
   let result = null;
   let welcomePurchaseId = null;
-  let rejectionOrderId = null;
 
   try {
-    // ====================================================
-    // 1. BASIC VALIDATION
-    // ====================================================
-
     if (!isId(adminId) || !isId(manualPaymentId)) {
       throw createError(400, "Invalid admin or manual payment ID");
     }
 
-    if (
-      !["APPROVE", "UPDATE_REFERENCE", "REJECT"].includes(
-        selectedAction
-      )
-    ) {
-      throw createError(
-        400,
-        "Invalid action. Use APPROVE, UPDATE_REFERENCE or REJECT"
-      );
+    if (bankCreditVerified !== true) {
+      throw createError(400, "bankCreditVerified must be true");
     }
 
-    const isApprove = selectedAction === "APPROVE";
-    const isUpdate = selectedAction === "UPDATE_REFERENCE";
-    const isReject = selectedAction === "REJECT";
+    const verifiedReference = normalizeMultipleUTRs(bankCreditReference);
+
+    if (
+      !verifiedReference ||
+      !verifiedReference.normalizedTransactionIds?.length
+    ) {
+      throw createError(400, "Valid bankCreditReference is required");
+    }
+
+    const creditDate = parseAdminBankCreditDate(bankCreditDate);
+    const creditPaise = toPaise(bankCreditAmount);
+
+    if (!Number.isFinite(creditPaise) || creditPaise <= 0) {
+      throw createError(400, "Invalid bank credit amount");
+    }
 
     const adminRemark = String(remark || "").trim();
-
-    // ====================================================
-    // 2. PARSE REFERENCE / BANK DETAILS
-    // ====================================================
-
-    let submittedCorrection = null;
-    let verifiedReference = null;
-    let creditDate = null;
-
-    if (!isReject) {
-      // Correction is optional for first approval,
-      // but mandatory when updating payment details.
-
-      if (transactionId !== undefined) {
-        submittedCorrection = normalizeMultipleUTRs(
-          transactionId
-        );
-      }
-
-      if (isUpdate && !submittedCorrection) {
-        throw createError(
-          400,
-          "transactionId is required for UPDATE_REFERENCE"
-        );
-      }
-
-      verifiedReference = normalizeMultipleUTRs(
-        bankCreditReference
-      );
-
-      creditDate = parseAdminBankCreditDate(
-        bankCreditDate
-      );
-
-      if (bankCreditVerified !== true) {
-        throw createError(
-          400,
-          "bankCreditVerified must be boolean true"
-        );
-      }
-
-      if (!Number.isFinite(toPaise(bankCreditAmount))) {
-        throw createError(
-          400,
-          "Valid positive bankCreditAmount is required"
-        );
-      }
-
-      if (isUpdate && !adminRemark) {
-        throw createError(
-          400,
-          "Admin correction remark is required"
-        );
-      }
-    }
-
-    // ====================================================
-    // 3. REJECTION VALIDATION
-    // ====================================================
-
-    const rejectionReason = String(
-      reason || remark || ""
-    ).trim();
-
-    if (isReject) {
-      if (!rejectionReason) {
-        throw createError(
-          400,
-          "Rejection reason is required"
-        );
-      }
-
-      if (bankCreditConfirmedAbsent !== true) {
-        throw createError(
-          400,
-          "bankCreditConfirmedAbsent must be boolean true"
-        );
-      }
-    }
-
-    // ====================================================
-    // 4. CASE-INSENSITIVE REFERENCE COMPARISON
-    // ====================================================
 
     const sameReferences = (first, second) => {
       if (!first || !second) return false;
 
-      const a = new Set(
-        first.normalizedTransactionIds
-      );
-
-      const b = new Set(
-        second.normalizedTransactionIds
-      );
+      const a = new Set(first.normalizedTransactionIds);
+      const b = new Set(second.normalizedTransactionIds);
 
       return (
         a.size === b.size &&
@@ -3084,29 +3970,10 @@ export const approveManualPayment = async (req, res) => {
       );
     };
 
-    if (
-      !isReject &&
-      submittedCorrection &&
-      !sameReferences(submittedCorrection, verifiedReference)
-    ) {
-      throw createError(
-        409,
-        "transactionId and bankCreditReference do not match"
-      );
-    }
-
-    // ====================================================
-    // 5. START MONGODB TRANSACTION
-    // ====================================================
-
     session = await mongoose.startSession();
 
     await session.withTransaction(async () => {
       const now = new Date();
-
-      // ------------------------------------------------
-      // 5.1 FETCH MANUAL PAYMENT AND ORDER
-      // ------------------------------------------------
 
       const manual = await ManualPayment.findById(
         manualPaymentId
@@ -3126,403 +3993,33 @@ export const approveManualPayment = async (req, res) => {
         !sameId(order.userId, manual.userId) ||
         !sameId(order.assetId, manual.assetId)
       ) {
-        throw createError(
-          409,
-          "Manual payment and order mismatch"
-        );
+        throw createError(409, "Manual payment and order mismatch");
       }
 
       const isApproved =
         manual.status === "APPROVED" &&
         order.status === "COMPLETED";
 
-      const isPending =
-        REVIEW_STATUSES.includes(manual.status) &&
-        order.status === "PENDING_VERIFICATION";
-
-      const isRejected =
-        manual.status === "REJECTED" &&
-        order.status === "REJECTED";
-
-      // ====================================================
-      // 6. REJECT ACTION
-      // ====================================================
-
-      if (isReject) {
-        if (isRejected) {
-          result = {
-            success: true,
-            alreadyRejected: true,
-            message: "Manual payment was already rejected",
-            data: {
-              manualPaymentId: manual._id,
-              orderId: order._id,
-              status: "REJECTED",
-            },
-          };
-
-          return;
-        }
-
-        if (!isPending) {
-          throw createError(
-            409,
-            "Only pending payments can be rejected. Approved payments require a separate refund/reversal process."
-          );
-        }
-
-        // Prevent rejection if a successful payment
-        // or purchase has already been created.
-        const payment = await Payment.findOne({
-          orderId: order._id,
-        }).session(session);
-
-        const purchase = await PurchaseHistory.findOne({
-          orderId: order._id,
-        }).session(session);
-
-        if (payment || purchase) {
-          throw createError(
-            409,
-            "Payment or PurchaseHistory already exists. Reconciliation required."
-          );
-        }
-
-        manual.status = "REJECTED";
-        manual.rejectionReason = rejectionReason;
-        manual.rejectedAt = now;
-
-        manual.bankCreditVerified = false;
-        manual.verifiedBy = adminId;
-        manual.verifiedAt = now;
-        manual.adminRemark = rejectionReason;
-
-        order.status = "REJECTED";
-
-        await manual.save({ session });
-        await order.save({ session });
-
-        rejectionOrderId = order._id;
-
-        result = {
-          success: true,
-          alreadyRejected: false,
-          message: "Manual payment rejected successfully",
-          data: {
-            manualPaymentId: manual._id,
-            orderId: order._id,
-            status: "REJECTED",
-            rejectionReason,
-            rejectedAt: now,
-            paymentApproved: false,
-            ownershipAllocated: false,
-          },
-        };
-
-        return;
-      }
-
-      // ====================================================
-      // 7. VALIDATE UPDATE / APPROVE STATUS
-      // ====================================================
-
-      if (!isApproved && !isPending) {
-        throw createError(
-          409,
-          "Payment cannot be updated or approved in its current status"
-        );
-      }
-
-      // ------------------------------------------------
-      // 7.1 ORIGINAL & FINAL REFERENCES
-      // ------------------------------------------------
-
-      const previousReference = normalizeMultipleUTRs(
-        manual.transactionId
-      );
-
-      const finalReference =
-        submittedCorrection || previousReference;
-
-      const previousDate = manual.bankCreditDate
-        ? new Date(manual.bankCreditDate)
-        : null;
-
-      const transactionIdEdited =
-        manual.transactionId !== finalReference.transactionId;
-
-      const bankCreditDateEdited =
-        !previousDate ||
-        previousDate.getTime() !== creditDate.getTime();
-
-      // ------------------------------------------------
-      // 7.2 VERIFY REFERENCES
-      // ------------------------------------------------
-
-      if (
-        !sameReferences(finalReference, verifiedReference)
-      ) {
-        throw createError(
-          409,
-          "Verified bank references do not match transaction IDs"
-        );
-      }
-
-      // ------------------------------------------------
-      // 7.3 CHECK DUPLICATE TRANSACTIONS
-      // ------------------------------------------------
-
-      const duplicate = await ManualPayment.findOne({
-        _id: { $ne: manual._id },
-
-        $or: [
-          {
-            normalizedTransactionIds: {
-              $in: finalReference.normalizedTransactionIds,
-            },
-          },
-          {
-            normalizedTransactionId: {
-              $in: finalReference.normalizedTransactionIds,
-            },
-          },
-        ],
-      }).session(session);
-
-      if (duplicate) {
-        throw createError(
-          409,
-          "One or more transaction IDs are already associated with another payment"
-        );
-      }
-
-      // ------------------------------------------------
-      // 7.4 VALIDATE AMOUNT
-      // ------------------------------------------------
-
-      const expectedAmount = toPaise(
-        order.totalAmount
-      );
-
-      if (
-        expectedAmount !== toPaise(manual.totalAmount) ||
-        expectedAmount !== toPaise(manual.amountPaid) ||
-        expectedAmount !== toPaise(bankCreditAmount)
-      ) {
-        throw createError(
-          409,
-          "Verified bank credit amount does not match order amount"
-        );
-      }
-
-      // ====================================================
-      // 8. UPDATE_REFERENCE ACTION
-      // ====================================================
-
-      if (isUpdate) {
-        let payment = null;
-        let purchase = null;
-
-        // ----------------------------------------------
-        // 8.1 APPROVED PAYMENT RECORDS
-        // ----------------------------------------------
-
-        if (isApproved) {
-          payment = manual.paymentId
-            ? await Payment.findById(
-                manual.paymentId
-              ).session(session)
-            : null;
-
-          purchase = await PurchaseHistory.findOne({
-            orderId: order._id,
-          }).session(session);
-
-          if (
-            !payment ||
-            payment.status !== "SUCCESS" ||
-            !purchase ||
-            !sameId(purchase.paymentId, payment._id)
-          ) {
-            throw createError(
-              409,
-              "Approved payment records require reconciliation"
-            );
-          }
-        }
-
-        // ----------------------------------------------
-        // 8.2 SAVE OLD DETAILS FOR AUDIT
-        // ----------------------------------------------
-
-        const before = {
-          transactionId: manual.transactionId,
-
-          normalizedTransactionIds:
-            manual.normalizedTransactionIds || [],
-
-          bankCreditReference:
-            manual.bankCreditReference || null,
-
-          bankCreditAmount:
-            manual.bankCreditAmount ?? null,
-
-          bankCreditDate:
-            manual.bankCreditDate || null,
-
-          status: manual.status,
-        };
-
-        // ----------------------------------------------
-        // 8.3 UPDATE MANUAL PAYMENT
-        // ----------------------------------------------
-
-        manual.transactionId =
-          finalReference.transactionId;
-
-        manual.normalizedTransactionId =
-          finalReference.normalizedTransactionId;
-
-        manual.normalizedTransactionIds =
-          finalReference.normalizedTransactionIds;
-
-        manual.bankCreditDate = creditDate;
-
-        manual.adminRemark = adminRemark;
-
-        if (isApproved) {
-          // Keep approved status.
-          // Admin confirms the bank records again.
-          manual.bankCreditVerified = true;
-
-          manual.bankCreditReference =
-            verifiedReference.transactionId;
-
-          manual.bankCreditAmount =
-            Number(bankCreditAmount);
-
-          manual.verifiedBy = adminId;
-          manual.verifiedAt = now;
-
-          // Synchronize existing records.
-          // Do NOT create any new records.
-          purchase.transactionReference =
-            finalReference.transactionId;
-
-          purchase.paidAt = creditDate;
-          payment.paidAt = creditDate;
-
-          await payment.save({ session });
-          await purchase.save({ session });
-
-        } else {
-          // Still pending verification.
-          // Editing does not automatically approve.
-          manual.status = "PENDING_VERIFICATION";
-
-          manual.bankCreditVerified = false;
-          manual.bankCreditReference = null;
-          manual.bankCreditAmount = null;
-
-          manual.verifiedBy = null;
-          manual.verifiedAt = null;
-        }
-
-        await manual.save({ session });
-
-        // ----------------------------------------------
-        // 8.4 APPEND-ONLY ADMIN AUDIT LOG
-        // ----------------------------------------------
-
-        await mongoose.connection
-          .collection("manual_payment_corrections")
-          .insertOne(
-            {
-              manualPaymentId: manual._id,
-              orderId: order._id,
-              adminId,
-              action: "UPDATE_REFERENCE",
-              before,
-
-              after: {
-                transactionId: manual.transactionId,
-
-                normalizedTransactionIds:
-                  finalReference.normalizedTransactionIds,
-
-                bankCreditReference:
-                  manual.bankCreditReference || null,
-
-                bankCreditAmount:
-                  manual.bankCreditAmount ?? null,
-
-                bankCreditDate:
-                  manual.bankCreditDate || null,
-
-                status: manual.status,
-              },
-
-              remark: adminRemark,
-              correctedAt: now,
-            },
-            { session }
-          );
-
-        result = {
-          success: true,
-
-          message:
-            "Manual payment details updated successfully",
-
-          data: {
-            manualPaymentId: manual._id,
-            orderId: order._id,
-
-            status: manual.status,
-            paymentApproved: isApproved,
-
-            previousTransactionId:
-              before.transactionId,
-
-            transactionId:
-              finalReference.transactionId,
-
-            transactionIds:
-              finalReference.transactionIds,
-
-            transactionCount:
-              finalReference.transactionIds.length,
-
-            transactionIdEdited,
-            bankCreditDateEdited,
-
-            bankCreditReference:
-              manual.bankCreditReference || null,
-
-            bankCreditAmount:
-              manual.bankCreditAmount ?? null,
-
-            bankCreditDate:
-              manual.bankCreditDate,
-
-            newPaymentCreated: false,
-            ownershipReallocated: false,
-            welcomeEmailTriggered: false,
-          },
-        };
-
-        return;
-      }
-
-      // ====================================================
-      // 9. APPROVE ACTION — ALREADY APPROVED
-      // ====================================================
-
       if (isApproved) {
+        const existingReference = normalizeMultipleUTRs(
+          manual.bankCreditReference || manual.transactionId
+        );
+
+        if (
+          !sameReferences(existingReference, verifiedReference) ||
+          toPaise(manual.bankCreditAmount) !== creditPaise ||
+          !manual.bankCreditDate ||
+          new Date(manual.bankCreditDate).getTime() !==
+            creditDate.getTime()
+        ) {
+          throw createError(
+            409,
+            "Approved bank credit details cannot be changed"
+          );
+        }
+
         const payment = manual.paymentId
-          ? await Payment.findById(
-              manual.paymentId
-            ).session(session)
+          ? await Payment.findById(manual.paymentId).session(session)
           : null;
 
         const purchase = await PurchaseHistory.findOne({
@@ -3541,35 +4038,20 @@ export const approveManualPayment = async (req, res) => {
           );
         }
 
-        // APPROVE is idempotent.
-        // To edit, explicitly use UPDATE_REFERENCE.
-
         result = {
           success: true,
           alreadyProcessed: true,
-
-          message:
-            "Manual payment was already approved. Use UPDATE_REFERENCE to edit details.",
-
+          message: "Manual payment already approved",
           data: {
             manualPaymentId: manual._id,
             orderId: order._id,
-
             paymentId: payment._id,
             purchaseHistoryId: purchase._id,
-
             status: "APPROVED",
-
             transactionId: manual.transactionId,
-            bankCreditReference:
-              manual.bankCreditReference,
-
-            bankCreditAmount:
-              manual.bankCreditAmount,
-
-            bankCreditDate:
-              manual.bankCreditDate,
-
+            bankCreditReference: manual.bankCreditReference,
+            bankCreditAmount: manual.bankCreditAmount,
+            bankCreditDate: manual.bankCreditDate,
             welcomeEmailTriggered: false,
           },
         };
@@ -3577,9 +4059,54 @@ export const approveManualPayment = async (req, res) => {
         return;
       }
 
-      // ====================================================
-      // 10. APPROVE — VALIDATE PAYMENT PROOF
-      // ====================================================
+      if (
+        order.status !== "PENDING_VERIFICATION" ||
+        !REVIEW_STATUSES.includes(manual.status)
+      ) {
+        throw createError(
+          409,
+          "Manual payment cannot be approved in its current status"
+        );
+      }
+
+      const finalReference = verifiedReference;
+
+      const duplicate = await ManualPayment.findOne({
+        _id: { $ne: manual._id },
+        status: "APPROVED",
+        $or: [
+          {
+            normalizedTransactionIds: {
+              $in: finalReference.normalizedTransactionIds,
+            },
+          },
+          {
+            normalizedTransactionId: {
+              $in: finalReference.normalizedTransactionIds,
+            },
+          },
+        ],
+      }).session(session);
+
+      if (duplicate) {
+        throw createError(
+          409,
+          "One or more bank transaction IDs are already used by an approved payment"
+        );
+      }
+
+      const expectedPaise = toPaise(order.totalAmount);
+
+      if (
+        expectedPaise !== toPaise(manual.totalAmount) ||
+        expectedPaise !== toPaise(manual.amountPaid) ||
+        expectedPaise !== creditPaise
+      ) {
+        throw createError(
+          409,
+          "Bank credit amount does not match order amount"
+        );
+      }
 
       if (
         !Array.isArray(manual.paymentScreenshots) ||
@@ -3592,15 +4119,6 @@ export const approveManualPayment = async (req, res) => {
         );
       }
 
-      // Independently verify each bank credit
-      // before calling APPROVE.
-      // The API validates values but does not
-      // contact the bank.
-
-      // ====================================================
-      // 11. PREVENT DUPLICATE PAYMENT/PURCHASE
-      // ====================================================
-
       const existingPayment = await Payment.findOne({
         orderId: order._id,
       }).session(session);
@@ -3612,39 +4130,31 @@ export const approveManualPayment = async (req, res) => {
         );
       }
 
-      const existingPurchase =
-        await PurchaseHistory.findOne({
-          orderId: order._id,
-        }).session(session);
+      const existingPurchase = await PurchaseHistory.findOne({
+        orderId: order._id,
+      }).session(session);
 
       if (existingPurchase) {
         throw createError(
           409,
-          "PurchaseHistory already exists for this order"
+          "Purchase history already exists for this order"
         );
       }
 
-      // ====================================================
-      // 12. VERIFY FRACTIONS
-      // ====================================================
-
-      const fractionCount = Number(
-        order.fractions
-      );
+      const fractionCount = Number(order.fractions);
 
       if (
         !Number.isSafeInteger(fractionCount) ||
         fractionCount <= 0
       ) {
-        throw createError(
-          409,
-          "Invalid fraction count"
-        );
+        throw createError(409, "Invalid fraction count");
       }
 
-      // ====================================================
-      // 13. DEDUCT AVAILABLE FRACTIONS
-      // ====================================================
+      const originalTransactionId = manual.transactionId;
+
+      const originalNormalizedTransactionIds = [
+        ...(manual.normalizedTransactionIds || []),
+      ];
 
       const asset = await Asset.findOneAndUpdate(
         {
@@ -3668,18 +4178,9 @@ export const approveManualPayment = async (req, res) => {
       if (!asset) {
         throw createError(
           409,
-          "Fractions unavailable. Payment requires reconciliation or refund."
+          "Fractions unavailable. Payment requires reconciliation or refund"
         );
       }
-
-      // ====================================================
-      // 14. ALLOCATE OWNERSHIP
-      // ====================================================
-
-      // IMPORTANT:
-      // Verify that allocateFractions() uses this session
-      // for all writes and does not also decrement
-      // availableFractions.
 
       await allocateFractions({
         assetId: order.assetId,
@@ -3688,101 +4189,53 @@ export const approveManualPayment = async (req, res) => {
         session,
       });
 
-      // ====================================================
-      // 15. CREATE SUCCESSFUL PAYMENT
-      // ====================================================
-
       const [payment] = await Payment.create(
         [
           {
             userId: order.userId,
             orderId: order._id,
-
             paymentGateway: "MANUAL",
-
-            amount: Number(
-              order.totalAmount
-            ),
-
+            amount: Number(order.totalAmount),
             currency: "INR",
             status: "SUCCESS",
-
-            paymentMethod:
-              manual.paymentMethod,
-
+            paymentMethod: manual.paymentMethod,
             paidAt: creditDate,
           },
         ],
         { session }
       );
 
-      // ====================================================
-      // 16. FETCH USER
-      // ====================================================
-
-      const user = await User.findById(
-        order.userId
-      )
-        .select(
-          "name fullName email phone mobile fullPhone"
-        )
+      const user = await User.findById(order.userId)
+        .select("name fullName email phone mobile fullPhone")
         .session(session)
         .lean();
 
       if (!user) {
-        throw createError(
-          404,
-          "Customer not found"
-        );
+        throw createError(404, "Customer not found");
       }
-
-      // ====================================================
-      // 17. CREATE PURCHASE HISTORY
-      // ====================================================
 
       const [purchase] = await PurchaseHistory.create(
         [
           {
             userId: order.userId,
             assetId: order.assetId,
-
             orderId: order._id,
             paymentId: payment._id,
-
             paymentGateway: "MANUAL",
-
             fractionsPurchased: fractionCount,
-
-            amountPerFraction: Number(
-              order.amountPerFraction
+            amountPerFraction: Number(order.amountPerFraction),
+            totalAmount: Number(order.totalAmount),
+            userSnapshot: buildUserSnapshot(user),
+            assetSnapshot: buildAssetSnapshot(
+              asset,
+              fractionCount
             ),
-
-            totalAmount: Number(
-              order.totalAmount
-            ),
-
-            userSnapshot:
-              buildUserSnapshot(user),
-
-            assetSnapshot:
-              buildAssetSnapshot(
-                asset,
-                fractionCount
-              ),
-
             paymentStatus: "SUCCESS",
-
-            paymentMethod:
-              manual.paymentMethod,
-
-            transactionReference:
-              finalReference.transactionId,
-
+            paymentMethod: manual.paymentMethod,
+            transactionReference: finalReference.transactionId,
             paidAt: creditDate,
-
             paymentEmailStatus: "PENDING",
             paymentEmailAttempts: 0,
-
             paymentEmailSentAt: null,
             paymentEmailClaimedAt: null,
           },
@@ -3790,106 +4243,83 @@ export const approveManualPayment = async (req, res) => {
         { session }
       );
 
-      // ====================================================
-      // 18. COMPLETE ORDER
-      // ====================================================
-
       order.status = "COMPLETED";
 
       await order.save({ session });
 
-      // ====================================================
-      // 19. MARK MANUAL PAYMENT APPROVED
-      // ====================================================
-
-      manual.transactionId =
-        finalReference.transactionId;
-
+      manual.transactionId = finalReference.transactionId;
       manual.normalizedTransactionId =
         finalReference.normalizedTransactionId;
-
       manual.normalizedTransactionIds =
         finalReference.normalizedTransactionIds;
 
       manual.bankCreditVerified = true;
-
-      manual.bankCreditReference =
-        verifiedReference.transactionId;
-
-      manual.bankCreditAmount =
-        Number(bankCreditAmount);
-
+      manual.bankCreditReference = finalReference.transactionId;
+      manual.bankCreditAmount = Number(bankCreditAmount);
       manual.bankCreditDate = creditDate;
-
       manual.status = "APPROVED";
-
       manual.verifiedBy = adminId;
       manual.verifiedAt = now;
       manual.approvedAt = now;
-
       manual.paymentId = payment._id;
       manual.purchaseHistoryId = purchase._id;
-
       manual.adminRemark =
-        adminRemark ||
-        "Bank credits verified and payment approved";
+        adminRemark || "Bank credits verified and payment approved";
 
       await manual.save({ session });
+
+      await mongoose.connection
+        .collection("manual_payment_corrections")
+        .insertOne(
+          {
+            manualPaymentId: manual._id,
+            orderId: order._id,
+            adminId,
+            action: "APPROVE",
+            before: {
+              transactionId: originalTransactionId,
+              normalizedTransactionIds:
+                originalNormalizedTransactionIds,
+            },
+            after: {
+              transactionId: finalReference.transactionId,
+              normalizedTransactionIds:
+                finalReference.normalizedTransactionIds,
+              bankCreditReference: finalReference.transactionId,
+              bankCreditAmount: Number(bankCreditAmount),
+              bankCreditDate: creditDate,
+              status: "APPROVED",
+            },
+            remark: adminRemark,
+            correctedAt: now,
+          },
+          { session }
+        );
 
       welcomePurchaseId = purchase._id;
 
       result = {
         success: true,
         alreadyProcessed: false,
-
-        message:
-          "Manual payment approved successfully",
-
+        message: "Manual payment approved successfully",
         data: {
           manualPaymentId: manual._id,
           orderId: order._id,
-
           paymentId: payment._id,
           purchaseHistoryId: purchase._id,
-
           status: "APPROVED",
-
-          transactionId:
-            finalReference.transactionId,
-
-          transactionIds:
-            finalReference.transactionIds,
-
-          transactionCount:
-            finalReference.transactionIds.length,
-
+          transactionId: finalReference.transactionId,
+          transactionIds: finalReference.transactionIds,
+          transactionCount: finalReference.transactionIds.length,
           bankCreditVerified: true,
-
-          bankCreditReference:
-            verifiedReference.transactionId,
-
-          bankCreditAmount:
-            Number(bankCreditAmount),
-
-          bankCreditDate:
-            creditDate,
-
+          bankCreditReference: finalReference.transactionId,
+          bankCreditAmount: Number(bankCreditAmount),
+          bankCreditDate: creditDate,
           ownershipAllocated: true,
           welcomeEmailTriggered: true,
         },
       };
     });
-
-    // ====================================================
-    // 20. EMAIL AFTER SUCCESSFUL TRANSACTION COMMIT
-    // ====================================================
-
-    if (rejectionOrderId) {
-      await sendEmailSafely(
-        sendManualPaymentRejectedEmail,
-        rejectionOrderId
-      );
-    }
 
     if (welcomePurchaseId) {
       await sendEmailSafely(
@@ -3899,20 +4329,16 @@ export const approveManualPayment = async (req, res) => {
     }
 
     return res.status(200).json(result);
-
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "ADMIN MANUAL PAYMENT ACTION"
-    );
-
+    return handleError(res, error, "APPROVE MANUAL PAYMENT");
   } finally {
     if (session) {
       await session.endSession();
     }
   }
 };
+
+
 
 
 
