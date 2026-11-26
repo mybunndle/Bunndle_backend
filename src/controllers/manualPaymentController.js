@@ -4202,3 +4202,147 @@ export const checkPendingManualOrder = async (req, res) => {
     return handleError(res, error, "CHECK PENDING MANUAL ORDER");
   }
 };
+
+
+export const deleteManualOrder = async (req, res) => {
+  const adminId = getUserId(req);
+  const { orderId } = req.params;
+
+  let session = null;
+
+  try {
+    if (!isId(adminId) || !isId(orderId)) {
+      throw createError(400, "Invalid admin or order ID");
+    }
+
+    session = await mongoose.startSession();
+
+    let result = null;
+
+    await session.withTransaction(async () => {
+      const order = await Order.findById(orderId).session(session);
+
+      if (!order) {
+        throw createError(404, "Order not found");
+      }
+
+      if (order.paymentGateway !== "MANUAL") {
+        throw createError(
+          400,
+          "Only manual payment orders can be deleted"
+        );
+      }
+
+      if (
+        order.status === "COMPLETED" ||
+        order.status === "PAYMENT_SUCCESS"
+      ) {
+        throw createError(
+          409,
+          "Completed or paid orders cannot be deleted"
+        );
+      }
+
+      const manual = await ManualPayment.findOne({
+        orderId: order._id,
+      }).session(session);
+
+      if (
+        manual &&
+        ![
+          "NOT_SUBMITTED",
+          "PENDING_VERIFICATION",
+          "REVIEW_REQUIRED",
+          "REJECTED",
+          "EXPIRED",
+        ].includes(manual.status)
+      ) {
+        throw createError(
+          409,
+          "Manual payment cannot be deleted in its current status"
+        );
+      }
+
+      const purchase = await PurchaseHistory.exists({
+        orderId: order._id,
+      }).session(session);
+
+      if (purchase) {
+        throw createError(
+          409,
+          "Order has purchase history and cannot be deleted"
+        );
+      }
+
+      const payment = await Payment.findOne({
+        orderId: order._id,
+      }).session(session);
+
+      if (payment) {
+        throw createError(
+          409,
+          "Order has an associated payment record and cannot be deleted"
+        );
+      }
+
+      if (manual?.paymentId || manual?.purchaseHistoryId) {
+        throw createError(
+          409,
+          "Order has already been linked to payment or purchase records"
+        );
+      }
+
+      const deletedManual = manual
+        ? await ManualPayment.deleteOne(
+            { _id: manual._id },
+            { session }
+          )
+        : null;
+
+      const deletedOrder = await Order.deleteOne(
+        { _id: order._id },
+        { session }
+      );
+
+      if (deletedOrder.deletedCount !== 1) {
+        throw createError(409, "Unable to delete manual order");
+      }
+
+      await mongoose.connection
+        .collection("manual_order_deletion_audits")
+        .insertOne(
+          {
+            adminId,
+            orderId: order._id,
+            manualPaymentId: manual?._id || null,
+            userId: order.userId,
+            assetId: order.assetId,
+            orderStatus: order.status,
+            manualPaymentStatus: manual?.status || null,
+            transactionId: manual?.transactionId || null,
+            deletedAt: new Date(),
+          },
+          { session }
+        );
+
+      result = {
+        orderId: order._id,
+        manualPaymentId: manual?._id || null,
+        deletedOrder: true,
+        deletedManualPayment: deletedManual?.deletedCount === 1,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Manual payment order deleted successfully",
+      data: result,
+    });
+  } catch (error) {
+    return handleError(res, error, "DELETE MANUAL ORDER");
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+};
